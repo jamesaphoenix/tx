@@ -23,7 +23,7 @@ import { createHash } from "node:crypto"
 import * as fs from "node:fs/promises"
 import * as path from "node:path"
 import * as os from "node:os"
-import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
+import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx/testing"
 
 // Import services once at module level
 import {
@@ -32,7 +32,7 @@ import {
   AnchorService,
   AnchorRepository,
   calculateMajorityVote
-} from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based IDs for determinism)

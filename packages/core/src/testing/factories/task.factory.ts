@@ -9,7 +9,7 @@ import type {
   TaskAssigneeType,
   TaskId,
   TaskStatus
-} from "@jamesaphoenix/tx-types"
+} from "../../types/index.js"
 import type { TestDatabase } from "../database/index.js"
 import { fixtureId } from "../fixtures/index.js"
 

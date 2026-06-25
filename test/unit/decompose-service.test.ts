@@ -7,9 +7,9 @@ import {
   DependencyService,
   DocService,
   TaskService,
-} from "@jamesaphoenix/tx-core"
-import type { AgentRunResult } from "@jamesaphoenix/tx-core"
-import type { Doc, Task, TaskId, TaskWithDeps } from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx"
+import type { AgentRunResult } from "@jamesaphoenix/tx"
+import type { Doc, Task, TaskId, TaskWithDeps } from "@jamesaphoenix/tx/types"
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"

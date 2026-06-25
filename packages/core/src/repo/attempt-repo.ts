@@ -2,7 +2,7 @@ import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
 import { AttemptNotFoundError, DatabaseError, EntityFetchError } from "../errors.js"
 import { rowToAttempt } from "../mappers/attempt.js"
-import type { Attempt, AttemptId, AttemptRow, CreateAttemptInput } from "@jamesaphoenix/tx-types"
+import type { Attempt, AttemptId, AttemptRow, CreateAttemptInput } from "../types/index.js"
 import { coerceDbResult } from "../utils/db-result.js"
 
 const MAX_SQL_VARIABLES = 900

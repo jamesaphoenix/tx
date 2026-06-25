@@ -8,10 +8,10 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { Effect } from "effect"
 import { registerEffectTool, z } from "./effect-schema-tool.js"
-import { DecisionService } from "@jamesaphoenix/tx-core"
+import { DecisionService } from "@jamesaphoenix/tx"
 import { runEffect } from "../runtime.js"
 import { handleToolError, type McpToolResult } from "../response.js"
-import { serializeDecision } from "@jamesaphoenix/tx-types"
+import { serializeDecision } from "@jamesaphoenix/tx/types"
 
 export { serializeDecision }
 

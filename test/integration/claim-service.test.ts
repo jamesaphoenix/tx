@@ -12,7 +12,7 @@
 import { describe, it, expect } from "vitest"
 import { Effect, Layer } from "effect"
 import { createHash } from "node:crypto"
-import type { TaskId } from "@jamesaphoenix/tx-types"
+import type { TaskId } from "@jamesaphoenix/tx/types"
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based IDs)
@@ -55,7 +55,7 @@ async function makeTestLayer() {
     ClaimServiceLive,
     TaskRepositoryLive,
     DependencyRepositoryLive
-  } = await import("@jamesaphoenix/tx-core")
+  } = await import("@jamesaphoenix/tx")
 
   const infra = SqliteClientLive(":memory:")
 
@@ -116,7 +116,7 @@ function createWorkerData(id: string, name: string = "test-worker") {
 
 describe("ClaimService.claim", () => {
   it("creates claim for task with correct fields", async () => {
-    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -143,7 +143,7 @@ describe("ClaimService.claim", () => {
   })
 
   it("uses custom lease duration when provided", async () => {
-    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -170,7 +170,7 @@ describe("ClaimService.claim", () => {
   })
 
   it("fails when task does not exist", async () => {
-    const { ClaimService, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { ClaimService, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const error = await Effect.runPromise(
@@ -188,7 +188,7 @@ describe("ClaimService.claim", () => {
   })
 
   it("fails when task is already claimed", async () => {
-    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const error = await Effect.runPromise(
@@ -220,7 +220,7 @@ describe("ClaimService.claim", () => {
 
 describe("ClaimService.release", () => {
   it("releases claim and sets status to released", async () => {
-    const { ClaimService, ClaimRepository, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { ClaimService, ClaimRepository, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -251,7 +251,7 @@ describe("ClaimService.release", () => {
   })
 
   it("fails when no active claim exists", async () => {
-    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const error = await Effect.runPromise(
@@ -271,7 +271,7 @@ describe("ClaimService.release", () => {
   })
 
   it("fails when worker does not own the claim", async () => {
-    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const error = await Effect.runPromise(
@@ -302,7 +302,7 @@ describe("ClaimService.release", () => {
 
 describe("ClaimService.renew", () => {
   it("extends lease and increments renewedCount", async () => {
-    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -329,7 +329,7 @@ describe("ClaimService.renew", () => {
   })
 
   it("fails when no active claim exists", async () => {
-    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const error = await Effect.runPromise(
@@ -349,7 +349,7 @@ describe("ClaimService.renew", () => {
   })
 
   it("fails when worker does not own the claim", async () => {
-    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const error = await Effect.runPromise(
@@ -372,7 +372,7 @@ describe("ClaimService.renew", () => {
   })
 
   it("fails when lease has already expired", async () => {
-    const { ClaimService, ClaimRepository, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { ClaimService, ClaimRepository, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const error = await Effect.runPromise(
@@ -402,7 +402,7 @@ describe("ClaimService.renew", () => {
   })
 
   it("fails when max renewals exceeded", async () => {
-    const { ClaimService, ClaimRepository, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { ClaimService, ClaimRepository, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const error = await Effect.runPromise(
@@ -437,7 +437,7 @@ describe("ClaimService.renew", () => {
 
 describe("ClaimService.getExpired", () => {
   it("returns expired active claims", async () => {
-    const { ClaimService, ClaimRepository, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { ClaimService, ClaimRepository, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -472,7 +472,7 @@ describe("ClaimService.getExpired", () => {
   })
 
   it("returns empty array when no expired claims", async () => {
-    const { ClaimService } = await import("@jamesaphoenix/tx-core")
+    const { ClaimService } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -492,7 +492,7 @@ describe("ClaimService.getExpired", () => {
 
 describe("ClaimService.expire", () => {
   it("marks claim as expired", async () => {
-    const { ClaimService, ClaimRepository, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { ClaimService, ClaimRepository, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -521,7 +521,7 @@ describe("ClaimService.expire", () => {
   })
 
   it("fails for nonexistent claim ID", async () => {
-    const { ClaimService } = await import("@jamesaphoenix/tx-core")
+    const { ClaimService } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const error = await Effect.runPromise(
@@ -541,7 +541,7 @@ describe("ClaimService.expire", () => {
 
 describe("ClaimService.releaseByWorker", () => {
   it("releases all active claims for a worker", async () => {
-    const { ClaimService, ClaimRepository, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { ClaimService, ClaimRepository, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -583,7 +583,7 @@ describe("ClaimService.releaseByWorker", () => {
   })
 
   it("returns 0 when worker has no active claims", async () => {
-    const { ClaimService, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { ClaimService, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -607,7 +607,7 @@ describe("ClaimService.releaseByWorker", () => {
 
 describe("ClaimService.getActiveClaim", () => {
   it("returns active claim for task", async () => {
-    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -632,7 +632,7 @@ describe("ClaimService.getActiveClaim", () => {
   })
 
   it("returns null when no active claim exists", async () => {
-    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -655,7 +655,7 @@ describe("ClaimService.getActiveClaim", () => {
   })
 
   it("returns null for task with no claims", async () => {
-    const { ClaimService } = await import("@jamesaphoenix/tx-core")
+    const { ClaimService } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -675,7 +675,7 @@ describe("ClaimService.getActiveClaim", () => {
 
 describe("ClaimService full lifecycle", () => {
   it("claim -> renew -> release lifecycle works correctly", async () => {
-    const { ClaimService, ClaimRepository, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { ClaimService, ClaimRepository, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -715,7 +715,7 @@ describe("ClaimService full lifecycle", () => {
   })
 
   it("multiple tasks can be claimed by different workers", async () => {
-    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -743,7 +743,7 @@ describe("ClaimService full lifecycle", () => {
   })
 
   it("released task can be reclaimed by another worker", async () => {
-    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(

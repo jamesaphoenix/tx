@@ -3,8 +3,8 @@
  */
 
 import { Effect } from "effect"
-import { TaskService, ReadyService, AttemptService, VerifyService } from "@jamesaphoenix/tx-core"
-import { assertTaskStatus, TASK_STATUSES } from "@jamesaphoenix/tx-types"
+import { TaskService, ReadyService, AttemptService, VerifyService } from "@jamesaphoenix/tx"
+import { assertTaskStatus, TASK_STATUSES } from "@jamesaphoenix/tx/types"
 import { toJson, formatTaskWithDeps, formatTaskLine, formatReadyTaskLine } from "../output.js"
 import { type Flags, flag, opt, parseIntOpt, parseTaskId } from "../utils/parse.js"
 import { CliExitError } from "../cli-exit.js"

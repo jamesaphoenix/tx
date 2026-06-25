@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import type { BM25Result } from "../repo/learning-repo.js"
 import { EmbeddingDimensionMismatchError, ZeroMagnitudeVectorError } from "../errors.js"
-import type { Learning, LearningWithScore } from "@jamesaphoenix/tx-types"
+import type { Learning, LearningWithScore } from "../types/index.js"
 import { cosineSimilarity } from "../utils/math.js"
 
 /** RRF constant - standard value from the original paper */

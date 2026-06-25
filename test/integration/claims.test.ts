@@ -16,7 +16,7 @@ import {
   getSharedTestLayer,
   fixtureId,
   type SharedTestLayerResult
-} from "@jamesaphoenix/tx-test-utils"
+} from "@jamesaphoenix/tx/testing"
 import {
   ClaimService,
   ClaimRepository,
@@ -25,8 +25,8 @@ import {
   AlreadyClaimedError,
   LeaseExpiredError,
   TaskNotFoundError
-} from "@jamesaphoenix/tx-core"
-import type { TaskId } from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx"
+import type { TaskId } from "@jamesaphoenix/tx/types"
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based deterministic IDs)

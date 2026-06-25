@@ -1,7 +1,7 @@
 import { Context, Effect, Layer } from "effect"
 import { FileLearningRepository } from "../repo/file-learning-repo.js"
 import { FileLearningNotFoundError, ValidationError, DatabaseError } from "../errors.js"
-import type { FileLearning, CreateFileLearningInput } from "@jamesaphoenix/tx-types"
+import type { FileLearning, CreateFileLearningInput } from "../types/index.js"
 
 /** Strips null bytes (\0) which cause C API truncation, JSON issues, and terminal corruption. */
 const stripNullBytes = (s: string): string => s.replace(/\0/g, "")

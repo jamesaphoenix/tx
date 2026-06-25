@@ -11,7 +11,7 @@
 import { describe, it, expect } from "vitest"
 import { Effect, Layer } from "effect"
 import { createHash } from "node:crypto"
-import type { TaskId, Task } from "@jamesaphoenix/tx-types"
+import type { TaskId, Task } from "@jamesaphoenix/tx/types"
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based IDs)
@@ -61,7 +61,7 @@ const createClaimData = (
 
 describe("ClaimRepository.insert", () => {
   it("creates claim and returns with auto-generated ID", async () => {
-    const { ClaimRepository, ClaimRepositoryLive, WorkerRepository, WorkerRepositoryLive, TaskRepository, TaskRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
+    const { ClaimRepository, ClaimRepositoryLive, WorkerRepository, WorkerRepositoryLive, TaskRepository, TaskRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx")
 
     const infra = SqliteClientLive(":memory:")
     const layer = Layer.mergeAll(ClaimRepositoryLive, WorkerRepositoryLive, TaskRepositoryLive).pipe(
@@ -123,7 +123,7 @@ describe("ClaimRepository.insert", () => {
   })
 
   it("auto-increments IDs for multiple inserts", async () => {
-    const { ClaimRepository, ClaimRepositoryLive, WorkerRepository, WorkerRepositoryLive, TaskRepository, TaskRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
+    const { ClaimRepository, ClaimRepositoryLive, WorkerRepository, WorkerRepositoryLive, TaskRepository, TaskRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx")
 
     const infra = SqliteClientLive(":memory:")
     const layer = Layer.mergeAll(ClaimRepositoryLive, WorkerRepositoryLive, TaskRepositoryLive).pipe(
@@ -195,7 +195,7 @@ describe("ClaimRepository.insert", () => {
 
 describe("ClaimRepository.update", () => {
   it("updates claim fields (lease, status, renewedCount)", async () => {
-    const { ClaimRepository, ClaimRepositoryLive, WorkerRepository, WorkerRepositoryLive, TaskRepository, TaskRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
+    const { ClaimRepository, ClaimRepositoryLive, WorkerRepository, WorkerRepositoryLive, TaskRepository, TaskRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx")
 
     const infra = SqliteClientLive(":memory:")
     const layer = Layer.mergeAll(ClaimRepositoryLive, WorkerRepositoryLive, TaskRepositoryLive).pipe(
@@ -267,7 +267,7 @@ describe("ClaimRepository.update", () => {
 
 describe("ClaimRepository.findById", () => {
   it("returns claim by ID", async () => {
-    const { ClaimRepository, ClaimRepositoryLive, WorkerRepository, WorkerRepositoryLive, TaskRepository, TaskRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
+    const { ClaimRepository, ClaimRepositoryLive, WorkerRepository, WorkerRepositoryLive, TaskRepository, TaskRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx")
 
     const infra = SqliteClientLive(":memory:")
     const layer = Layer.mergeAll(ClaimRepositoryLive, WorkerRepositoryLive, TaskRepositoryLive).pipe(
@@ -324,7 +324,7 @@ describe("ClaimRepository.findById", () => {
   })
 
   it("returns null for nonexistent ID", async () => {
-    const { ClaimRepository, ClaimRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
+    const { ClaimRepository, ClaimRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx")
 
     const infra = SqliteClientLive(":memory:")
     const layer = ClaimRepositoryLive.pipe(Layer.provide(infra))
@@ -346,7 +346,7 @@ describe("ClaimRepository.findById", () => {
 
 describe("ClaimRepository.findActiveByTaskId", () => {
   it("returns active claim for a task", async () => {
-    const { ClaimRepository, ClaimRepositoryLive, WorkerRepository, WorkerRepositoryLive, TaskRepository, TaskRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
+    const { ClaimRepository, ClaimRepositoryLive, WorkerRepository, WorkerRepositoryLive, TaskRepository, TaskRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx")
 
     const infra = SqliteClientLive(":memory:")
     const layer = Layer.mergeAll(ClaimRepositoryLive, WorkerRepositoryLive, TaskRepositoryLive).pipe(
@@ -403,7 +403,7 @@ describe("ClaimRepository.findActiveByTaskId", () => {
   })
 
   it("returns null when no active claim exists", async () => {
-    const { ClaimRepository, ClaimRepositoryLive, WorkerRepository, WorkerRepositoryLive, TaskRepository, TaskRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
+    const { ClaimRepository, ClaimRepositoryLive, WorkerRepository, WorkerRepositoryLive, TaskRepository, TaskRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx")
 
     const infra = SqliteClientLive(":memory:")
     const layer = Layer.mergeAll(ClaimRepositoryLive, WorkerRepositoryLive, TaskRepositoryLive).pipe(
@@ -459,7 +459,7 @@ describe("ClaimRepository.findActiveByTaskId", () => {
   })
 
   it("returns null for task with no claims", async () => {
-    const { ClaimRepository, ClaimRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
+    const { ClaimRepository, ClaimRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx")
 
     const infra = SqliteClientLive(":memory:")
     const layer = ClaimRepositoryLive.pipe(Layer.provide(infra))
@@ -481,7 +481,7 @@ describe("ClaimRepository.findActiveByTaskId", () => {
 
 describe("ClaimRepository.findExpired", () => {
   it("finds claims with expired leases", async () => {
-    const { ClaimRepository, ClaimRepositoryLive, WorkerRepository, WorkerRepositoryLive, TaskRepository, TaskRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
+    const { ClaimRepository, ClaimRepositoryLive, WorkerRepository, WorkerRepositoryLive, TaskRepository, TaskRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx")
 
     const infra = SqliteClientLive(":memory:")
     const layer = Layer.mergeAll(ClaimRepositoryLive, WorkerRepositoryLive, TaskRepositoryLive).pipe(
@@ -557,7 +557,7 @@ describe("ClaimRepository.findExpired", () => {
   })
 
   it("returns empty array when no expired claims", async () => {
-    const { ClaimRepository, ClaimRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
+    const { ClaimRepository, ClaimRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx")
 
     const infra = SqliteClientLive(":memory:")
     const layer = ClaimRepositoryLive.pipe(Layer.provide(infra))
@@ -579,7 +579,7 @@ describe("ClaimRepository.findExpired", () => {
 
 describe("ClaimRepository.releaseAllByWorkerId", () => {
   it("releases all active claims for a worker", async () => {
-    const { ClaimRepository, ClaimRepositoryLive, WorkerRepository, WorkerRepositoryLive, TaskRepository, TaskRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
+    const { ClaimRepository, ClaimRepositoryLive, WorkerRepository, WorkerRepositoryLive, TaskRepository, TaskRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx")
 
     const infra = SqliteClientLive(":memory:")
     const layer = Layer.mergeAll(ClaimRepositoryLive, WorkerRepositoryLive, TaskRepositoryLive).pipe(
@@ -674,7 +674,7 @@ describe("ClaimRepository.releaseAllByWorkerId", () => {
   })
 
   it("returns 0 when no active claims exist", async () => {
-    const { ClaimRepository, ClaimRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
+    const { ClaimRepository, ClaimRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx")
 
     const infra = SqliteClientLive(":memory:")
     const layer = ClaimRepositoryLive.pipe(Layer.provide(infra))
@@ -696,7 +696,7 @@ describe("ClaimRepository.releaseAllByWorkerId", () => {
 
 describe("ClaimRepository.tryRenewAtomic", () => {
   it("renews a valid active claim atomically", async () => {
-    const { ClaimRepository, ClaimRepositoryLive, WorkerRepository, WorkerRepositoryLive, TaskRepository, TaskRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
+    const { ClaimRepository, ClaimRepositoryLive, WorkerRepository, WorkerRepositoryLive, TaskRepository, TaskRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx")
 
     const infra = SqliteClientLive(":memory:")
     const layer = Layer.mergeAll(ClaimRepositoryLive, WorkerRepositoryLive, TaskRepositoryLive).pipe(
@@ -762,7 +762,7 @@ describe("ClaimRepository.tryRenewAtomic", () => {
   })
 
   it("fails with 'expired' when lease has already expired", async () => {
-    const { ClaimRepository, ClaimRepositoryLive, WorkerRepository, WorkerRepositoryLive, TaskRepository, TaskRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
+    const { ClaimRepository, ClaimRepositoryLive, WorkerRepository, WorkerRepositoryLive, TaskRepository, TaskRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx")
 
     const infra = SqliteClientLive(":memory:")
     const layer = Layer.mergeAll(ClaimRepositoryLive, WorkerRepositoryLive, TaskRepositoryLive).pipe(
@@ -827,7 +827,7 @@ describe("ClaimRepository.tryRenewAtomic", () => {
   })
 
   it("fails with 'not_found' when claim does not exist", async () => {
-    const { ClaimRepository, ClaimRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
+    const { ClaimRepository, ClaimRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx")
 
     const infra = SqliteClientLive(":memory:")
     const layer = ClaimRepositoryLive.pipe(Layer.provide(infra))
@@ -846,7 +846,7 @@ describe("ClaimRepository.tryRenewAtomic", () => {
   })
 
   it("fails with 'not_found' when worker does not own the claim", async () => {
-    const { ClaimRepository, ClaimRepositoryLive, WorkerRepository, WorkerRepositoryLive, TaskRepository, TaskRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
+    const { ClaimRepository, ClaimRepositoryLive, WorkerRepository, WorkerRepositoryLive, TaskRepository, TaskRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx")
 
     const infra = SqliteClientLive(":memory:")
     const layer = Layer.mergeAll(ClaimRepositoryLive, WorkerRepositoryLive, TaskRepositoryLive).pipe(
@@ -912,7 +912,7 @@ describe("ClaimRepository.tryRenewAtomic", () => {
   })
 
   it("fails with 'not_found' when claim is not active", async () => {
-    const { ClaimRepository, ClaimRepositoryLive, WorkerRepository, WorkerRepositoryLive, TaskRepository, TaskRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
+    const { ClaimRepository, ClaimRepositoryLive, WorkerRepository, WorkerRepositoryLive, TaskRepository, TaskRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx")
 
     const infra = SqliteClientLive(":memory:")
     const layer = Layer.mergeAll(ClaimRepositoryLive, WorkerRepositoryLive, TaskRepositoryLive).pipe(
@@ -979,7 +979,7 @@ describe("ClaimRepository.tryRenewAtomic", () => {
   })
 
   it("increments renewedCount on each successful renewal", async () => {
-    const { ClaimRepository, ClaimRepositoryLive, WorkerRepository, WorkerRepositoryLive, TaskRepository, TaskRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
+    const { ClaimRepository, ClaimRepositoryLive, WorkerRepository, WorkerRepositoryLive, TaskRepository, TaskRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx")
 
     const infra = SqliteClientLive(":memory:")
     const layer = Layer.mergeAll(ClaimRepositoryLive, WorkerRepositoryLive, TaskRepositoryLive).pipe(
@@ -1085,7 +1085,7 @@ describe("ClaimRepository.tryInsertAtomic", () => {
   }
 
   it("inserts a claim when no active claim exists", async () => {
-    const { ClaimRepository, ClaimRepositoryLive, WorkerRepository, WorkerRepositoryLive, TaskRepository, TaskRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
+    const { ClaimRepository, ClaimRepositoryLive, WorkerRepository, WorkerRepositoryLive, TaskRepository, TaskRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx")
 
     const infra = SqliteClientLive(":memory:")
     const layer = Layer.mergeAll(ClaimRepositoryLive, WorkerRepositoryLive, TaskRepositoryLive).pipe(Layer.provide(infra))
@@ -1110,7 +1110,7 @@ describe("ClaimRepository.tryInsertAtomic", () => {
   })
 
   it("blocks insert when a non-expired active claim already exists", async () => {
-    const { ClaimRepository, ClaimRepositoryLive, WorkerRepository, WorkerRepositoryLive, TaskRepository, TaskRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
+    const { ClaimRepository, ClaimRepositoryLive, WorkerRepository, WorkerRepositoryLive, TaskRepository, TaskRepositoryLive, SqliteClientLive } = await import("@jamesaphoenix/tx")
 
     const infra = SqliteClientLive(":memory:")
     const layer = Layer.mergeAll(ClaimRepositoryLive, WorkerRepositoryLive, TaskRepositoryLive).pipe(Layer.provide(infra))
@@ -1150,7 +1150,7 @@ describe("ClaimRepository.tryInsertAtomic", () => {
   })
 
   it("reclaims a task whose lease expired the same day, expiring the stale claim and keeping one active claim", async () => {
-    const { ClaimRepository, ClaimRepositoryLive, WorkerRepository, WorkerRepositoryLive, TaskRepository, TaskRepositoryLive, SqliteClient, SqliteClientLive } = await import("@jamesaphoenix/tx-core")
+    const { ClaimRepository, ClaimRepositoryLive, WorkerRepository, WorkerRepositoryLive, TaskRepository, TaskRepositoryLive, SqliteClient, SqliteClientLive } = await import("@jamesaphoenix/tx")
 
     const infra = SqliteClientLive(":memory:")
     // Merge `infra` into the output too (same reference → memoized to one DB)

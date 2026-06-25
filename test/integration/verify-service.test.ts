@@ -6,11 +6,11 @@
  */
 import { describe, it, expect, beforeAll, afterEach, afterAll } from "vitest"
 import { Effect } from "effect"
-import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
+import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx/testing"
 import {
   TaskService,
   VerifyService,
-} from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
 import { writeFileSync, mkdirSync, rmSync } from "node:fs"
 import { join } from "node:path"
 

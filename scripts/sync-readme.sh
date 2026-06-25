@@ -11,13 +11,8 @@ README_SRC="$ROOT_DIR/README.md"
 # List of publishable workspaces that should carry the root README
 PACKAGES=(
   "packages/core"
-  "packages/types"
-  "packages/test-utils"
-  "packages/tx"
   "apps/agent-sdk"
-  "apps/api-server"
   "apps/cli"
-  "apps/mcp-server"
 )
 
 if [ ! -f "$README_SRC" ]; then

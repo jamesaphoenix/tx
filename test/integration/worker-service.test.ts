@@ -47,7 +47,7 @@ async function makeTestLayer() {
     TaskRepositoryLive,
     DependencyRepositoryLive,
     ReadyServiceLive
-  } = await import("@jamesaphoenix/tx-core")
+  } = await import("@jamesaphoenix/tx")
 
   const infra = SqliteClientLive(":memory:")
 
@@ -77,7 +77,7 @@ async function makeTestLayer() {
 
 describe("WorkerService.register", () => {
   it("registers worker when orchestrator is running and pool has capacity", async () => {
-    const { WorkerService, OrchestratorService } = await import("@jamesaphoenix/tx-core")
+    const { WorkerService, OrchestratorService } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -109,7 +109,7 @@ describe("WorkerService.register", () => {
   })
 
   it("generates worker ID if not provided", async () => {
-    const { WorkerService, OrchestratorService } = await import("@jamesaphoenix/tx-core")
+    const { WorkerService, OrchestratorService } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -126,7 +126,7 @@ describe("WorkerService.register", () => {
   })
 
   it("fails when orchestrator is not running", async () => {
-    const { WorkerService } = await import("@jamesaphoenix/tx-core")
+    const { WorkerService } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const error = await Effect.runPromise(
@@ -146,7 +146,7 @@ describe("WorkerService.register", () => {
   })
 
   it("fails when worker pool is at capacity", async () => {
-    const { WorkerService, OrchestratorService } = await import("@jamesaphoenix/tx-core")
+    const { WorkerService, OrchestratorService } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const error = await Effect.runPromise(
@@ -176,7 +176,7 @@ describe("WorkerService.register", () => {
   })
 
   it("uses default capabilities when not provided", async () => {
-    const { WorkerService, OrchestratorService } = await import("@jamesaphoenix/tx-core")
+    const { WorkerService, OrchestratorService } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -199,7 +199,7 @@ describe("WorkerService.register", () => {
 
 describe("WorkerService.heartbeat", () => {
   it("updates worker heartbeat timestamp and status", async () => {
-    const { WorkerService, OrchestratorService, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { WorkerService, OrchestratorService, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -238,7 +238,7 @@ describe("WorkerService.heartbeat", () => {
       OrchestratorService,
       WorkerRepository,
       TaskRepository
-    } = await import("@jamesaphoenix/tx-core")
+    } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const taskId = "tx-12345678"
@@ -294,7 +294,7 @@ describe("WorkerService.heartbeat", () => {
   })
 
   it("stores metrics in metadata when provided", async () => {
-    const { WorkerService, OrchestratorService, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { WorkerService, OrchestratorService, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -332,7 +332,7 @@ describe("WorkerService.heartbeat", () => {
   })
 
   it("fails for nonexistent worker", async () => {
-    const { WorkerService } = await import("@jamesaphoenix/tx-core")
+    const { WorkerService } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const error = await Effect.runPromise(
@@ -357,7 +357,7 @@ describe("WorkerService.heartbeat", () => {
 
 describe("WorkerService.deregister", () => {
   it("removes worker from registry", async () => {
-    const { WorkerService, OrchestratorService, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { WorkerService, OrchestratorService, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -383,7 +383,7 @@ describe("WorkerService.deregister", () => {
   })
 
   it("fails for nonexistent worker", async () => {
-    const { WorkerService } = await import("@jamesaphoenix/tx-core")
+    const { WorkerService } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const error = await Effect.runPromise(
@@ -403,7 +403,7 @@ describe("WorkerService.deregister", () => {
 
 describe("WorkerService.list", () => {
   it("returns all workers when no filter provided", async () => {
-    const { WorkerService, OrchestratorService } = await import("@jamesaphoenix/tx-core")
+    const { WorkerService, OrchestratorService } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -425,7 +425,7 @@ describe("WorkerService.list", () => {
   })
 
   it("filters by status", async () => {
-    const { WorkerService, OrchestratorService } = await import("@jamesaphoenix/tx-core")
+    const { WorkerService, OrchestratorService } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -456,7 +456,7 @@ describe("WorkerService.list", () => {
       OrchestratorService,
       TaskRepository,
       WorkerRepository
-    } = await import("@jamesaphoenix/tx-core")
+    } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const taskId = "tx-abcd1234"
@@ -513,7 +513,7 @@ describe("WorkerService.list", () => {
 
 describe("WorkerService.findDead", () => {
   it("finds workers with stale heartbeats", async () => {
-    const { WorkerService, OrchestratorService, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { WorkerService, OrchestratorService, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -550,7 +550,7 @@ describe("WorkerService.findDead", () => {
   })
 
   it("excludes workers already marked dead", async () => {
-    const { WorkerService, OrchestratorService, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { WorkerService, OrchestratorService, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -591,7 +591,7 @@ describe("WorkerService.findDead", () => {
 
 describe("WorkerService.markDead", () => {
   it("marks worker as dead", async () => {
-    const { WorkerService, OrchestratorService, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { WorkerService, OrchestratorService, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -613,7 +613,7 @@ describe("WorkerService.markDead", () => {
   })
 
   it("fails for nonexistent worker", async () => {
-    const { WorkerService } = await import("@jamesaphoenix/tx-core")
+    const { WorkerService } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const error = await Effect.runPromise(
@@ -633,7 +633,7 @@ describe("WorkerService.markDead", () => {
 
 describe("WorkerService.updateStatus", () => {
   it("updates worker status", async () => {
-    const { WorkerService, OrchestratorService, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { WorkerService, OrchestratorService, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -664,7 +664,7 @@ describe("WorkerService.updateStatus", () => {
   })
 
   it("fails for nonexistent worker", async () => {
-    const { WorkerService } = await import("@jamesaphoenix/tx-core")
+    const { WorkerService } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const error = await Effect.runPromise(

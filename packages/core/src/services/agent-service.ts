@@ -13,7 +13,7 @@ import { Context, Effect, Layer } from "effect"
 import { execFileSync, spawn } from "node:child_process"
 import { AgentError } from "../errors.js"
 import { normalizeClaudeDebugLogPath } from "../utils/claude-debug-log.js"
-import type { AgentRuntime } from "@jamesaphoenix/tx-types"
+import type { AgentRuntime } from "../types/index.js"
 
 // =============================================================================
 // Types

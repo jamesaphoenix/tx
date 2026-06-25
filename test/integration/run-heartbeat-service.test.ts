@@ -1,9 +1,9 @@
 import { beforeAll, afterEach, describe, expect, it } from "vitest"
 import { Effect } from "effect"
-import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
+import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx/testing"
 import { fixtureId } from "../fixtures.js"
-import { ReadyService, RunHeartbeatService, RunRepository } from "@jamesaphoenix/tx-core"
-import type { RunId, TaskId } from "@jamesaphoenix/tx-types"
+import { ReadyService, RunHeartbeatService, RunRepository } from "@jamesaphoenix/tx"
+import type { RunId, TaskId } from "@jamesaphoenix/tx/types"
 
 const runFixtureId = (name: string): RunId => `run-${fixtureId(`run-heartbeat:${name}`).slice(3)}` as RunId
 const taskFixtureId = (name: string): TaskId => fixtureId(`run-heartbeat:${name}`) as TaskId

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { Effect, Layer } from "effect"
-import { DecomposeService } from "@jamesaphoenix/tx-core"
-import type { DecomposeResult, TaskWithDeps } from "@jamesaphoenix/tx-types"
+import { DecomposeService } from "@jamesaphoenix/tx"
+import type { DecomposeResult, TaskWithDeps } from "@jamesaphoenix/tx/types"
 import { runDecomposeApi } from "../../apps/cli/src/api/routes/decompose.js"
 
 function makeRootTask(): TaskWithDeps {

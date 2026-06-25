@@ -12,7 +12,7 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
-import { resolveTxDbPath } from "@jamesaphoenix/tx-core"
+import { resolveTxDbPath } from "@jamesaphoenix/tx"
 import { initRuntime, disposeRuntime } from "./runtime.js"
 import { registerTaskTools } from "./tools/task.js"
 import { registerDecomposeTools } from "./tools/decompose.js"

@@ -17,8 +17,8 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { Effect } from "effect"
 import { createHash } from "node:crypto"
-import { getSharedTestLayer } from "@jamesaphoenix/tx-test-utils"
-import type { TaskId } from "@jamesaphoenix/tx-types"
+import { getSharedTestLayer } from "@jamesaphoenix/tx/testing"
+import type { TaskId } from "@jamesaphoenix/tx/types"
 
 // Import services once at module level
 import {
@@ -28,7 +28,7 @@ import {
   LearningService,
   SyncService,
   fixtureId as coreFixtureId,
-} from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based IDs)
@@ -499,7 +499,7 @@ describe("Cross-Package Integration", () => {
   })
 
   it("@tx/types exports match @jamesaphoenix/tx-agent-sdk exports", async () => {
-    const types = await import("@jamesaphoenix/tx-types")
+    const types = await import("@jamesaphoenix/tx/types")
     const sdk = await import("@jamesaphoenix/tx-agent-sdk")
 
     // Both should have the same task statuses

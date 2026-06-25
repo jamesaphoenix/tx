@@ -6,7 +6,7 @@
 
 import { HttpApiBuilder } from "@effect/platform"
 import { Effect } from "effect"
-import { GuardService } from "@jamesaphoenix/tx-core"
+import { GuardService } from "@jamesaphoenix/tx"
 import { TxApi, mapCoreError } from "../api.js"
 
 // Helper to serialize guard (Guard type from repo already has enforce: boolean)

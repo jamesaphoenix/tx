@@ -8,8 +8,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { Effect } from "effect"
 import { registerEffectTool, z } from "./effect-schema-tool.js"
-import { PinService } from "@jamesaphoenix/tx-core"
-import { isValidTaskId } from "@jamesaphoenix/tx-types"
+import { PinService } from "@jamesaphoenix/tx"
+import { isValidTaskId } from "@jamesaphoenix/tx/types"
 import { runEffect } from "../runtime.js"
 import { handleToolError, type McpToolResult } from "../response.js"
 

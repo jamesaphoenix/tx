@@ -13,7 +13,7 @@ import {
   readTxConfig,
   validateEarsRequirements,
   type BatchSource,
-} from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
 import { triangle as specHealthImpl } from "./triangle.js"
 import { toJson } from "../output.js"
 import { CliExitError } from "../cli-exit.js"

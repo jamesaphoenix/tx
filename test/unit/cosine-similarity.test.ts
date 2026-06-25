@@ -5,7 +5,7 @@
  */
 import { describe, it, expect } from "vitest"
 import { Effect } from "effect"
-import { cosineSimilarity, EmbeddingDimensionMismatchError, ZeroMagnitudeVectorError } from "@jamesaphoenix/tx-core"
+import { cosineSimilarity, EmbeddingDimensionMismatchError, ZeroMagnitudeVectorError } from "@jamesaphoenix/tx"
 
 describe("cosineSimilarity", () => {
   it("returns 1 for identical vectors", async () => {

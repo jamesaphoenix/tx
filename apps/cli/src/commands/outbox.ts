@@ -7,8 +7,8 @@
  */
 
 import { Effect } from "effect"
-import { MessageService } from "@jamesaphoenix/tx-core"
-import { serializeMessage } from "@jamesaphoenix/tx-types"
+import { MessageService } from "@jamesaphoenix/tx"
+import { serializeMessage } from "@jamesaphoenix/tx/types"
 import { toJson } from "../output.js"
 import { type Flags, flag, opt, parseIntOpt } from "../utils/parse.js"
 

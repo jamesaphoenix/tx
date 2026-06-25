@@ -2,15 +2,15 @@
  * Invariant-related MCP Tools
  *
  * Provides MCP tools for managing project invariants (rules that must hold).
- * Uses DocService from @jamesaphoenix/tx-core.
+ * Uses DocService from @jamesaphoenix/tx.
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { Effect } from "effect"
 import { registerEffectTool, z } from "./effect-schema-tool.js"
-import type { Invariant, InvariantCheck, InvariantEnforcement } from "@jamesaphoenix/tx-types"
-import { INVARIANT_ENFORCEMENT_TYPES } from "@jamesaphoenix/tx-types"
-import { DocService, InvariantNotFoundError } from "@jamesaphoenix/tx-core"
+import type { Invariant, InvariantCheck, InvariantEnforcement } from "@jamesaphoenix/tx/types"
+import { INVARIANT_ENFORCEMENT_TYPES } from "@jamesaphoenix/tx/types"
+import { DocService, InvariantNotFoundError } from "@jamesaphoenix/tx"
 import { runEffect } from "../runtime.js"
 import { handleToolError, type McpToolResult } from "../response.js"
 

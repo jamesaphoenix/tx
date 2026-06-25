@@ -13,7 +13,7 @@ import type {
   DocReviewRun,
   DocReviewRunRow,
   DocReviewRunStatus,
-} from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
 
 // =============================================================================
 // TYPES

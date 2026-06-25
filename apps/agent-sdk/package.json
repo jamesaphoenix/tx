@@ -34,14 +34,12 @@
     "test": "bunx --bun vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@jamesaphoenix/tx-types": "*"
+    "@jamesaphoenix/tx": "*"
   },
   "optionalDependencies": {
-    "@jamesaphoenix/tx-core": "*",
     "effect": "^3.19.15"
   },
   "devDependencies": {
-    "@jamesaphoenix/tx-core": "*",
     "@types/bun": "^1.2.0",
     "@types/node": "^25.2.0",
     "effect": "^3.19.15",

@@ -17,7 +17,7 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
+import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx/testing"
 import { seedFixtures } from "../fixtures.js"
 import {
   SqliteClient,
@@ -38,7 +38,7 @@ import {
   AutoSyncServiceLive,
   AutoSyncService,
   DatabaseError
-} from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
 
 type SyncServiceStub = Parameters<typeof SyncService.of>[0]
 

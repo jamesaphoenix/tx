@@ -719,10 +719,11 @@ export default [
       'tx/no-zod': 'error'
     }
   },
-  // Test utility package uses lightweight TS helper types/errors by design.
-  // Keep doctrine strict in production paths while avoiding false positives here.
+  // Test utilities (merged into @jamesaphoenix/tx as the ./testing subpath) use
+  // lightweight TS helper types/errors by design. Keep doctrine strict in
+  // production paths while avoiding false positives here.
   {
-    files: ['packages/test-utils/**/*.ts'],
+    files: ['packages/core/src/testing/**/*.ts'],
     rules: {
       'tx/no-plain-interfaces': 'off',
       'tx/no-throw-in-services': 'off'

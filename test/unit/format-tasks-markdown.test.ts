@@ -6,7 +6,7 @@
  */
 import { describe, it, expect } from "vitest"
 import { formatTasksMarkdown } from "../../apps/cli/src/output.js"
-import type { ContextResult, LearningId, TaskId, TaskWithDeps } from "@jamesaphoenix/tx-types"
+import type { ContextResult, LearningId, TaskId, TaskWithDeps } from "@jamesaphoenix/tx/types"
 
 // Helper to create a minimal TaskWithDeps for testing
 type TaskOverride =

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type DragEvent } from "react"
-import { VALID_TRANSITIONS, type TaskStatus } from "@jamesaphoenix/tx-types/task"
+import { VALID_TRANSITIONS, type TaskStatus } from "@jamesaphoenix/tx/types"
 import { fetchers, type TaskWithDeps } from "../../api/client"
 import { useQueryClient } from "@tanstack/react-query"
 import { TaskCard } from "../tasks/TaskCard"

@@ -9,7 +9,7 @@
 
 import { Database } from "bun:sqlite"
 import { Context, Effect, Layer } from "effect"
-import { applyMigrations, type SqliteRunResult } from "@jamesaphoenix/tx-core"
+import { applyMigrations, type SqliteRunResult } from "../../index.js"
 import { resetDatabaseTables } from "./reset-helpers.js"
 
 /**
@@ -172,7 +172,7 @@ export const createTestDatabaseLayer = (): Layer.Layer<TestDatabaseService, Erro
  *
  * @example
  * ```typescript
- * import { getSharedTestLayer, wrapDbAsTestDatabase, CandidateFactory } from '@jamesaphoenix/tx-test-utils'
+ * import { getSharedTestLayer, wrapDbAsTestDatabase, CandidateFactory } from '../index.js'
  *
  * const shared = await getSharedTestLayer()
  * const testDb = wrapDbAsTestDatabase(shared.getDb())

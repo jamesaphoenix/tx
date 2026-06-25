@@ -30,8 +30,8 @@ import {
   ClaimRepositoryLive,
   ClaimServiceLive,
   OrchestratorStateRepositoryLive
-} from "@jamesaphoenix/tx-core"
-import { fixtureId, createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
+} from "@jamesaphoenix/tx"
+import { fixtureId, createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx/testing"
 import { seedFixtures, FIXTURES } from "../fixtures.js"
 
 // =============================================================================

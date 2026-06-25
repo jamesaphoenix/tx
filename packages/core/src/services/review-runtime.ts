@@ -10,8 +10,8 @@ import { Context, Effect, Layer, Schema } from "effect"
 import type {
   ReviewRunResult,
   DocReviewError,
-} from "@jamesaphoenix/tx-types"
-import { ReviewTransportSchema } from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
+import { ReviewTransportSchema } from "../types/index.js"
 
 /**
  * Parameters for executing a review against a design doc.

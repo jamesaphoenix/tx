@@ -5,8 +5,8 @@
  */
 
 import { Effect } from "effect"
-import { SqliteClient, MigrationService, ValidationService } from "@jamesaphoenix/tx-core"
-import type { ValidationResult } from "@jamesaphoenix/tx-core"
+import { SqliteClient, MigrationService, ValidationService } from "@jamesaphoenix/tx"
+import type { ValidationResult } from "@jamesaphoenix/tx"
 import { toJson } from "../output.js"
 import { statSync } from "node:fs"
 

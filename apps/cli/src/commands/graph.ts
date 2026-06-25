@@ -4,8 +4,8 @@
  */
 
 import { Effect } from "effect"
-import { AnchorService, EdgeService } from "@jamesaphoenix/tx-core"
-import type { AnchorType, EdgeType, NodeType } from "@jamesaphoenix/tx-types"
+import { AnchorService, EdgeService } from "@jamesaphoenix/tx"
+import type { AnchorType, EdgeType, NodeType } from "@jamesaphoenix/tx/types"
 import { toJson } from "../output.js"
 import { type Flags, flag, opt, parseIntOpt } from "../utils/parse.js"
 

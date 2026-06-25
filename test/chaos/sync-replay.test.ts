@@ -11,14 +11,14 @@
 
 import { describe, it, expect, beforeEach } from "vitest"
 import { Effect } from "effect"
-import type { TaskId } from "@jamesaphoenix/tx-types"
+import type { TaskId } from "@jamesaphoenix/tx/types"
 import {
   createTestDatabase,
   fixtureId,
   chaos,
   type TestDatabase,
   type SyncOperation
-} from "@jamesaphoenix/tx-test-utils"
+} from "@jamesaphoenix/tx/testing"
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based IDs)

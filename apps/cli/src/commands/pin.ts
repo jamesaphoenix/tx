@@ -6,7 +6,7 @@
 
 import { Effect } from "effect"
 import { readFileSync } from "node:fs"
-import { PinService } from "@jamesaphoenix/tx-core"
+import { PinService } from "@jamesaphoenix/tx"
 import { commandHelp } from "../help.js"
 import { CliExitError } from "../cli-exit.js"
 

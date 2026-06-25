@@ -9,7 +9,7 @@ import {
 import type {
   MemoryDocumentRow,
   MemoryDocumentRowWithBM25,
-} from "@jamesaphoenix/tx-types"
+} from "../../types/index.js"
 import type { MemoryDocumentRepositoryService } from "../memory-repo.js"
 import {
   chunkBySqlLimit,

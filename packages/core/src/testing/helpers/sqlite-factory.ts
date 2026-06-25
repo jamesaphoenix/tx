@@ -32,7 +32,7 @@ export const createSqliteDatabase = async (path = ":memory:") => {
  * @param path - Database file path, or ":memory:" (default)
  */
 export const createMigratedSqliteDatabase = async (path = ":memory:") => {
-  const { applyMigrations } = await import("@jamesaphoenix/tx-core")
+  const { applyMigrations } = await import("../../index.js")
   const db = await createSqliteDatabase(path)
   applyMigrations(db)
   return db

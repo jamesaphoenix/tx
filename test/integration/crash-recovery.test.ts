@@ -18,7 +18,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { Effect, Layer } from "effect"
-import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
+import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx/testing"
 import { seedFixtures, FIXTURES, fixtureId } from "../fixtures.js"
 import {
   SqliteClient,
@@ -39,7 +39,7 @@ import {
   AutoSyncServiceNoop,
   GuardRepositoryLive,
   PinRepositoryLive
-} from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
 import {
   crashAfter,
   CrashSimulationError,
@@ -48,8 +48,8 @@ import {
   doubleComplete,
   stressLoad,
   fixtureId as chaosFixtureId
-} from "@jamesaphoenix/tx-test-utils"
-import type { TaskId } from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx/testing"
+import type { TaskId } from "@jamesaphoenix/tx/types"
 
 // =============================================================================
 // TEST HELPERS

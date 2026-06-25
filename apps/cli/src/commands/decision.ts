@@ -4,14 +4,14 @@
  */
 
 import { Effect } from "effect"
-import { DecisionService } from "@jamesaphoenix/tx-core"
+import { DecisionService } from "@jamesaphoenix/tx"
 import {
   isValidDecisionStatus,
   isValidDecisionSource,
   DECISION_STATUSES,
   DECISION_SOURCES,
-} from "@jamesaphoenix/tx-types"
-import type { Decision } from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx/types"
+import type { Decision } from "@jamesaphoenix/tx/types"
 import { toJson } from "../output.js"
 import { type Flags, flag, opt, parseIntOpt } from "../utils/parse.js"
 import { CliExitError } from "../cli-exit.js"

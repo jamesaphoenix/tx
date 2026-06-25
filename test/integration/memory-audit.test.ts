@@ -22,15 +22,15 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { Effect, Schema } from "effect"
-import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
+import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx/testing"
 import {
   MemoryService,
   MemoryDocumentRepository,
   MemoryLinkRepository,
   MemoryPropertyRepository,
   MemoryRetrieverService,
-} from "@jamesaphoenix/tx-core"
-import { MemoryDocumentIdSchema } from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx"
+import { MemoryDocumentIdSchema } from "@jamesaphoenix/tx/types"
 import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, rmSync, unlinkSync, chmodSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -1664,7 +1664,7 @@ describe("Memory Audit P0 Tests", () => {
   // ===========================================================================
   describe("zero-magnitude embedding", () => {
     it("cosine similarity fails for zero vectors (excluded from ranking)", async () => {
-      const { cosineSimilarity } = await import("@jamesaphoenix/tx-core")
+      const { cosineSimilarity } = await import("@jamesaphoenix/tx")
 
       const query = new Float32Array([1, 0, 0])
       const zeroVec = new Float32Array([0, 0, 0])

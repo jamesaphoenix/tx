@@ -9,7 +9,7 @@
 import { HttpApiBuilder } from "@effect/platform"
 import { Effect } from "effect"
 
-import { SqliteClient } from "@jamesaphoenix/tx-core"
+import { SqliteClient } from "@jamesaphoenix/tx"
 import { TxApi, NotFound, mapCoreError } from "../api.js"
 
 // Raw row types from SQLite

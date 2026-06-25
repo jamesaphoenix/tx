@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
 import { Effect, Layer } from "effect"
-import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
+import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx/testing"
 import { fixtureId } from "../fixtures.js"
 import {
   SqliteClient,
   TracingService,
   TracingServiceLive,
   TracingServiceNoop
-} from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
 
 /**
  * Integration tests for TracingService - PRD-019 execution tracing.

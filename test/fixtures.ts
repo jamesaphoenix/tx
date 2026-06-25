@@ -7,12 +7,12 @@
 
 import { Database } from "bun:sqlite"
 import { Effect } from "effect"
-import type { TaskId } from "@jamesaphoenix/tx-types"
-import type { TestDatabase } from "@jamesaphoenix/tx-test-utils"
+import type { TaskId } from "@jamesaphoenix/tx/types"
+import type { TestDatabase } from "@jamesaphoenix/tx/testing"
 import {
   fixtureId as testUtilsFixtureId,
   createTestDatabase
-} from "@jamesaphoenix/tx-test-utils"
+} from "@jamesaphoenix/tx/testing"
 
 // Re-export fixtureId from @tx/test-utils
 export const fixtureId = (name: string): TaskId => {

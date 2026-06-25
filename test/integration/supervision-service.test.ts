@@ -24,7 +24,7 @@ import {
   TaskRepositoryLive,
   DependencyRepositoryLive,
   SqliteClient,
-} from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
 import {
   DomainEventRepositoryLive,
   SupervisionRepository,
@@ -33,8 +33,8 @@ import {
   DomainEventServiceLive,
   SupervisionService,
   SupervisionServiceLive,
-} from "@jamesaphoenix/tx-core"
-import type { ActorRef } from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx"
+import type { ActorRef } from "@jamesaphoenix/tx/types"
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based IDs)

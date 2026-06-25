@@ -40,7 +40,7 @@ import {
   DOC_CONTENT_SCHEMAS,
   EARS_PATTERNS,
   renderEarsRule,
-} from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
 import type {
   Doc,
   DocLink,
@@ -54,7 +54,7 @@ import type {
   DocGraphNode,
   DocGraphEdge,
   EarsPattern,
-} from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
 
 // Local string arrays for .includes() (avoids readonly cast)
 const docKindStrings: readonly string[] = DOC_KINDS

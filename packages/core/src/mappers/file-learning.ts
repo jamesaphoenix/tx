@@ -6,12 +6,12 @@ import type {
   FileLearning,
   FileLearningId,
   FileLearningRow
-} from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
 import { parseDate } from "./parse-date.js"
 import { coerceDbResult } from "../utils/db-result.js"
 
 // Re-export type from @tx/types for convenience
-export type { FileLearningRow } from "@jamesaphoenix/tx-types"
+export type { FileLearningRow } from "../types/index.js"
 
 /**
  * Convert a database row to a FileLearning domain object.

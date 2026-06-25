@@ -8,14 +8,14 @@ import type {
   EdgeType,
   NodeType,
   EdgeRow
-} from "@jamesaphoenix/tx-types"
-import { EDGE_TYPES, NODE_TYPES } from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
+import { EDGE_TYPES, NODE_TYPES } from "../types/index.js"
 import { InvalidStatusError } from "../errors.js"
 import { parseDate } from "./parse-date.js"
 import { coerceDbResult } from "../utils/db-result.js"
 
 // Re-export type from @tx/types for convenience
-export type { EdgeRow } from "@jamesaphoenix/tx-types"
+export type { EdgeRow } from "../types/index.js"
 
 /**
  * Schema for metadata - a record of string keys to unknown values.

@@ -14,9 +14,9 @@ import {
   parseMdDocSync,
   readTxConfig,
   validateEarsRequirements,
-} from "@jamesaphoenix/tx-core"
-import { DOC_KINDS } from "@jamesaphoenix/tx-types"
-import type { DocKind, DocLinkType, TaskDocLinkType } from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx"
+import { DOC_KINDS } from "@jamesaphoenix/tx/types"
+import type { DocKind, DocLinkType, TaskDocLinkType } from "@jamesaphoenix/tx/types"
 import { toJson } from "../output.js"
 import { type Flags, flag, opt } from "../utils/parse.js"
 import { CliExitError } from "../cli-exit.js"

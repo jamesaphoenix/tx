@@ -10,7 +10,7 @@ import {
   validateExpansions,
   MAX_EXPANSION_QUERIES,
   MAX_QUERY_LENGTH
-} from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
 
 describe("QueryExpansionService", () => {
   describe("QueryExpansionServiceNoop", () => {

@@ -12,8 +12,8 @@ import { Effect } from "effect"
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
-import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
-import { DocService, SpecTraceService, parseBatchRunInput } from "@jamesaphoenix/tx-core"
+import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx/testing"
+import { DocService, SpecTraceService, parseBatchRunInput } from "@jamesaphoenix/tx"
 import { registerSpecTraceTools } from "../../apps/cli/src/mcp/tools/spec-trace.js"
 
 type InvariantInput = {

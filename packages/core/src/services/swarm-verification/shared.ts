@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { ValidationError } from "../../errors.js"
-import type { AnchorStatus } from "@jamesaphoenix/tx-types"
+import type { AnchorStatus } from "../../types/index.js"
 import type { VerificationResult, VerifyOptions } from "../anchor-verification.js"
 
 /** Default batch size per agent (PRD-017: batches of 10) */

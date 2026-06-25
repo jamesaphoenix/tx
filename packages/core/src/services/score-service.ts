@@ -3,7 +3,7 @@ import { TaskRepository } from "../repo/task-repo.js"
 import { DependencyRepository } from "../repo/dep-repo.js"
 import { TaskNotFoundError, DatabaseError } from "../errors.js"
 import { HierarchyService } from "./hierarchy-service.js"
-import type { Task, TaskId } from "@jamesaphoenix/tx-types"
+import type { Task, TaskId } from "../types/index.js"
 
 /**
  * Score breakdown showing each adjustment factor (for CLI display)

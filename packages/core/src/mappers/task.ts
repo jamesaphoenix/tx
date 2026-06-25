@@ -10,8 +10,8 @@ import type {
   TaskRow,
   TaskDependency,
   DependencyRow
-} from "@jamesaphoenix/tx-types"
-import { assertTaskId, TASK_STATUSES } from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
+import { assertTaskId, TASK_STATUSES } from "../types/index.js"
 import { InvalidStatusError } from "../errors.js"
 import { parseDate } from "./parse-date.js"
 
@@ -66,9 +66,9 @@ const parseAssigneeType = (
 }
 
 // Re-export types and constants from @tx/types for convenience
-export type { TaskRow, DependencyRow } from "@jamesaphoenix/tx-types"
+export type { TaskRow, DependencyRow } from "../types/index.js"
 export { TASK_STATUSES }
-export { VALID_TRANSITIONS } from "@jamesaphoenix/tx-types"
+export { VALID_TRANSITIONS } from "../types/index.js"
 
 /**
  * Convert a database row to a Task domain object.

@@ -2,7 +2,7 @@ import {
   EARS_PATTERNS,
   MD_EARS_PRIORITIES,
   MD_EARS_REQUIREMENT_KINDS,
-} from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
 
 const LEGACY_EARS_ID_PATTERN = /^EARS-[A-Z0-9]+-\d{3}$/
 const MARKDOWN_EARS_ID_PATTERN = /^REQ-[A-Z0-9-]+$/

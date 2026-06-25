@@ -3,7 +3,7 @@
  */
 
 import { Effect } from "effect"
-import { SqliteClient } from "@jamesaphoenix/tx-core"
+import { SqliteClient } from "@jamesaphoenix/tx"
 import { toJson } from "../output.js"
 import { type Flags, flag } from "../utils/parse.js"
 

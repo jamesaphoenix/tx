@@ -3,7 +3,7 @@ import { SqliteClient } from "../db.js"
 import { DatabaseError, DependencyNotFoundError, UnexpectedRowCountError } from "../errors.js"
 import { rowToDependency } from "../mappers/task.js"
 import { DEFAULT_QUERY_LIMIT } from "../utils/sql.js"
-import type { TaskId, TaskDependency, DependencyRow } from "@jamesaphoenix/tx-types"
+import type { TaskId, TaskDependency, DependencyRow } from "../types/index.js"
 import { coerceDbResult } from "../utils/db-result.js"
 
 // Shared frozen empty array to avoid allocating new arrays for IDs with no dependencies

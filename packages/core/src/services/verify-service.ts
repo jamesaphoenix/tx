@@ -5,7 +5,7 @@ import { resolve as resolvePath, relative, isAbsolute } from "node:path"
 import { TaskRepository } from "../repo/task-repo.js"
 import { TaskNotFoundError, VerifyError, type DatabaseError } from "../errors.js"
 import { readTxConfig } from "../utils/toml-config.js"
-import type { TaskId } from "@jamesaphoenix/tx-types"
+import type { TaskId } from "../types/index.js"
 
 export type VerifyResult = {
   readonly taskId: string

@@ -21,7 +21,7 @@ import { join, resolve } from "node:path"
 import { Effect, ManagedRuntime, Layer } from "effect"
 import { Database } from "bun:sqlite"
 
-import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
+import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx/testing"
 import { seedFixtures, FIXTURES } from "../fixtures.js"
 import {
   SqliteClient,
@@ -49,9 +49,9 @@ import {
   ClaimRepositoryLive,
   ClaimServiceLive,
   OrchestratorStateRepositoryLive
-} from "@jamesaphoenix/tx-core"
-import type { TaskId, TaskWithDeps } from "@jamesaphoenix/tx-types"
-import { serializeTask } from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx"
+import type { TaskId, TaskWithDeps } from "@jamesaphoenix/tx/types"
+import { serializeTask } from "@jamesaphoenix/tx/types"
 import { TxClient } from "@jamesaphoenix/tx-agent-sdk"
 
 // =============================================================================

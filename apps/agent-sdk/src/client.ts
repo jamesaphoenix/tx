@@ -21,7 +21,7 @@
 
 import { existsSync, readFileSync } from "node:fs"
 import { dirname, resolve } from "node:path"
-import { serializeDecomposeResult } from "@jamesaphoenix/tx-types"
+import { serializeDecomposeResult } from "@jamesaphoenix/tx/types"
 import type {
   TxClientConfig,
   ListOptions,
@@ -1227,7 +1227,7 @@ class DirectTransport implements Transport {
   private async initRuntime(): Promise<{ runtime: any; core: any; Effect: any }> {
     try {
       // Dynamic import to make @tx/core optional
-      const core = await import("@jamesaphoenix/tx-core")
+      const core = await import("@jamesaphoenix/tx")
       const { Effect, ManagedRuntime } = await import("effect")
 
       const layer = core.makeAppLayer(this.dbPath)

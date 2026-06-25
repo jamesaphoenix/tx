@@ -2,7 +2,7 @@
  * Output formatters for JSON/text CLI output
  */
 
-import type { TaskWithDeps, LearningWithScore, ContextResult, TaskLinkedDocRef } from "@jamesaphoenix/tx-types"
+import type { TaskWithDeps, LearningWithScore, ContextResult, TaskLinkedDocRef } from "@jamesaphoenix/tx/types"
 
 // --- JSON serializer (handles Date objects) ---
 

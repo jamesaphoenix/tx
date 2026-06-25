@@ -11,13 +11,13 @@
 
 import { describe, it, expect, beforeEach } from "vitest"
 import { Effect, Layer } from "effect"
-import type { TaskId } from "@jamesaphoenix/tx-types"
+import type { TaskId } from "@jamesaphoenix/tx/types"
 import {
   createTestDatabase,
   fixtureId,
   chaos,
   type TestDatabase
-} from "@jamesaphoenix/tx-test-utils"
+} from "@jamesaphoenix/tx/testing"
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based IDs)
@@ -47,7 +47,7 @@ async function makeTestLayer() {
     TaskRepositoryLive,
     DependencyRepositoryLive,
     WorkerServiceLive
-  } = await import("@jamesaphoenix/tx-core")
+  } = await import("@jamesaphoenix/tx")
 
   const infra = SqliteClientLive(":memory:")
 
@@ -313,7 +313,7 @@ describe("Chaos: Orphan Claim Cleanup", () => {
 
 describe("Chaos: Worker Service Operations", () => {
   it("releaseByWorker cleans up all claims for a dead worker", async () => {
-    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -476,7 +476,7 @@ describe("Chaos: Multiple Worker Heartbeat Scenarios", () => {
 
 describe("Chaos: Lease Renewal Failure", () => {
   it("renew fails when claim has been released (simulating lease expiry)", async () => {
-    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -543,7 +543,7 @@ describe("Chaos: Lease Renewal Failure", () => {
   })
 
   it("renew fails when another worker has claimed the task", async () => {
-    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(

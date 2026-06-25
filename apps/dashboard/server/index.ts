@@ -6,8 +6,8 @@ import { resolve, dirname } from "node:path"
 import { homedir } from "node:os"
 import { fileURLToPath } from "node:url"
 import { spawn, execSync, type ChildProcess } from "node:child_process"
-import { TASK_STATUSES, type TaskRow, type DependencyRow } from "@jamesaphoenix/tx-types"
-import type { ActorRef } from "@jamesaphoenix/tx-types"
+import { TASK_STATUSES, type TaskRow, type DependencyRow } from "@jamesaphoenix/tx/types"
+import type { ActorRef } from "@jamesaphoenix/tx/types"
 import { parse as parseYaml } from "yaml"
 import { Effect } from "effect"
 import {
@@ -24,7 +24,7 @@ import {
   renderDocToMarkdown,
   resolvePathWithin,
   SupervisionService,
-} from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const fallbackRoot = resolve(__dirname, "../../..")

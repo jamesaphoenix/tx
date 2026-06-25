@@ -4,10 +4,10 @@ import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from "no
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { Effect } from "effect"
-import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
-import { DocService } from "@jamesaphoenix/tx-core"
+import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx/testing"
+import { DocService } from "@jamesaphoenix/tx"
 import { fixtureId } from "../fixtures.js"
-import type { DocKind } from "@jamesaphoenix/tx-types"
+import type { DocKind } from "@jamesaphoenix/tx/types"
 
 const CLI_SRC = resolve(__dirname, "../../apps/cli/src/cli.ts")
 const BUN_BIN = process.execPath.includes("bun") ? process.execPath : "bun"

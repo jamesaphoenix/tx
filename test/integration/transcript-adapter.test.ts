@@ -6,7 +6,7 @@ import {
   getAdapter,
   registerAdapter,
   type TranscriptAdapter
-} from "@jamesaphoenix/tx-core/services"
+} from "@jamesaphoenix/tx/services"
 
 /**
  * Sample Claude Code stream-json transcript lines.

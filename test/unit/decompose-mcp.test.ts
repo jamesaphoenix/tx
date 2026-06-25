@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { Effect } from "effect"
-import type { DecomposeResult, TaskWithDeps } from "@jamesaphoenix/tx-types"
+import type { DecomposeResult, TaskWithDeps } from "@jamesaphoenix/tx/types"
 import { handleDecompose } from "../../apps/cli/src/mcp/tools/decompose.js"
 import type { McpServices } from "../../apps/cli/src/mcp/runtime.js"
 

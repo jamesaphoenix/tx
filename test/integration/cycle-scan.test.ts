@@ -20,10 +20,10 @@ import {
   AgentService,
   CycleScanService,
   CycleScanServiceLive,
-} from "@jamesaphoenix/tx-core"
-import type { AgentRunConfig, AgentRunResult, AgentMessageCallback } from "@jamesaphoenix/tx-core"
-import { LOSS_WEIGHTS } from "@jamesaphoenix/tx-types"
-import type { Finding, CycleProgressEvent } from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx"
+import type { AgentRunConfig, AgentRunResult, AgentMessageCallback } from "@jamesaphoenix/tx"
+import { LOSS_WEIGHTS } from "@jamesaphoenix/tx/types"
+import type { Finding, CycleProgressEvent } from "@jamesaphoenix/tx/types"
 
 // =============================================================================
 // Mock AgentService

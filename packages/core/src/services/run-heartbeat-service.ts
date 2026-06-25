@@ -7,7 +7,7 @@
 
 import { execFileSync } from "node:child_process"
 import { Context, Duration, Effect, Layer } from "effect"
-import type { Run, RunId, TaskId } from "@jamesaphoenix/tx-types"
+import type { Run, RunId, TaskId } from "../types/index.js"
 import { SqliteClient } from "../db.js"
 import { DatabaseError, RunNotFoundError, ValidationError } from "../errors.js"
 import { RunRepository } from "../repo/run-repo.js"

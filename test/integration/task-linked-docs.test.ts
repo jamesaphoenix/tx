@@ -1,8 +1,8 @@
 import { describe, it, expect, afterEach } from "vitest"
 import { Effect } from "effect"
 import { Database } from "bun:sqlite"
-import { getSharedTestLayer } from "@jamesaphoenix/tx-test-utils"
-import { TaskService, ReadyService } from "@jamesaphoenix/tx-core"
+import { getSharedTestLayer } from "@jamesaphoenix/tx/testing"
+import { TaskService, ReadyService } from "@jamesaphoenix/tx"
 import { FIXTURES, seedFixtures } from "../fixtures.js"
 
 type LinkedDocFixture = {

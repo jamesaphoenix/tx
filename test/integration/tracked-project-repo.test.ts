@@ -19,11 +19,11 @@
 import { describe, it, expect, beforeAll, afterEach, afterAll } from "vitest"
 import { Effect } from "effect"
 import { createHash } from "node:crypto"
-import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
+import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx/testing"
 
 // Import repository and types
-import { TrackedProjectRepository } from "@jamesaphoenix/tx-core"
-import type { CreateTrackedProjectInput, SourceType } from "@jamesaphoenix/tx-types"
+import { TrackedProjectRepository } from "@jamesaphoenix/tx"
+import type { CreateTrackedProjectInput, SourceType } from "@jamesaphoenix/tx/types"
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based IDs)

@@ -11,7 +11,7 @@ import { generateTaskId, isUniqueConstraintError } from "../id.js"
 import { isValidTransition, isValidStatus } from "../mappers/task.js"
 import { readTxConfig } from "../utils/toml-config.js"
 import { CASCADE_MAX_DEPTH, autoCompleteParent, checkGuards, enrichWithDeps, enrichWithDepsBatch, listGateTaskLinks } from "./task-service/internals.js"
-import type { Task, TaskId, TaskStatus, TaskWithDeps, TaskFilter, CreateTaskInput, UpdateTaskInput, TaskAssigneeType } from "@jamesaphoenix/tx-types"
+import type { Task, TaskId, TaskStatus, TaskWithDeps, TaskFilter, CreateTaskInput, UpdateTaskInput, TaskAssigneeType } from "../types/index.js"
 
 export class TaskService extends Context.Tag("TaskService")<
   TaskService,

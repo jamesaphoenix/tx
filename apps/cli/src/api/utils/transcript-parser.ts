@@ -9,7 +9,7 @@ import { Effect } from "effect"
 import { readFile, readdir, stat } from "node:fs/promises"
 import { existsSync } from "node:fs"
 import { basename, dirname, join, resolve } from "node:path"
-import { isPathWithin, normalizePathSeparators } from "@jamesaphoenix/tx-core"
+import { isPathWithin, normalizePathSeparators } from "@jamesaphoenix/tx"
 
 // Types for Claude transcript entries
 interface TranscriptUserMessage {

@@ -8,8 +8,8 @@ import { AttemptRepository } from "../../repo/attempt-repo.js"
 import { DocRepository } from "../../repo/doc-repo.js"
 import { GuardExceededError, DatabaseError, StaleDataError, TaskNotFoundError } from "../../errors.js"
 import { readTxConfig } from "../../utils/toml-config.js"
-import { isValidTaskId } from "@jamesaphoenix/tx-types"
-import type { Task, TaskId, TaskWithDeps, OrchestrationStatus, TaskLinkedDocRef } from "@jamesaphoenix/tx-types"
+import { isValidTaskId } from "../../types/index.js"
+import type { Task, TaskId, TaskWithDeps, OrchestrationStatus, TaskLinkedDocRef } from "../../types/index.js"
 
 type EffectiveGuardLimits = {
   readonly maxPending: number | null

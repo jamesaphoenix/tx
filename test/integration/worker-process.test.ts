@@ -17,7 +17,7 @@ import {
   createSharedTestLayer,
   type SharedTestLayerResult,
   fixtureId
-} from "@jamesaphoenix/tx-test-utils"
+} from "@jamesaphoenix/tx/testing"
 import {
   WorkerService,
   ClaimService,
@@ -25,7 +25,7 @@ import {
   TaskService,
   AttemptService,
   OrchestratorStateRepository
-} from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
 
 describe("WorkerProcess Integration Tests", () => {
   let shared: SharedTestLayerResult

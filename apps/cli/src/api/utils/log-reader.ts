@@ -9,7 +9,7 @@ import { Effect } from "effect"
 import { readFile } from "node:fs/promises"
 import { existsSync } from "node:fs"
 import { resolve } from "node:path"
-import { isPathWithin, resolvePathForComparison } from "@jamesaphoenix/tx-core"
+import { isPathWithin, resolvePathForComparison } from "@jamesaphoenix/tx"
 
 /**
  * Check if a resolved path is under the project's .tx/runs/ directory.

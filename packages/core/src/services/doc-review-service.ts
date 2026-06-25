@@ -29,7 +29,7 @@ import type {
   ReviewTriggerCause,
   ReviewRunResult,
   ReviewFailureResult,
-} from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
 
 // =============================================================================
 // TYPES

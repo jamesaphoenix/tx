@@ -7,13 +7,13 @@
 import type {
   Message,
   MessageRow,
-} from "@jamesaphoenix/tx-types"
-import { MESSAGE_STATUSES, isValidMessageStatus } from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
+import { MESSAGE_STATUSES, isValidMessageStatus } from "../types/index.js"
 import { InvalidStatusError } from "../errors.js"
 import { parseDate } from "./parse-date.js"
 
 // Re-export types and constants from @tx/types for convenience
-export type { MessageRow } from "@jamesaphoenix/tx-types"
+export type { MessageRow } from "../types/index.js"
 export { MESSAGE_STATUSES, isValidMessageStatus }
 
 /**

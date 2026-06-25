@@ -16,7 +16,7 @@ import {
   type MdFrontmatter,
   type MdParsedDoc,
   type MdSection,
-} from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
 import { formatEarsValidationErrors, validateEarsRequirements } from "./ears-validator.js"
 
 const EMBEDDED_BLOCK_SCHEMAS = {

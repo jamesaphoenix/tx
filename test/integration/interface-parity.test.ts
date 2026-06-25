@@ -20,7 +20,7 @@ import { Effect, ManagedRuntime, Layer } from "effect"
 import { Database } from "bun:sqlite"
 import { Hono } from "hono"
 
-import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
+import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx/testing"
 import { seedFixtures, FIXTURES } from "../fixtures.js"
 import {
   SqliteClient,
@@ -50,8 +50,8 @@ import {
   ClaimService,
   OrchestratorStateRepositoryLive,
   deriveDocStableId
-} from "@jamesaphoenix/tx-core"
-import type { TaskId, TaskWithDeps } from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx"
+import type { TaskId, TaskWithDeps } from "@jamesaphoenix/tx/types"
 
 // =============================================================================
 // Constants

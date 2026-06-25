@@ -12,7 +12,7 @@
 import { describe, it, expect } from "vitest"
 import { Effect, Layer } from "effect"
 import { createHash } from "node:crypto"
-import type { TaskId } from "@jamesaphoenix/tx-types"
+import type { TaskId } from "@jamesaphoenix/tx/types"
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based IDs)
@@ -57,7 +57,7 @@ async function makeTestLayer() {
     ClaimServiceLive,
     ReadyServiceLive,
     OrchestratorServiceLive
-  } = await import("@jamesaphoenix/tx-core")
+  } = await import("@jamesaphoenix/tx")
 
   const infra = SqliteClientLive(":memory:")
 
@@ -92,7 +92,7 @@ async function makeTestLayer() {
 
 describe("OrchestratorService.start", () => {
   it("starts orchestrator from stopped state", async () => {
-    const { OrchestratorService } = await import("@jamesaphoenix/tx-core")
+    const { OrchestratorService } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -110,7 +110,7 @@ describe("OrchestratorService.start", () => {
   })
 
   it("applies custom configuration", async () => {
-    const { OrchestratorService } = await import("@jamesaphoenix/tx-core")
+    const { OrchestratorService } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -131,7 +131,7 @@ describe("OrchestratorService.start", () => {
   })
 
   it("fails when already running", async () => {
-    const { OrchestratorService } = await import("@jamesaphoenix/tx-core")
+    const { OrchestratorService } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const error = await Effect.runPromise(
@@ -155,7 +155,7 @@ describe("OrchestratorService.start", () => {
 
 describe("OrchestratorService.stop", () => {
   it("stops running orchestrator", async () => {
-    const { OrchestratorService } = await import("@jamesaphoenix/tx-core")
+    const { OrchestratorService } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -172,7 +172,7 @@ describe("OrchestratorService.stop", () => {
   })
 
   it("fails when not running", async () => {
-    const { OrchestratorService } = await import("@jamesaphoenix/tx-core")
+    const { OrchestratorService } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const error = await Effect.runPromise(
@@ -189,7 +189,7 @@ describe("OrchestratorService.stop", () => {
   })
 
   it("marks workers as dead on non-graceful stop", async () => {
-    const { OrchestratorService, WorkerService, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { OrchestratorService, WorkerService, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const worker = await Effect.runPromise(
@@ -227,7 +227,7 @@ describe("OrchestratorService.stop", () => {
 
 describe("OrchestratorService.status", () => {
   it("returns current state", async () => {
-    const { OrchestratorService } = await import("@jamesaphoenix/tx-core")
+    const { OrchestratorService } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -251,7 +251,7 @@ describe("OrchestratorService.status", () => {
 
 describe("OrchestratorService.reconcile", () => {
   it("returns zero counts when nothing to reconcile", async () => {
-    const { OrchestratorService } = await import("@jamesaphoenix/tx-core")
+    const { OrchestratorService } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -270,7 +270,7 @@ describe("OrchestratorService.reconcile", () => {
   })
 
   it("detects dead workers", async () => {
-    const { OrchestratorService, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { OrchestratorService, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -313,7 +313,7 @@ describe("OrchestratorService.reconcile", () => {
   })
 
   it("expires stale claims and returns tasks to ready", async () => {
-    const { OrchestratorService, ClaimRepository, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { OrchestratorService, ClaimRepository, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -384,7 +384,7 @@ describe("OrchestratorService.reconcile", () => {
   })
 
   it("recovers orphaned tasks (active but no claim)", async () => {
-    const { OrchestratorService, TaskRepository } = await import("@jamesaphoenix/tx-core")
+    const { OrchestratorService, TaskRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -428,7 +428,7 @@ describe("OrchestratorService.reconcile", () => {
   })
 
   it("releases orphaned claims (active claims on non-active tasks)", async () => {
-    const { OrchestratorService, ClaimRepository, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { OrchestratorService, ClaimRepository, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -504,7 +504,7 @@ describe("OrchestratorService.reconcile", () => {
   })
 
   it("releases orphaned claims on ready tasks", async () => {
-    const { OrchestratorService, ClaimRepository, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { OrchestratorService, ClaimRepository, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -574,7 +574,7 @@ describe("OrchestratorService.reconcile", () => {
   })
 
   it("fixes busy workers with no currentTaskId", async () => {
-    const { OrchestratorService, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { OrchestratorService, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -616,7 +616,7 @@ describe("OrchestratorService.reconcile", () => {
   })
 
   it("updates lastReconcileAt timestamp", async () => {
-    const { OrchestratorService, OrchestratorStateRepository } = await import("@jamesaphoenix/tx-core")
+    const { OrchestratorService, OrchestratorStateRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const before = new Date()
@@ -636,7 +636,7 @@ describe("OrchestratorService.reconcile", () => {
   })
 
   it("sets orphaned task with incomplete blockers to blocked status", async () => {
-    const { OrchestratorService, TaskRepository, DependencyRepository } = await import("@jamesaphoenix/tx-core")
+    const { OrchestratorService, TaskRepository, DependencyRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -702,7 +702,7 @@ describe("OrchestratorService.reconcile", () => {
   })
 
   it("sets orphaned task with completed blockers to ready status", async () => {
-    const { OrchestratorService, TaskRepository, DependencyRepository } = await import("@jamesaphoenix/tx-core")
+    const { OrchestratorService, TaskRepository, DependencyRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -768,7 +768,7 @@ describe("OrchestratorService.reconcile", () => {
   })
 
   it("sets expired claim task with incomplete blockers to blocked status", async () => {
-    const { OrchestratorService, ClaimRepository, TaskRepository, WorkerRepository, DependencyRepository } = await import("@jamesaphoenix/tx-core")
+    const { OrchestratorService, ClaimRepository, TaskRepository, WorkerRepository, DependencyRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -867,7 +867,7 @@ describe("OrchestratorService.reconcile", () => {
 
 describe("OrchestratorService full lifecycle", () => {
   it("start -> reconcile -> stop works correctly", async () => {
-    const { OrchestratorService } = await import("@jamesaphoenix/tx-core")
+    const { OrchestratorService } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(

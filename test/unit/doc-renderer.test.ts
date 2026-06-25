@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { renderDocToMarkdown } from "@jamesaphoenix/tx-core"
+import { renderDocToMarkdown } from "@jamesaphoenix/tx"
 
 describe("Doc renderer structured section normalization", () => {
   it("renders failure_modes scenario entries and string edge_cases without undefined", () => {

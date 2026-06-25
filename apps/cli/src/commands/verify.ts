@@ -5,7 +5,7 @@
  */
 
 import { Effect } from "effect"
-import { VerifyService } from "@jamesaphoenix/tx-core"
+import { VerifyService } from "@jamesaphoenix/tx"
 import { toJson } from "../output.js"
 import { type Flags, flag, opt, parseIntOpt, parseTaskId } from "../utils/parse.js"
 import { CliExitError } from "../cli-exit.js"

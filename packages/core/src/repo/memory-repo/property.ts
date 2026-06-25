@@ -2,7 +2,7 @@ import { Effect } from "effect"
 import type { SqliteDatabase } from "../../db.js"
 import { DatabaseError } from "../../errors.js"
 import { rowToMemoryProperty } from "../../mappers/memory.js"
-import type { MemoryPropertyRow } from "@jamesaphoenix/tx-types"
+import type { MemoryPropertyRow } from "../../types/index.js"
 import type { MemoryPropertyRepositoryService } from "../memory-repo.js"
 import { runImmediateTransaction } from "./shared.js"
 

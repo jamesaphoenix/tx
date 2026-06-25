@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { Effect, Layer } from "effect"
-import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
+import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx/testing"
 import { seedFixtures } from "../fixtures.js"
 import {
   SqliteClient,
@@ -18,8 +18,8 @@ import {
   ClaimRepositoryLive,
   ClaimServiceLive,
   OrchestratorStateRepositoryLive
-} from "@jamesaphoenix/tx-core"
-import type { TaskStatus } from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx"
+import type { TaskStatus } from "@jamesaphoenix/tx/types"
 
 function makeTestLayer(db: TestDatabase) {
   const infra = Layer.succeed(SqliteClient, db.db as any)

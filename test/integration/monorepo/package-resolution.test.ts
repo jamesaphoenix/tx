@@ -16,7 +16,7 @@
 
 import { describe, it, expect, beforeAll, afterEach, afterAll } from "vitest"
 import { Effect, Layer } from "effect"
-import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
+import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx/testing"
 
 // Import core services at module level
 import {
@@ -45,12 +45,12 @@ import {
   rowToAttempt,
   isValidStatus,
   makeAppLayer
-} from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
 
 describe("Package Resolution: @tx/types", () => {
   it("exports TaskStatus type constants", async () => {
     // Dynamic import to verify the package is resolvable
-    const types = await import("@jamesaphoenix/tx-types")
+    const types = await import("@jamesaphoenix/tx/types")
 
     expect(types.TASK_STATUSES).toBeDefined()
     expect(types.TASK_STATUSES).toContain("backlog")
@@ -58,7 +58,7 @@ describe("Package Resolution: @tx/types", () => {
   })
 
   it("exports VALID_TRANSITIONS for status state machine", async () => {
-    const types = await import("@jamesaphoenix/tx-types")
+    const types = await import("@jamesaphoenix/tx/types")
 
     expect(types.VALID_TRANSITIONS).toBeDefined()
     expect(types.VALID_TRANSITIONS.backlog).toContain("ready")
@@ -67,7 +67,7 @@ describe("Package Resolution: @tx/types", () => {
   })
 
   it("exports Learning-related types", async () => {
-    const types = await import("@jamesaphoenix/tx-types")
+    const types = await import("@jamesaphoenix/tx/types")
 
     expect(types.LEARNING_SOURCE_TYPES).toBeDefined()
     expect(types.LEARNING_SOURCE_TYPES).toContain("manual")
@@ -75,7 +75,7 @@ describe("Package Resolution: @tx/types", () => {
   })
 
   it("exports Attempt and Run types", async () => {
-    const types = await import("@jamesaphoenix/tx-types")
+    const types = await import("@jamesaphoenix/tx/types")
 
     expect(types.ATTEMPT_OUTCOMES).toBeDefined()
     expect(types.RUN_STATUSES).toBeDefined()
@@ -192,8 +192,8 @@ describe("Package Resolution: @jamesaphoenix/tx-cli", () => {
       )
     )
 
-    expect(cliPackageJson.dependencies["@jamesaphoenix/tx-core"]).toBe("*")
-    expect(cliPackageJson.dependencies["@jamesaphoenix/tx-types"]).toBe("*")
+    expect(cliPackageJson.dependencies["@jamesaphoenix/tx"]).toBe("*")
+    expect(cliPackageJson.dependencies["@jamesaphoenix/tx"]).toBe("*")
     expect(cliPackageJson.name).toBe("@jamesaphoenix/tx-cli")
   })
 })
@@ -242,8 +242,8 @@ describe("Package Resolution: @jamesaphoenix/tx-cli/mcp", () => {
     )
 
     // The MCP server is now bundled into tx-cli (bin: tx-mcp, export: ./mcp)
-    expect(cliPackageJson.dependencies["@jamesaphoenix/tx-core"]).toBe("*")
-    expect(cliPackageJson.dependencies["@jamesaphoenix/tx-types"]).toBe("*")
+    expect(cliPackageJson.dependencies["@jamesaphoenix/tx"]).toBe("*")
+    expect(cliPackageJson.dependencies["@jamesaphoenix/tx"]).toBe("*")
     expect(cliPackageJson.dependencies["@modelcontextprotocol/sdk"]).toBeDefined()
     expect(cliPackageJson.exports["./mcp"]).toBeDefined()
     expect(cliPackageJson.bin["tx-mcp"]).toBe("./dist/mcp/server.js")
@@ -303,8 +303,8 @@ describe("Package Resolution: @jamesaphoenix/tx-cli/api", () => {
     )
 
     // The API server is now bundled into tx-cli (bin: tx-api, export: ./api)
-    expect(cliPackageJson.dependencies["@jamesaphoenix/tx-core"]).toBe("*")
-    expect(cliPackageJson.dependencies["@jamesaphoenix/tx-types"]).toBe("*")
+    expect(cliPackageJson.dependencies["@jamesaphoenix/tx"]).toBe("*")
+    expect(cliPackageJson.dependencies["@jamesaphoenix/tx"]).toBe("*")
     expect(cliPackageJson.dependencies["@effect/platform"]).toBeDefined()
     expect(cliPackageJson.exports["./api"]).toBeDefined()
     expect(cliPackageJson.bin["tx-api"]).toBe("./dist/api/server.js")
@@ -365,14 +365,14 @@ describe("Package Resolution: @jamesaphoenix/tx-agent-sdk", () => {
       )
     )
 
-    expect(sdkPackageJson.dependencies["@jamesaphoenix/tx-types"]).toBe("*")
+    expect(sdkPackageJson.dependencies["@jamesaphoenix/tx"]).toBe("*")
     expect(sdkPackageJson.name).toBe("@jamesaphoenix/tx-agent-sdk")
   })
 })
 
 describe("Cross-Package Type Consistency", () => {
   it("TaskStatus is consistent across packages", async () => {
-    const types = await import("@jamesaphoenix/tx-types")
+    const types = await import("@jamesaphoenix/tx/types")
     const sdk = await import("@jamesaphoenix/tx-agent-sdk")
 
     // Both should have the same task statuses
@@ -380,14 +380,14 @@ describe("Cross-Package Type Consistency", () => {
   })
 
   it("VALID_TRANSITIONS is consistent across packages", async () => {
-    const types = await import("@jamesaphoenix/tx-types")
+    const types = await import("@jamesaphoenix/tx/types")
     const sdk = await import("@jamesaphoenix/tx-agent-sdk")
 
     expect(types.VALID_TRANSITIONS).toEqual(sdk.VALID_TRANSITIONS)
   })
 
   it("LEARNING_SOURCE_TYPES is consistent across packages", async () => {
-    const types = await import("@jamesaphoenix/tx-types")
+    const types = await import("@jamesaphoenix/tx/types")
     const sdk = await import("@jamesaphoenix/tx-agent-sdk")
 
     expect(types.LEARNING_SOURCE_TYPES).toEqual(sdk.LEARNING_SOURCE_TYPES)

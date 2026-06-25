@@ -13,7 +13,7 @@ import {
   MessageAlreadyAckedError,
   ValidationError
 } from "../errors.js"
-import type { Message, SendMessageInput, InboxFilter } from "@jamesaphoenix/tx-types"
+import type { Message, SendMessageInput, InboxFilter } from "../types/index.js"
 
 export class MessageService extends Context.Tag("MessageService")<
   MessageService,

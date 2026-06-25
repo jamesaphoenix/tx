@@ -7,23 +7,23 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { Effect } from "effect"
 import { registerEffectTool, z } from "./effect-schema-tool.js"
-import type { LearningSourceType } from "@jamesaphoenix/tx-types"
+import type { LearningSourceType } from "@jamesaphoenix/tx/types"
 import {
   LEARNING_SOURCE_TYPES,
   assertTaskId,
   serializeLearning,
   serializeLearningWithScore,
   serializeFileLearning,
-} from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx/types"
 
 // Re-export canonical serializers for library consumers
-export { serializeLearning, serializeLearningWithScore, serializeFileLearning } from "@jamesaphoenix/tx-types"
-import { LearningService, FileLearningService } from "@jamesaphoenix/tx-core"
+export { serializeLearning, serializeLearningWithScore, serializeFileLearning } from "@jamesaphoenix/tx/types"
+import { LearningService, FileLearningService } from "@jamesaphoenix/tx"
 import { runEffect } from "../runtime.js"
 import { handleToolError, type McpToolResult } from "../response.js"
 import { normalizeLimit, MCP_MAX_LIMIT } from "./index.js"
 
-// Serialization: uses canonical serializers from @jamesaphoenix/tx-types
+// Serialization: uses canonical serializers from @jamesaphoenix/tx/types
 // (serializeLearning, serializeLearningWithScore, serializeFileLearning)
 
 // -----------------------------------------------------------------------------

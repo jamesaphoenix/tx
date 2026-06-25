@@ -1,12 +1,12 @@
 import { Effect } from "effect"
 import {
   DecomposeService,
-} from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
 import {
   AGENT_RUNTIMES,
   serializeDecomposeResult,
-} from "@jamesaphoenix/tx-types"
-import type { AgentRuntime } from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx/types"
+import type { AgentRuntime } from "@jamesaphoenix/tx/types"
 import { CliExitError } from "../cli-exit.js"
 import { toJson } from "../output.js"
 import { type Flags, flag, opt, parseIntOpt, parseTaskId } from "../utils/parse.js"

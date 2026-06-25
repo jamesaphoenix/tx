@@ -14,7 +14,7 @@
 import { describe, it, expect } from "vitest"
 import { Effect, Layer } from "effect"
 import { createHash } from "node:crypto"
-import type { TaskId } from "@jamesaphoenix/tx-types"
+import type { TaskId } from "@jamesaphoenix/tx/types"
 
 // =============================================================================
 // Test Fixtures (SHA256-based IDs)
@@ -60,7 +60,7 @@ async function makeTestLayer() {
     ClaimServiceLive,
     TaskRepositoryLive,
     DependencyRepositoryLive
-  } = await import("@jamesaphoenix/tx-core")
+  } = await import("@jamesaphoenix/tx")
 
   const infra = SqliteClientLive(":memory:")
 
@@ -121,7 +121,7 @@ function createWorkerData(id: string, name: string = "test-worker") {
 
 describe("Golden Path: Basic Claim Lifecycle", () => {
   it("claim → work → release lifecycle", async () => {
-    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -162,7 +162,7 @@ describe("Golden Path: Basic Claim Lifecycle", () => {
   })
 
   it("claim → renew → release with multiple renewals", async () => {
-    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -206,7 +206,7 @@ describe("Golden Path: Basic Claim Lifecycle", () => {
 
 describe("Golden Path: Parallel Claims", () => {
   it("multiple workers can claim different tasks simultaneously", async () => {
-    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -253,7 +253,7 @@ describe("Golden Path: Parallel Claims", () => {
   })
 
   it("rejects claim when task already claimed by another worker", async () => {
-    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -285,7 +285,7 @@ describe("Golden Path: Parallel Claims", () => {
   })
 
   it("released task can be reclaimed by different worker", async () => {
-    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -323,7 +323,7 @@ describe("Golden Path: Parallel Claims", () => {
 
 describe("Golden Path: Crash Recovery", () => {
   it("expired claims can be detected and cleaned up", async () => {
-    const { ClaimService, ClaimRepository, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { ClaimService, ClaimRepository, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -371,7 +371,7 @@ describe("Golden Path: Crash Recovery", () => {
   })
 
   it("releaseByWorker cleans up all claims for crashed worker", async () => {
-    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -419,7 +419,7 @@ describe("Golden Path: Crash Recovery", () => {
 
 describe("Golden Path: Claim Constraints", () => {
   it("renew fails when lease expired", async () => {
-    const { ClaimService, ClaimRepository, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { ClaimService, ClaimRepository, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -453,7 +453,7 @@ describe("Golden Path: Claim Constraints", () => {
   })
 
   it("renew fails when max renewals exceeded", async () => {
-    const { ClaimService, ClaimRepository, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { ClaimService, ClaimRepository, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -487,7 +487,7 @@ describe("Golden Path: Claim Constraints", () => {
   })
 
   it("release fails when worker does not own claim", async () => {
-    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(

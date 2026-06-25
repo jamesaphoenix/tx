@@ -7,9 +7,9 @@
 
 import { describe, it, expect } from "vitest"
 import { Effect } from "effect"
-import { getSharedTestLayer } from "@jamesaphoenix/tx-test-utils"
+import { getSharedTestLayer } from "@jamesaphoenix/tx/testing"
 import { createHash } from "node:crypto"
-import type { TaskId } from "@jamesaphoenix/tx-types"
+import type { TaskId } from "@jamesaphoenix/tx/types"
 
 const fixtureId = (name: string): string => {
   const hash = createHash("sha256")
@@ -34,7 +34,7 @@ const fixtureWorkerId = (name: string): string => {
 describe("ProcessRegistryService", () => {
   it("registers a process and returns it", async () => {
     const { layer } = await getSharedTestLayer()
-    const { ProcessRegistryService } = await import("@jamesaphoenix/tx-core")
+    const { ProcessRegistryService } = await import("@jamesaphoenix/tx")
 
     const result = await Effect.runPromise(
       Effect.gen(function* () {
@@ -59,7 +59,7 @@ describe("ProcessRegistryService", () => {
 
   it("registers a worker process with parent PID", async () => {
     const { layer } = await getSharedTestLayer()
-    const { ProcessRegistryService, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { ProcessRegistryService, WorkerRepository } = await import("@jamesaphoenix/tx")
 
     const workerId = fixtureWorkerId("worker-parent")
 
@@ -101,7 +101,7 @@ describe("ProcessRegistryService", () => {
 
   it("heartbeat updates last_heartbeat_at", async () => {
     const { layer } = await getSharedTestLayer()
-    const { ProcessRegistryService } = await import("@jamesaphoenix/tx-core")
+    const { ProcessRegistryService } = await import("@jamesaphoenix/tx")
 
     const result = await Effect.runPromise(
       Effect.gen(function* () {
@@ -126,7 +126,7 @@ describe("ProcessRegistryService", () => {
 
   it("deregister sets ended_at", async () => {
     const { layer } = await getSharedTestLayer()
-    const { ProcessRegistryService } = await import("@jamesaphoenix/tx-core")
+    const { ProcessRegistryService } = await import("@jamesaphoenix/tx")
 
     const result = await Effect.runPromise(
       Effect.gen(function* () {
@@ -152,7 +152,7 @@ describe("ProcessRegistryService", () => {
 
   it("findAlive returns only active processes", async () => {
     const { layer } = await getSharedTestLayer()
-    const { ProcessRegistryService } = await import("@jamesaphoenix/tx-core")
+    const { ProcessRegistryService } = await import("@jamesaphoenix/tx")
 
     const result = await Effect.runPromise(
       Effect.gen(function* () {
@@ -188,8 +188,8 @@ describe("ProcessRegistryService", () => {
 
   it("findOrphans detects processes with stale heartbeats", async () => {
     const { layer } = await getSharedTestLayer()
-    const { ProcessRegistryRepository } = await import("@jamesaphoenix/tx-core")
-    const { SqliteClient } = await import("@jamesaphoenix/tx-core")
+    const { ProcessRegistryRepository } = await import("@jamesaphoenix/tx")
+    const { SqliteClient } = await import("@jamesaphoenix/tx")
 
     const result = await Effect.runPromise(
       Effect.gen(function* () {
@@ -226,7 +226,7 @@ describe("ProcessRegistryService", () => {
 describe("ReadyService.readyAndClaim", () => {
   it("returns null when no tasks are ready", async () => {
     const { layer } = await getSharedTestLayer()
-    const { ReadyService } = await import("@jamesaphoenix/tx-core")
+    const { ReadyService } = await import("@jamesaphoenix/tx")
 
     const result = await Effect.runPromise(
       Effect.gen(function* () {
@@ -244,7 +244,7 @@ describe("ReadyService.readyAndClaim", () => {
       ReadyService,
       TaskRepository,
       WorkerRepository,
-    } = await import("@jamesaphoenix/tx-core")
+    } = await import("@jamesaphoenix/tx")
 
     const taskId = fixtureId("ready-claim-1")
     const workerId = fixtureWorkerId("ready-claim-worker")
@@ -304,7 +304,7 @@ describe("ReadyService.readyAndClaim", () => {
       TaskRepository,
       WorkerRepository,
       ClaimService,
-    } = await import("@jamesaphoenix/tx-core")
+    } = await import("@jamesaphoenix/tx")
 
     const task1 = fixtureId("skip-claimed-1")
     const task2 = fixtureId("skip-claimed-2")
@@ -374,7 +374,7 @@ describe("ReadyService.readyAndClaim", () => {
       TaskRepository,
       WorkerRepository,
       ClaimService,
-    } = await import("@jamesaphoenix/tx-core")
+    } = await import("@jamesaphoenix/tx")
 
     const taskId = fixtureId("all-claimed")
     const worker1 = fixtureWorkerId("all-claimed-w1")

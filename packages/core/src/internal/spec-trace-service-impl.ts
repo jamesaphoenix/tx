@@ -17,7 +17,7 @@ import type {
   TraceabilityMatrix,
   TraceabilityMatrixEntry,
   TraceabilityMatrixTest,
-} from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
 
 export type BatchSource = "generic" | "vitest" | "pytest" | "go" | "junit"
 

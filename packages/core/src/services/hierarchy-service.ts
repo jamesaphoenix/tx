@@ -1,7 +1,7 @@
 import { Context, Effect, Layer } from "effect"
 import { TaskRepository } from "../repo/task-repo.js"
 import { TaskNotFoundError, DatabaseError } from "../errors.js"
-import type { Task, TaskId, TaskTree } from "@jamesaphoenix/tx-types"
+import type { Task, TaskId, TaskTree } from "../types/index.js"
 
 export class HierarchyService extends Context.Tag("HierarchyService")<
   HierarchyService,

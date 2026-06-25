@@ -7,11 +7,11 @@
  * - Proper cleanup after all tests complete
  *
  * Tests DO NOT need their own beforeAll/afterEach/afterAll for database setup.
- * Just import { getSharedTestLayer } from '@jamesaphoenix/tx-test-utils' and use it.
+ * Just import { getSharedTestLayer } from '@jamesaphoenix/tx/testing' and use it.
  */
 
 import { beforeAll, afterEach, afterAll } from "vitest"
-import { getSharedTestLayer, resetTestDb, closeTestDb } from "@jamesaphoenix/tx-test-utils"
+import { getSharedTestLayer, resetTestDb, closeTestDb } from "@jamesaphoenix/tx/testing"
 
 // CLI-heavy integration suites run many subprocesses in parallel.
 // Use a conservative default timeout unless explicitly overridden.

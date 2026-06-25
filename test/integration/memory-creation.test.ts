@@ -20,8 +20,8 @@ import { Effect } from "effect"
 import {
   getSharedTestLayer,
   type SharedTestLayerResult,
-} from "@jamesaphoenix/tx-test-utils"
-import { MemoryService } from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx/testing"
+import { MemoryService } from "@jamesaphoenix/tx"
 import {
   mkdtempSync,
   writeFileSync,

@@ -4,8 +4,8 @@
  * Centralizes numeric flag validation to prevent parseInt/parseFloat NaN bugs.
  */
 
-import type { TaskId } from "@jamesaphoenix/tx-types"
-import { isValidTaskId } from "@jamesaphoenix/tx-types"
+import type { TaskId } from "@jamesaphoenix/tx/types"
+import { isValidTaskId } from "@jamesaphoenix/tx/types"
 import { CliUserError } from "../cli-errors.js"
 
 export type Flags = Record<string, string | boolean>

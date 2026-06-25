@@ -13,8 +13,8 @@
 
 import { describe, it, expect, beforeEach } from "vitest"
 import { Effect } from "effect"
-import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
-import { ClaimService, TaskService, SqliteClient } from "@jamesaphoenix/tx-core"
+import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx/testing"
+import { ClaimService, TaskService, SqliteClient } from "@jamesaphoenix/tx"
 
 // Helper: register a worker in the workers table (required by FK on task_claims)
 const registerWorker = (workerId: string) =>

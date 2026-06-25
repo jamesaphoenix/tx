@@ -16,7 +16,7 @@ import { ClaimService } from "../services/claim-service.js"
 import { ReadyService } from "../services/ready-service.js"
 import { RunRepository } from "../repo/run-repo.js"
 import type { WorkerConfig, WorkerContext, ExecutionResult, IOCapture } from "./hooks.js"
-import type { Task } from "@jamesaphoenix/tx-types"
+import type { Task } from "../types/index.js"
 
 /**
  * Default heartbeat interval in seconds.

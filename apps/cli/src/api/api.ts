@@ -38,7 +38,7 @@ import {
   DecisionSerializedSchema,
   DecomposeRequestSchema,
   DecomposeResultSerializedSchema,
-} from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx/types"
 
 // =============================================================================
 // ERROR TYPES

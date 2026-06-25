@@ -31,7 +31,7 @@ import {
   LabelRepository,
   SqliteClient,
   resolveTxDbPath,
-} from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
 
 // -----------------------------------------------------------------------------
 // Types

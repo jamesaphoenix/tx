@@ -18,13 +18,13 @@
 
 import { describe, it, expect, beforeEach } from "vitest"
 import { Effect, Layer } from "effect"
-import type { TaskId } from "@jamesaphoenix/tx-types"
+import type { TaskId } from "@jamesaphoenix/tx/types"
 import {
   createTestDatabase,
   fixtureId,
   chaos,
   type TestDatabase
-} from "@jamesaphoenix/tx-test-utils"
+} from "@jamesaphoenix/tx/testing"
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based IDs)
@@ -60,7 +60,7 @@ async function makeTestLayer() {
     ClaimRepositoryLive,
     ClaimServiceLive,
     OrchestratorStateRepositoryLive
-  } = await import("@jamesaphoenix/tx-core")
+  } = await import("@jamesaphoenix/tx")
 
   const infra = SqliteClientLive(":memory:")
   const repos = Layer.mergeAll(
@@ -99,7 +99,7 @@ describe("DOCTRINE Rule 1: TaskWithDeps in all responses", () => {
   })
 
   it("getWithDeps returns all required TaskWithDeps fields", async () => {
-    const { TaskService, DependencyService } = await import("@jamesaphoenix/tx-core")
+    const { TaskService, DependencyService } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -136,7 +136,7 @@ describe("DOCTRINE Rule 1: TaskWithDeps in all responses", () => {
   })
 
   it("ready service returns tasks with dependency info", async () => {
-    const { ReadyService } = await import("@jamesaphoenix/tx-core")
+    const { ReadyService } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     // Setup multiple tasks
@@ -197,7 +197,7 @@ describe("DOCTRINE Rule 4: No circular dependencies, no self-blocking", () => {
   })
 
   it("DependencyService rejects self-blocking", async () => {
-    const { DependencyService, TaskService } = await import("@jamesaphoenix/tx-core")
+    const { DependencyService, TaskService } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -221,7 +221,7 @@ describe("DOCTRINE Rule 4: No circular dependencies, no self-blocking", () => {
   })
 
   it("DependencyService detects and rejects circular dependencies", async () => {
-    const { DependencyService, TaskService } = await import("@jamesaphoenix/tx-core")
+    const { DependencyService, TaskService } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -287,7 +287,7 @@ describe("DOCTRINE Rule 5: Effect-TS patterns", () => {
       TaskService,
       ReadyService,
       HierarchyService
-    } = await import("@jamesaphoenix/tx-core")
+    } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     // All service methods should return Effect
@@ -323,7 +323,7 @@ describe("DOCTRINE Rule 5: Effect-TS patterns", () => {
   })
 
   it("errors are properly typed using Effect error channel", async () => {
-    const { TaskService } = await import("@jamesaphoenix/tx-core")
+    const { TaskService } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -346,7 +346,7 @@ describe("DOCTRINE Rule 5: Effect-TS patterns", () => {
 
 describe("Data Integrity Invariants", () => {
   it("task IDs follow tx-[a-z0-9]{6,12} format", async () => {
-    const { TaskService } = await import("@jamesaphoenix/tx-core")
+    const { TaskService } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const task = await Effect.runPromise(
@@ -373,7 +373,7 @@ describe("Data Integrity Invariants", () => {
   })
 
   it("completed tasks have completedAt timestamp", async () => {
-    const { TaskService } = await import("@jamesaphoenix/tx-core")
+    const { TaskService } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const task = await Effect.runPromise(
@@ -396,7 +396,7 @@ describe("Data Integrity Invariants", () => {
   })
 
   it("ready tasks have isReady=true and no open blockers", async () => {
-    const { TaskService, DependencyService, ReadyService } = await import("@jamesaphoenix/tx-core")
+    const { TaskService, DependencyService, ReadyService } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(

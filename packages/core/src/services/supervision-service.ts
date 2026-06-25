@@ -22,8 +22,8 @@ import type {
   WorkerSessionDetail,
   SupervisionTerminalToken,
   ActorRef,
-} from "@jamesaphoenix/tx-types"
-import type { DomainEventEnvelope } from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
+import type { DomainEventEnvelope } from "../types/index.js"
 
 // =============================================================================
 // CONSTANTS

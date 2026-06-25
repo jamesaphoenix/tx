@@ -14,7 +14,7 @@
 
 import { describe, it, expect, beforeEach } from "vitest"
 import { Effect } from "effect"
-import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
+import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx/testing"
 import {
   GuardService,
   VerifyService,
@@ -22,8 +22,8 @@ import {
   TaskService,
   AttemptService,
   RunRepository,
-} from "@jamesaphoenix/tx-core"
-import type { TaskId } from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx"
+import type { TaskId } from "@jamesaphoenix/tx/types"
 
 // =============================================================================
 // Helpers — mirror serialization from route handlers

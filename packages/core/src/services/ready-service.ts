@@ -8,7 +8,7 @@ import { AlreadyClaimedError, DatabaseError, TaskNotFoundError } from "../errors
 import { ClaimService } from "./claim-service.js"
 import { deriveOrchestrationStatus } from "./task-service/internals.js"
 import type { TaskClaim } from "../schemas/worker.js"
-import type { OrchestrationStatus, Task, TaskId, TaskLinkedDocRef, TaskWithDeps } from "@jamesaphoenix/tx-types"
+import type { OrchestrationStatus, Task, TaskId, TaskLinkedDocRef, TaskWithDeps } from "../types/index.js"
 
 /**
  * Result of checking whether a task is ready to be worked on.

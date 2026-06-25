@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { AnchorNotFoundError } from "../../errors.js"
-import type { AnchorStatus, InvalidationSource } from "@jamesaphoenix/tx-types"
+import type { AnchorStatus, InvalidationSource } from "../../types/index.js"
 import type { AnchorServiceDeps } from "./anchor-service-deps.js"
 import { validateStatus } from "./anchor-service-validation.js"
 

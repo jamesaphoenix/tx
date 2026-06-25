@@ -1,11 +1,11 @@
 import { Context, Effect, Layer } from "effect"
-import { EDGE_TYPES } from "@jamesaphoenix/tx-types"
+import { EDGE_TYPES } from "../../types/index.js"
 import { EdgeService, type NeighborWithDepth } from "../edge-service.js"
 import { LearningRepository } from "../../repo/learning-repo.js"
 import { AnchorRepository } from "../../repo/anchor-repo.js"
 import { DatabaseError, ValidationError } from "../../errors.js"
 import { expandFromFilesGraph } from "./from-files.js"
-import type { EdgeType, LearningId } from "@jamesaphoenix/tx-types"
+import type { EdgeType, LearningId } from "../../types/index.js"
 import type {
   EdgeTypeFilter,
   FileExpansionOptions,

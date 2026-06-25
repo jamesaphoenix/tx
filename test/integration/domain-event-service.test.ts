@@ -21,12 +21,12 @@
 import { describe, it, expect } from "vitest"
 import { Effect, Layer } from "effect"
 import { createHash } from "node:crypto"
-import { SqliteClientLive } from "@jamesaphoenix/tx-core"
-import { DomainEventRepositoryLive } from "@jamesaphoenix/tx-core/repo"
+import { SqliteClientLive } from "@jamesaphoenix/tx"
+import { DomainEventRepositoryLive } from "@jamesaphoenix/tx/repo"
 import {
   DomainEventService,
   DomainEventServiceLive,
-} from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based IDs)

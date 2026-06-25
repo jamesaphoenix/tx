@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import type { SymbolPattern } from "@jamesaphoenix/tx-types"
+import type { SymbolPattern } from "../../types/index.js"
 
 /**
  * Schema for optional text holder { text?: string }

@@ -9,7 +9,7 @@ import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
 import { DatabaseError, EntityFetchError } from "../errors.js"
 import { rowToPin } from "../mappers/pin.js"
-import type { Pin, PinRow } from "@jamesaphoenix/tx-types"
+import type { Pin, PinRow } from "../types/index.js"
 import { coerceDbResult } from "../utils/db-result.js"
 
 export class PinRepository extends Context.Tag("PinRepository")<

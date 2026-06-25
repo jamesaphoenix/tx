@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest"
 import { dirname, join } from "node:path"
 import { tmpdir } from "node:os"
 import { mkdtempSync, rmSync, existsSync } from "node:fs"
-import { normalizeClaudeDebugLogPath } from "@jamesaphoenix/tx-core"
+import { normalizeClaudeDebugLogPath } from "@jamesaphoenix/tx"
 
 const ENV_KEY = "CLAUDE_CODE_DEBUG_LOGS_DIR"
 const originalEnvValue = process.env[ENV_KEY]

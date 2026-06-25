@@ -7,8 +7,8 @@ import type {
   Learning,
   LearningSourceType,
   LearningRow
-} from "@jamesaphoenix/tx-types"
-import { LEARNING_SOURCE_TYPES } from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
+import { LEARNING_SOURCE_TYPES } from "../types/index.js"
 import { InvalidStatusError } from "../errors.js"
 import { parseDate } from "./parse-date.js"
 import { coerceDbResult } from "../utils/db-result.js"
@@ -38,7 +38,7 @@ const parseKeywords = (keywordsJson: string | null): string[] => {
 }
 
 // Re-export types and constants from @tx/types for convenience
-export type { LearningRow } from "@jamesaphoenix/tx-types"
+export type { LearningRow } from "../types/index.js"
 export { LEARNING_SOURCE_TYPES }
 
 /**

@@ -1,11 +1,11 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { Effect } from "effect"
-import { DecomposeService } from "@jamesaphoenix/tx-core"
+import { DecomposeService } from "@jamesaphoenix/tx"
 import {
   AGENT_RUNTIMES,
   assertTaskId,
   serializeDecomposeResult,
-} from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx/types"
 import { runEffect } from "../runtime.js"
 import { handleToolError, type McpToolResult } from "../response.js"
 import { registerEffectTool, z } from "./effect-schema-tool.js"

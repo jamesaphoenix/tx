@@ -12,7 +12,7 @@ import type {
   TaskDocLink,
   Invariant,
   Decision,
-} from "@jamesaphoenix/tx-types"
+} from "../../types/index.js"
 import type {
   TaskUpsertOp,
   DepAddOp,

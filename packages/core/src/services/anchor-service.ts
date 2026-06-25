@@ -10,7 +10,7 @@ import type {
   AnchorWithFreshness,
   InvalidationLog,
   InvalidationSource
-} from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
 
 export type AnchorVerificationResult = {
   readonly anchorId: number

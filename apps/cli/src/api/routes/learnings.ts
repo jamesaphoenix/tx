@@ -6,9 +6,9 @@
 
 import { HttpApiBuilder } from "@effect/platform"
 import { Effect } from "effect"
-import type { Learning, LearningWithScore, LearningSourceType } from "@jamesaphoenix/tx-types"
-import { serializeLearning, serializeLearningWithScore, serializeFileLearning } from "@jamesaphoenix/tx-types"
-import { LearningService, FileLearningService } from "@jamesaphoenix/tx-core"
+import type { Learning, LearningWithScore, LearningSourceType } from "@jamesaphoenix/tx/types"
+import { serializeLearning, serializeLearningWithScore, serializeFileLearning } from "@jamesaphoenix/tx/types"
+import { LearningService, FileLearningService } from "@jamesaphoenix/tx"
 import { TxApi, mapCoreError } from "../api.js"
 
 // -----------------------------------------------------------------------------

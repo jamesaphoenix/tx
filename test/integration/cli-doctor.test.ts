@@ -18,8 +18,8 @@ import { spawnSync } from "child_process"
 import { mkdtempSync, rmSync, existsSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { fixtureId, createMigratedSqliteDatabase } from "@jamesaphoenix/tx-test-utils"
-import type { SqliteDatabase as _SqliteDatabase } from "@jamesaphoenix/tx-core"
+import { fixtureId, createMigratedSqliteDatabase } from "@jamesaphoenix/tx/testing"
+import type { SqliteDatabase as _SqliteDatabase } from "@jamesaphoenix/tx"
 
 const CLI_SRC = resolve(__dirname, "../../apps/cli/src/cli.ts")
 

@@ -4,7 +4,7 @@ import { resolve } from "node:path"
 import { parse as parseYaml } from "yaml"
 import { globToRegExp } from "./glob.js"
 import { normalizePathSeparators, toNormalizedRelativePath } from "./file-path.js"
-import type { SpecDiscoveryMethod } from "@jamesaphoenix/tx-types"
+import type { SpecDiscoveryMethod } from "../types/index.js"
 
 export type { SpecDiscoveryMethod }
 

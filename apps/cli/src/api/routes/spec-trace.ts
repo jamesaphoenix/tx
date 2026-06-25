@@ -10,11 +10,11 @@ import {
   SpecTraceService,
   parseBatchRunInput,
   type BatchSource,
-} from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
 import { BadRequest, TxApi, mapCoreError } from "../api.js"
 import { SPEC_BATCH_MAX_BYTES } from "../middleware/body-limit.js"
 
-import type { BatchRunInput, TraceabilityMatrixEntry, SpecSignoff, SpecTest } from "@jamesaphoenix/tx-types"
+import type { BatchRunInput, TraceabilityMatrixEntry, SpecSignoff, SpecTest } from "@jamesaphoenix/tx/types"
 
 const SPEC_BATCH_MAX_RECORDS = 50_000
 const MAX_BATCH_PARSE_ERROR_LENGTH = 2_000

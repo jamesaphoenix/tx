@@ -9,8 +9,8 @@ import { Effect } from "effect"
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
-import { createSharedTestLayer, fixtureId, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
-import { TaskService, buildClaudeTaskFiles } from "@jamesaphoenix/tx-core"
+import { createSharedTestLayer, fixtureId, type SharedTestLayerResult } from "@jamesaphoenix/tx/testing"
+import { TaskService, buildClaudeTaskFiles } from "@jamesaphoenix/tx"
 import type { Database } from "bun:sqlite"
 
 // =============================================================================

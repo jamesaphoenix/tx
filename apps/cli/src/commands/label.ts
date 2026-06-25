@@ -5,7 +5,7 @@
  */
 
 import { Effect } from "effect"
-import { LabelRepository } from "@jamesaphoenix/tx-core"
+import { LabelRepository } from "@jamesaphoenix/tx"
 import { toJson } from "../output.js"
 import { type Flags, flag, parseTaskId } from "../utils/parse.js"
 import { CliExitError } from "../cli-exit.js"

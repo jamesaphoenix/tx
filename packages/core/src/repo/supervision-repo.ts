@@ -16,7 +16,7 @@ import type {
   WorkerSessionRow,
   DesignDocProgress,
   DesignDocCompletionState,
-} from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
 
 // =============================================================================
 // TYPES

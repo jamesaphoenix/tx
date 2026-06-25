@@ -7,8 +7,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { Effect } from "effect"
 import { registerEffectTool, z } from "./effect-schema-tool.js"
-import { VerifyService } from "@jamesaphoenix/tx-core"
-import { assertTaskId } from "@jamesaphoenix/tx-types"
+import { VerifyService } from "@jamesaphoenix/tx"
+import { assertTaskId } from "@jamesaphoenix/tx/types"
 import { runEffect } from "../runtime.js"
 import { handleToolError, type McpToolResult } from "../response.js"
 

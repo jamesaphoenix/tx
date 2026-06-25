@@ -20,7 +20,7 @@ import { Context, Effect, Layer, Option } from "effect"
 import { MemoryDocumentRepository, MemoryLinkRepository, MemoryPropertyRepository, type MemoryBM25Result } from "../repo/memory-repo.js"
 import { EmbeddingService } from "./embedding-service.js"
 import { RetrievalError, DatabaseError } from "../errors.js"
-import type { MemoryDocument, MemoryDocumentWithScore, MemorySearchOptions } from "@jamesaphoenix/tx-types"
+import type { MemoryDocument, MemoryDocumentWithScore, MemorySearchOptions } from "../types/index.js"
 import { cosineSimilarity } from "../utils/math.js"
 
 /** RRF constant — standard value from the original paper */

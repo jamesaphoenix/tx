@@ -12,7 +12,7 @@ import { rowToDomainEvent } from "../mappers/domain-event.js"
 import type {
   DomainEventEnvelope,
   DomainEventRow,
-} from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
 
 // =============================================================================
 // TYPES

@@ -6,10 +6,10 @@
  *
  * @example
  * ```typescript
- * import { Task, TaskWithDeps, TaskId, TaskStatus } from "@jamesaphoenix/tx-types";
- * import { TaskSchema, TaskWithDepsSchema } from "@jamesaphoenix/tx-types";
- * import { Learning, LearningWithScore } from "@jamesaphoenix/tx-types";
- * import { Attempt, Run } from "@jamesaphoenix/tx-types";
+ * import { Task, TaskWithDeps, TaskId, TaskStatus } from "./index.js";
+ * import { TaskSchema, TaskWithDepsSchema } from "./index.js";
+ * import { Learning, LearningWithScore } from "./index.js";
+ * import { Attempt, Run } from "./index.js";
  *
  * // Or import from specific modules:
  * import { TaskSchema, type Task, type TaskWithDeps } from "@tx/types/task";

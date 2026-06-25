@@ -7,8 +7,8 @@
 
 import { HttpApiBuilder } from "@effect/platform"
 import { Effect } from "effect"
-import { MessageService } from "@jamesaphoenix/tx-core"
-import { serializeMessage } from "@jamesaphoenix/tx-types"
+import { MessageService } from "@jamesaphoenix/tx"
+import { serializeMessage } from "@jamesaphoenix/tx/types"
 import { TxApi, mapCoreError } from "../api.js"
 
 // -----------------------------------------------------------------------------

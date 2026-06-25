@@ -1,7 +1,7 @@
 {
-  "name": "@jamesaphoenix/tx-core",
+  "name": "@jamesaphoenix/tx",
   "version": "0.13.1",
-  "description": "Core business logic for tx - Effect-TS services and repositories",
+  "description": "Headless, local infra for AI agents - tasks, memory, specs, and orchestration primitives (types + core + test utilities)",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -35,6 +35,16 @@
       "bun": "./src/layer.ts",
       "types": "./dist/layer.d.ts",
       "import": "./dist/layer.js"
+    },
+    "./types": {
+      "bun": "./src/types/index.ts",
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/types/index.js"
+    },
+    "./testing": {
+      "bun": "./src/testing/index.ts",
+      "types": "./dist/testing/index.d.ts",
+      "import": "./dist/testing/index.js"
     }
   },
   "files": [
@@ -50,16 +60,19 @@
     "test": "bunx --bun vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@jamesaphoenix/tx-types": "*",
     "chokidar": "^5.0.0",
     "effect": "^3.19.15",
     "fast-xml-parser": "^5.2.0"
   },
   "peerDependencies": {
-    "@anthropic-ai/sdk": "^0.52.0"
+    "@anthropic-ai/sdk": "^0.52.0",
+    "vitest": "^4.0.18"
   },
   "peerDependenciesMeta": {
     "@anthropic-ai/sdk": {
+      "optional": true
+    },
+    "vitest": {
       "optional": true
     }
   },

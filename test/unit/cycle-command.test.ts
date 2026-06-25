@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { Effect, Layer } from "effect"
-import { CycleScanService } from "@jamesaphoenix/tx-core"
-import type { CycleResult } from "@jamesaphoenix/tx-types"
+import { CycleScanService } from "@jamesaphoenix/tx"
+import type { CycleResult } from "@jamesaphoenix/tx/types"
 import { cycle } from "../../apps/cli/src/commands/cycle.js"
 
 const baseFlags = {

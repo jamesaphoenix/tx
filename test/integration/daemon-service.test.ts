@@ -23,7 +23,7 @@ import {
   removePid,
   tryAtomicPidCreate,
   acquirePidLock
-} from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
 
 // =============================================================================
 // DaemonServiceNoop Tests

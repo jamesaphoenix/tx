@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import * as path from "node:path"
 import { DatabaseError } from "../../errors.js"
-import type { Anchor, InvalidationSource } from "@jamesaphoenix/tx-types"
+import type { Anchor, InvalidationSource } from "../../types/index.js"
 import type { VerificationResult } from "../anchor-verification.js"
 import type { AnchorRepo } from "./anchor-service-deps.js"
 import {

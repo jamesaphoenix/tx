@@ -15,8 +15,8 @@ import {
   MdDocParseError,
   parseMdDocSync,
   readTxConfig,
-} from "@jamesaphoenix/tx-core"
-import type { DocKind } from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx"
+import type { DocKind } from "@jamesaphoenix/tx/types"
 import { TxApi, mapCoreError } from "../api.js"
 
 // -----------------------------------------------------------------------------

@@ -10,18 +10,18 @@ import type {
   InvalidationLog,
   InvalidationLogRow,
   InvalidationSource
-} from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
 import {
   ANCHOR_TYPES,
   ANCHOR_STATUSES,
   INVALIDATION_SOURCES
-} from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
 import { InvalidStatusError } from "../errors.js"
 import { parseDate } from "./parse-date.js"
 import { coerceDbResult } from "../utils/db-result.js"
 
 // Re-export types from @tx/types for convenience
-export type { AnchorRow, InvalidationLogRow } from "@jamesaphoenix/tx-types"
+export type { AnchorRow, InvalidationLogRow } from "../types/index.js"
 
 /**
  * Check if a string is a valid AnchorType.

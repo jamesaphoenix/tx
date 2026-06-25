@@ -2,7 +2,7 @@ import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
 import { DatabaseError } from "../errors.js"
 import { MIGRATIONS, getLatestVersion } from "./migration-service.js"
-import { TASK_STATUSES } from "@jamesaphoenix/tx-types"
+import { TASK_STATUSES } from "../types/index.js"
 
 /**
  * Severity level for validation issues.

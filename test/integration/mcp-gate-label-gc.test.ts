@@ -12,13 +12,13 @@
 
 import { describe, it, expect, beforeEach } from "vitest"
 import { Effect } from "effect"
-import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
+import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx/testing"
 import {
   PinService,
   TaskService,
   MessageService,
   LabelRepository,
-} from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
 // TaskId type available if needed for typed assertions
 
 // =============================================================================

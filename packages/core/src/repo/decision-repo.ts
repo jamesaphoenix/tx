@@ -6,7 +6,7 @@ import { SqliteClient } from "../db.js"
 import { rowToDecision } from "../mappers/decision.js"
 import { readNumberField } from "../utils/db-result.js"
 import { DatabaseError } from "../errors.js"
-import type { Decision, DecisionRow } from "@jamesaphoenix/tx-types"
+import type { Decision, DecisionRow } from "../types/index.js"
 
 export class DecisionRepository extends Context.Tag("DecisionRepository")<
   DecisionRepository,

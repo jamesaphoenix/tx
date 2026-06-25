@@ -2,7 +2,7 @@ import { Effect, Duration, Ref } from "effect"
 import { spawn, type ChildProcess } from "child_process"
 import { WorkerService } from "../worker-service.js"
 import { ClaimService } from "../claim-service.js"
-import type { TaskWithDeps } from "@jamesaphoenix/tx-types"
+import type { TaskWithDeps } from "../../types/index.js"
 
 /**
  * Timeout in milliseconds to wait after SIGTERM before escalating to SIGKILL.

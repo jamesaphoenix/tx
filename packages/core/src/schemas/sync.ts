@@ -8,7 +8,7 @@ import {
   DOC_KINDS, DOC_STATUSES, DOC_LINK_TYPES, DOC_STABLE_ID_PATTERN, TASK_DOC_LINK_TYPES,
   INVARIANT_ENFORCEMENT_TYPES, INVARIANT_STATUSES,
   DECISION_STATUSES, DECISION_SOURCES,
-} from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
 
 // Schema version - v=1 for all sync operations
 export const SyncVersion = Schema.Literal(1)

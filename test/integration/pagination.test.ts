@@ -9,7 +9,7 @@
 
 import { describe, it, expect, beforeAll, beforeEach, afterEach } from "vitest"
 import { Hono } from "hono"
-import { type SharedTestLayerResult, getSharedTestLayer, wrapDbAsTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
+import { type SharedTestLayerResult, getSharedTestLayer, wrapDbAsTestDatabase, type TestDatabase } from "@jamesaphoenix/tx/testing"
 import { fixtureId } from "../fixtures.js"
 
 // -----------------------------------------------------------------------------

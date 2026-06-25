@@ -1,9 +1,9 @@
 import { beforeAll, describe, expect, it } from "vitest"
 import { Effect } from "effect"
-import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
-import { DependencyService, TaskService } from "@jamesaphoenix/tx-core"
+import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx/testing"
+import { DependencyService, TaskService } from "@jamesaphoenix/tx"
 import { fixtureId } from "../fixtures.js"
-import type { TaskId } from "@jamesaphoenix/tx-types"
+import type { TaskId } from "@jamesaphoenix/tx/types"
 
 interface FixtureTaskInput {
   id: TaskId

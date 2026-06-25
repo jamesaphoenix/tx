@@ -6,14 +6,14 @@ import type {
   Attempt,
   AttemptOutcome,
   AttemptRow,
-} from "@jamesaphoenix/tx-types"
-import { assertTaskId, ATTEMPT_OUTCOMES } from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
+import { assertTaskId, ATTEMPT_OUTCOMES } from "../types/index.js"
 import { InvalidStatusError } from "../errors.js"
 import { parseDate } from "./parse-date.js"
 import { coerceDbResult } from "../utils/db-result.js"
 
 // Re-export types and constants from @tx/types for convenience
-export type { AttemptRow } from "@jamesaphoenix/tx-types"
+export type { AttemptRow } from "../types/index.js"
 export { ATTEMPT_OUTCOMES }
 
 /**

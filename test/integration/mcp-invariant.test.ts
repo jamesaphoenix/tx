@@ -20,13 +20,13 @@
 
 import { afterEach, beforeAll, beforeEach, describe, it, expect } from "vitest"
 import { Effect } from "effect"
-import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
-import { DocService } from "@jamesaphoenix/tx-core"
+import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx/testing"
+import { DocService } from "@jamesaphoenix/tx"
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import type { Invariant, InvariantCheck } from "@jamesaphoenix/tx-types"
+import type { Invariant, InvariantCheck } from "@jamesaphoenix/tx/types"
 
 // =============================================================================
 // Helpers

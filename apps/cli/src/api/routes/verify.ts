@@ -6,8 +6,8 @@
 
 import { HttpApiBuilder } from "@effect/platform"
 import { Effect } from "effect"
-import { VerifyService } from "@jamesaphoenix/tx-core"
-import type { TaskId } from "@jamesaphoenix/tx-types"
+import { VerifyService } from "@jamesaphoenix/tx"
+import type { TaskId } from "@jamesaphoenix/tx/types"
 import { TxApi, mapCoreError } from "../api.js"
 
 export const VerifyLive = HttpApiBuilder.group(TxApi, "verify", (handlers) =>

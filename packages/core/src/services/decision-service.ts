@@ -11,7 +11,7 @@ import {
   DecisionAlreadyReviewedError,
   DatabaseError,
 } from "../errors.js"
-import type { Decision } from "@jamesaphoenix/tx-types"
+import type { Decision } from "../types/index.js"
 import { createHash } from "node:crypto"
 
 const computeContentHash = (content: string): string => {

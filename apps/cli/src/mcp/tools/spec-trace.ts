@@ -10,8 +10,8 @@ import {
   ValidationError,
   parseBatchRunInput,
   type BatchSource,
-} from "@jamesaphoenix/tx-core"
-import type { SpecTest, TraceabilityMatrixEntry } from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx"
+import type { SpecTest, TraceabilityMatrixEntry } from "@jamesaphoenix/tx/types"
 import { runEffect } from "../runtime.js"
 import { handleToolError, type McpToolResult } from "../response.js"
 

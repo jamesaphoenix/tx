@@ -5,7 +5,7 @@
  */
 
 import { Effect } from "effect"
-import { getCacheStats, clearCache, formatCacheStats, ClearCacheOptions } from "@jamesaphoenix/tx-test-utils"
+import { getCacheStats, clearCache, formatCacheStats, ClearCacheOptions } from "@jamesaphoenix/tx/testing"
 import { toJson } from "../output.js"
 import { commandHelp } from "../help.js"
 import { type Flags, flag, opt, parseIntOpt } from "../utils/parse.js"

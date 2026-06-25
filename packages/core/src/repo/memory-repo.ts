@@ -17,7 +17,7 @@ import type {
   MemoryLink,
   MemorySource,
   MemoryProperty,
-} from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
 
 /** Scored memory document result from BM25 search */
 export type MemoryBM25Result = {

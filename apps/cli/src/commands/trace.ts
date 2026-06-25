@@ -14,8 +14,8 @@ import {
   type DatabaseError,
   getAdapter,
   type ToolCall
-} from "@jamesaphoenix/tx-core"
-import type { Run, RunId } from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx"
+import type { Run, RunId } from "@jamesaphoenix/tx/types"
 import { toJson, truncate } from "../output.js"
 import { commandHelp } from "../help.js"
 import { type Flags, flag, opt, parseIntOpt } from "../utils/parse.js"

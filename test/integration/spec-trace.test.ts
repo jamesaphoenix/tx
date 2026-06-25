@@ -16,15 +16,15 @@ import { Effect } from "effect"
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { tmpdir } from "node:os"
-import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
+import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx/testing"
 import {
   DocService,
   SPEC_BATCH_MAX_BYTES,
   SpecTraceService,
   SqliteClient,
   parseBatchRunInput,
-} from "@jamesaphoenix/tx-core"
-import type { BatchRunInput } from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx"
+import type { BatchRunInput } from "@jamesaphoenix/tx/types"
 
 type InvariantInput = {
   id: string

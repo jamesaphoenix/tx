@@ -7,7 +7,7 @@
  */
 
 import { Effect } from "effect"
-import { OrchestratorService, type OrchestratorConfig } from "@jamesaphoenix/tx-core"
+import { OrchestratorService, type OrchestratorConfig } from "@jamesaphoenix/tx"
 import { toJson } from "../output.js"
 import { commandHelp } from "../help.js"
 import { type Flags, flag, parseIntOpt } from "../utils/parse.js"

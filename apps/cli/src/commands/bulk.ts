@@ -3,7 +3,7 @@
  */
 
 import { Effect } from "effect"
-import { TaskService, ReadyService } from "@jamesaphoenix/tx-core"
+import { TaskService, ReadyService } from "@jamesaphoenix/tx"
 import { type Flags, flag, parseTaskId } from "../utils/parse.js"
 import { toJson } from "../output.js"
 

@@ -17,7 +17,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { Effect, Layer } from "effect"
-import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
+import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx/testing"
 import { seedFixtures, FIXTURES, fixtureId } from "../fixtures.js"
 import {
   SqliteClient,
@@ -39,14 +39,14 @@ import {
   ClaimRepositoryLive,
   ClaimServiceLive,
   OrchestratorStateRepositoryLive
-} from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
 import {
   raceWorkers,
   stressLoad,
   doubleComplete,
   delayedClaim
-} from "@jamesaphoenix/tx-test-utils"
-import type { TaskId } from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx/testing"
+import type { TaskId } from "@jamesaphoenix/tx/types"
 
 // =============================================================================
 // Test Layer Setup

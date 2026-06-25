@@ -8,7 +8,7 @@
  * DD-018 "Worker Hooks Interface" section.
  */
 
-import type { Task } from "@jamesaphoenix/tx-types"
+import type { Task } from "../types/index.js"
 
 /**
  * Result from executing a task.

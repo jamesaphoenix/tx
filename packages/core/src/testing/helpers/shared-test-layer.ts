@@ -9,7 +9,7 @@
 
 import { Layer } from "effect"
 import type { Database } from "bun:sqlite"
-import type { SqliteDatabase } from "@jamesaphoenix/tx-core"
+import type { SqliteDatabase } from "../../index.js"
 import { resetDatabaseTables } from "../database/reset-helpers.js"
 
 /**
@@ -34,7 +34,7 @@ export interface SharedTestLayer<L> {
  *
  * @example
  * ```typescript
- * import { createSharedTestLayer } from '@jamesaphoenix/tx-test-utils'
+ * import { createSharedTestLayer } from '../index.js'
  * import { describe, it, beforeAll, afterEach, afterAll } from 'vitest'
  *
  * describe('MyService', () => {
@@ -65,7 +65,7 @@ export const createSharedTestLayer = async () => {
   // Use makeMinimalLayerFromInfra (Noop variants for LLM/embedding/reranker)
   // instead of makeAppLayerFromInfra (Auto variants that probe for node-llama-cpp etc.)
   // to avoid slow auto-detection overhead in tests.
-  const { makeMinimalLayerFromInfra, SqliteClient, applyMigrations } = await import("@jamesaphoenix/tx-core")
+  const { makeMinimalLayerFromInfra, SqliteClient, applyMigrations } = await import("../../index.js")
   const { Database } = await import("bun:sqlite")
 
   // Create ONE database instance directly — this ensures all tests share the

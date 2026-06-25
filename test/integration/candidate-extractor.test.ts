@@ -8,8 +8,8 @@ import {
   LlmService,
   LlmServiceNoop,
   LlmServiceAuto,
-} from "@jamesaphoenix/tx-core"
-import type { TranscriptChunk } from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx"
+import type { TranscriptChunk } from "@jamesaphoenix/tx/types"
 
 describe("CandidateExtractorService", () => {
   describe("CandidateExtractorServiceNoop", () => {

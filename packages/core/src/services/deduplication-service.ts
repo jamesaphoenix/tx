@@ -7,7 +7,7 @@ import type {
   LineProcessResult,
   FileProcessResult,
   DeduplicationOptions
-} from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
 
 /**
  * Default batch size for hash checking operations.

@@ -8,7 +8,7 @@ import type { TaskStatus, SerializedTaskWithDeps } from "./types.js"
 import { TASK_STATUSES } from "./types.js"
 
 // Re-export task ID validation from types package for backwards compatibility
-export { isValidTaskId, assertTaskId, InvalidTaskIdError, TASK_ID_PATTERN } from "@jamesaphoenix/tx-types"
+export { isValidTaskId, assertTaskId, InvalidTaskIdError, TASK_ID_PATTERN } from "@jamesaphoenix/tx/types"
 
 // =============================================================================
 // Type Guards

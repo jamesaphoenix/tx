@@ -12,7 +12,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { Effect, Layer, Fiber } from "effect"
 import { createHash } from "node:crypto"
-import type { TaskId } from "@jamesaphoenix/tx-types"
+import type { TaskId } from "@jamesaphoenix/tx/types"
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based IDs)
@@ -61,7 +61,7 @@ async function makeTestLayer() {
     OrchestratorServiceLive,
     ReadyServiceLive,
     RunRepositoryLive
-  } = await import("@jamesaphoenix/tx-core")
+  } = await import("@jamesaphoenix/tx")
 
   const infra = SqliteClientLive(":memory:")
 
@@ -135,7 +135,7 @@ describe("Worker Orchestration E2E: Multi-Worker Claim Competition", () => {
       WorkerService,
       ClaimService,
       TaskRepository
-    } = await import("@jamesaphoenix/tx-core")
+    } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -190,7 +190,7 @@ describe("Worker Orchestration E2E: Multi-Worker Claim Competition", () => {
       WorkerService,
       ClaimService,
       TaskRepository
-    } = await import("@jamesaphoenix/tx-core")
+    } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -238,7 +238,7 @@ describe("Worker Orchestration E2E: Full Lifecycle", () => {
       TaskRepository,
       WorkerRepository,
       ClaimRepository
-    } = await import("@jamesaphoenix/tx-core")
+    } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -316,7 +316,7 @@ describe("Worker Orchestration E2E: Full Lifecycle", () => {
       WorkerService,
       ClaimService,
       TaskRepository
-    } = await import("@jamesaphoenix/tx-core")
+    } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -371,7 +371,7 @@ describe("Worker Orchestration E2E: Combined Reconciliation", () => {
       TaskRepository,
       WorkerRepository,
       ClaimRepository
-    } = await import("@jamesaphoenix/tx-core")
+    } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -473,7 +473,7 @@ describe("Worker Orchestration E2E: Combined Reconciliation", () => {
       ClaimService,
       TaskRepository,
       ClaimRepository
-    } = await import("@jamesaphoenix/tx-core")
+    } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -562,7 +562,7 @@ describe("Worker Orchestration E2E: runWorker Integration", () => {
       TaskRepository,
       ClaimRepository,
       runWorker
-    } = await import("@jamesaphoenix/tx-core")
+    } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     let renewLeaseWasCalled = false

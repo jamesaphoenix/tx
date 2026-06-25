@@ -9,7 +9,7 @@
  */
 
 import { Schema } from "effect"
-import type { TaskWithDeps, TaskId } from "@jamesaphoenix/tx-types"
+import type { TaskWithDeps, TaskId } from "../types/index.js"
 
 // =============================================================================
 // Types

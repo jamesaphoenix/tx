@@ -19,8 +19,8 @@
 
 import { beforeEach, describe, it, expect } from "vitest"
 import { Effect } from "effect"
-import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
-import { SqliteClient } from "@jamesaphoenix/tx-core"
+import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx/testing"
+import { SqliteClient } from "@jamesaphoenix/tx"
 
 // =============================================================================
 // Types (mirror the route handler types)

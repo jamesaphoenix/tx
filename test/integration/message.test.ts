@@ -8,8 +8,8 @@
 
 import { describe, it, expect, beforeAll, afterEach, afterAll } from "vitest"
 import { Effect } from "effect"
-import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
-import { MessageService } from "@jamesaphoenix/tx-core"
+import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx/testing"
+import { MessageService } from "@jamesaphoenix/tx"
 
 describe("Message (Agent Outbox)", () => {
   let shared: SharedTestLayerResult

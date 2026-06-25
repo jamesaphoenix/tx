@@ -5,7 +5,7 @@ import { AttemptRepository } from "../repo/attempt-repo.js"
 import { GuardRepository } from "../repo/guard-repo.js"
 import { DatabaseError } from "../errors.js"
 import { LlmService } from "./llm-service.js"
-import type { Run, TaskId } from "@jamesaphoenix/tx-types"
+import type { Run, TaskId } from "../types/index.js"
 
 export type ReflectSignal = {
   readonly type: string
