@@ -7,7 +7,7 @@ import { AnchorRepository } from "../repo/anchor-repo.js"
 import { createAnchorVerificationBatchOps } from "./anchor/anchor-verification-batch.js"
 import { createVerifyAnchor } from "./anchor/anchor-verification-single.js"
 import type { DatabaseError } from "../errors.js"
-import type { Anchor, AnchorStatus, InvalidationSource } from "@jamesaphoenix/tx-types"
+import type { Anchor, AnchorStatus, InvalidationSource } from "../types/index.js"
 
 export type VerificationResult = {
   readonly anchorId: number

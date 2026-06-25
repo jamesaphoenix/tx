@@ -19,25 +19,25 @@
 import { describe, it, expect } from "vitest"
 import { Effect, Layer } from "effect"
 import { createHash } from "node:crypto"
-import type { ReviewTriggerCause } from "@jamesaphoenix/tx-types"
+import type { ReviewTriggerCause } from "@jamesaphoenix/tx/types"
 import {
   SqliteClientLive,
   TaskRepositoryLive,
   DependencyRepositoryLive,
   SqliteClient,
-} from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
 import {
   DocRepositoryLive,
   DomainEventRepositoryLive,
   DocReviewRepositoryLive,
-} from "@jamesaphoenix/tx-core/repo"
+} from "@jamesaphoenix/tx/repo"
 import {
   DomainEventService,
   DomainEventServiceLive,
   DocReviewService,
   DocReviewServiceLive,
   DEFAULT_REVIEW_CONFIG,
-} from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based IDs)

@@ -10,10 +10,10 @@
 
 import { describe, it, expect, beforeAll, afterEach, afterAll } from "vitest"
 import { Effect } from "effect"
-import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
+import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx/testing"
 
 // Import services once at module level
-import { DeduplicationService, BatchProcessingError, hashContent, normalizeContent } from "@jamesaphoenix/tx-core"
+import { DeduplicationService, BatchProcessingError, hashContent, normalizeContent } from "@jamesaphoenix/tx"
 
 // =============================================================================
 // Test Fixtures

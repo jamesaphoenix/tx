@@ -31,7 +31,7 @@ import {
   type TaskDocLinkRow,
   type InvariantRow,
   type InvariantCheckRow,
-} from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
 import { InvalidStatusError } from "../errors.js"
 import { parseDate } from "./parse-date.js"
 import { coerceDbResult } from "../utils/db-result.js"

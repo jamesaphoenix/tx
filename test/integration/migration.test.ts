@@ -10,8 +10,8 @@ import {
   MIGRATIONS,
   getLatestVersion,
   EMBEDDED_MIGRATIONS
-} from "@jamesaphoenix/tx-core"
-import { fixtureId } from "@jamesaphoenix/tx-test-utils"
+} from "@jamesaphoenix/tx"
+import { fixtureId } from "@jamesaphoenix/tx/testing"
 
 const ASSIGNMENT_MIGRATION_VERSION = 24
 const ASSIGNMENT_MIGRATION_BACKFILL_MARKER = "migration:024_task_assignment"

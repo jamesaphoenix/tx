@@ -7,7 +7,7 @@
  * ears_requirements)
  * accept either string or object forms and render deterministically.
  */
-import type { DocKind } from "@jamesaphoenix/tx-types"
+import type { DocKind } from "../types/index.js"
 
 type ParsedYaml = {
   [key: string]: unknown};

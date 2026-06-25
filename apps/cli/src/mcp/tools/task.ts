@@ -8,12 +8,12 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { Effect } from "effect"
 import { registerEffectTool, z } from "./effect-schema-tool.js"
-import type { TaskStatus } from "@jamesaphoenix/tx-types"
-import { TASK_STATUSES, serializeTask, assertTaskId } from "@jamesaphoenix/tx-types"
+import type { TaskStatus } from "@jamesaphoenix/tx/types"
+import { TASK_STATUSES, serializeTask, assertTaskId } from "@jamesaphoenix/tx/types"
 
 // Re-export for use in other modules
 export { serializeTask }
-import { TaskService, ReadyService, DependencyService, HierarchyService, LearningService } from "@jamesaphoenix/tx-core"
+import { TaskService, ReadyService, DependencyService, HierarchyService, LearningService } from "@jamesaphoenix/tx"
 import { runEffect } from "../runtime.js"
 import { handleToolError, type McpToolResult } from "../response.js"
 import { normalizeLimit, MCP_MAX_LIMIT } from "./index.js"

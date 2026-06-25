@@ -6,13 +6,13 @@ import type {
   TrackedProject,
   TrackedProjectRow,
   SourceType
-} from "@jamesaphoenix/tx-types"
-import { SOURCE_TYPES } from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
+import { SOURCE_TYPES } from "../types/index.js"
 import { InvalidStatusError } from "../errors.js"
 import { parseDate } from "./parse-date.js"
 
 // Re-export types and constants from @tx/types for convenience
-export type { TrackedProjectRow } from "@jamesaphoenix/tx-types"
+export type { TrackedProjectRow } from "../types/index.js"
 export { SOURCE_TYPES }
 
 /**

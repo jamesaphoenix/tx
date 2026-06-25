@@ -3,7 +3,7 @@ import * as crypto from "node:crypto"
 import * as fs from "node:fs/promises"
 import { AnchorRepository } from "../../repo/anchor-repo.js"
 import { DatabaseError } from "../../errors.js"
-import type { Anchor } from "@jamesaphoenix/tx-types"
+import type { Anchor } from "../../types/index.js"
 
 const SELF_HEAL_THRESHOLD = 0.8
 const MAX_PREVIEW_LENGTH = 500

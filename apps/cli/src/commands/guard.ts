@@ -5,7 +5,7 @@
  */
 
 import { Effect } from "effect"
-import { GuardService } from "@jamesaphoenix/tx-core"
+import { GuardService } from "@jamesaphoenix/tx"
 import { toJson } from "../output.js"
 import { type Flags, flag, opt, parseIntOpt } from "../utils/parse.js"
 import { CliExitError } from "../cli-exit.js"

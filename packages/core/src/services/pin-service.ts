@@ -12,7 +12,7 @@ import { PinRepository } from "../repo/pin-repo.js"
 import { DatabaseError, ValidationError } from "../errors.js"
 import { syncBlocks } from "../utils/pin-file.js"
 import { resolvePathWithin } from "../utils/file-path.js"
-import type { Pin } from "@jamesaphoenix/tx-types"
+import type { Pin } from "../types/index.js"
 
 const isErrnoException = (cause: unknown): cause is NodeJS.ErrnoException =>
   typeof cause === "object" && cause !== null && "code" in cause

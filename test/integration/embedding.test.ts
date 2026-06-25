@@ -9,7 +9,7 @@ import {
   EmbeddingUnavailableError,
   createEmbedderLayer,
   type EmbedderConfig
-} from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
 
 // ============================================================================
 // Mock Factories for node-llama-cpp
@@ -1685,7 +1685,7 @@ import {
   isValidLlamaEmbeddingContext,
   isValidOpenAIClient,
   validateEmbeddingDimensions
-} from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
 
 describe("Runtime Interface Validators", () => {
   describe("isValidLlama", () => {

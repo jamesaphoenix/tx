@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import { matchesGlob } from "../../utils/glob.js"
 import { DatabaseError } from "../../errors.js"
-import type { Anchor, InvalidationSource } from "@jamesaphoenix/tx-types"
+import type { Anchor, InvalidationSource } from "../../types/index.js"
 import type { AnchorRepo } from "./anchor-service-deps.js"
 import type { FailedAnchor, VerificationResult, VerificationSummary, VerifyOptions } from "../anchor-verification.js"
 

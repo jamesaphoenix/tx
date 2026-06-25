@@ -3,7 +3,7 @@ import { SqliteClient } from "../db.js"
 import { DatabaseError, EntityFetchError, LearningNotFoundError } from "../errors.js"
 import { rowToLearning, rowToLearningWithoutEmbedding, float32ArrayToBuffer } from "../mappers/learning.js"
 import { DEFAULT_QUERY_LIMIT } from "../utils/sql.js"
-import type { Learning, LearningRow, LearningRowWithBM25, CreateLearningInput } from "@jamesaphoenix/tx-types"
+import type { Learning, LearningRow, LearningRowWithBM25, CreateLearningInput } from "../types/index.js"
 import { coerceDbResult } from "../utils/db-result.js"
 
 const MAX_SQL_VARIABLES = 900

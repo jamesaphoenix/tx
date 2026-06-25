@@ -12,8 +12,8 @@
  */
 import { describe, it, expect, beforeEach } from "vitest"
 import { Effect } from "effect"
-import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
-import { SqliteClient, ValidationService } from "@jamesaphoenix/tx-core"
+import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx/testing"
+import { SqliteClient, ValidationService } from "@jamesaphoenix/tx"
 
 const ISO_8601 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
 

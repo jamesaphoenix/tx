@@ -11,13 +11,13 @@
 
 import { describe, it, expect, beforeEach } from "vitest"
 import { Effect, Layer } from "effect"
-import type { TaskId } from "@jamesaphoenix/tx-types"
+import type { TaskId } from "@jamesaphoenix/tx/types"
 import {
   createTestDatabase,
   fixtureId,
   chaos,
   type TestDatabase
-} from "@jamesaphoenix/tx-test-utils"
+} from "@jamesaphoenix/tx/testing"
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based IDs)
@@ -45,7 +45,7 @@ async function makeTestLayer() {
     ClaimServiceLive,
     TaskRepositoryLive,
     DependencyRepositoryLive
-  } = await import("@jamesaphoenix/tx-core")
+  } = await import("@jamesaphoenix/tx")
 
   const infra = SqliteClientLive(":memory:")
 
@@ -297,7 +297,7 @@ describe("Chaos: Claim Lifecycle", () => {
   describe("Claim expiration handling", () => {
     it("expired claims can be reclaimed by another worker", async () => {
       const { ClaimService, ClaimRepository, TaskRepository, WorkerRepository } =
-        await import("@jamesaphoenix/tx-core")
+        await import("@jamesaphoenix/tx")
       const layer = await makeTestLayer()
 
       const result = await Effect.runPromise(
@@ -346,7 +346,7 @@ describe("Chaos: Claim Lifecycle", () => {
 describe("Chaos: Lease Renewal Race Conditions", () => {
   it("atomic renewal prevents extending already-expired lease", async () => {
     const { ClaimService, ClaimRepository, TaskRepository, WorkerRepository } =
-      await import("@jamesaphoenix/tx-core")
+      await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     // This test verifies the fix for tx-4e88dcf9:
@@ -389,7 +389,7 @@ describe("Chaos: Lease Renewal Race Conditions", () => {
 
   it("concurrent renewal attempts with expiring lease", async () => {
     const { ClaimService, ClaimRepository, TaskRepository, WorkerRepository } =
-      await import("@jamesaphoenix/tx-core")
+      await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     // Test that when a lease is about to expire, only valid renewals succeed
@@ -431,7 +431,7 @@ describe("Chaos: Lease Renewal Race Conditions", () => {
 
 describe("Chaos: Service Layer Claim Operations", () => {
   it("claim service rejects concurrent claims properly", async () => {
-    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -465,7 +465,7 @@ describe("Chaos: Service Layer Claim Operations", () => {
   })
 
   it("release then reclaim works correctly", async () => {
-    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx-core")
+    const { ClaimService, TaskRepository, WorkerRepository } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(

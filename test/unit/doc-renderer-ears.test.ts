@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { composeEarsSentence, renderDocToMarkdown } from "@jamesaphoenix/tx-core"
+import { composeEarsSentence, renderDocToMarkdown } from "@jamesaphoenix/tx"
 
 describe("EARS sentence composition", () => {
   it("composes each EARS pattern into deterministic prose", () => {

@@ -11,7 +11,7 @@ import {
   type ReviewRuntimeType,
   type ReviewTransport,
   type DocReviewRunRow,
-} from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
 import { InvalidStatusError } from "../errors.js"
 
 // Local string arrays for .includes() checks

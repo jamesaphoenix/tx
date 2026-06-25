@@ -10,11 +10,11 @@ import type {
   MaterializedDecomposeTask,
   TaskId,
   TaskWithDeps,
-} from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
 import {
   DecomposeRequestSchema,
   DecompositionPlanSchema,
-} from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
 import { AgentService } from "./agent-service.js"
 import { DependencyService } from "./dep-service.js"
 import { DocService } from "./doc-service.js"

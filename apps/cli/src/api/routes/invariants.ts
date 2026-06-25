@@ -7,10 +7,10 @@
 
 import { HttpApiBuilder } from "@effect/platform"
 import { Effect } from "effect"
-import { DocService } from "@jamesaphoenix/tx-core"
+import { DocService } from "@jamesaphoenix/tx"
 import { TxApi, mapCoreError, NotFound } from "../api.js"
 
-import type { Invariant, InvariantCheck } from "@jamesaphoenix/tx-types"
+import type { Invariant, InvariantCheck } from "@jamesaphoenix/tx/types"
 
 // Serialize an Invariant domain object for API responses.
 // Preserves literal types (enforcement) by accepting the domain type directly.

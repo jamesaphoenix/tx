@@ -8,18 +8,18 @@ import type {
   CandidateConfidence,
   CandidateCategory,
   CandidateStatus
-} from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
 import {
   CANDIDATE_CONFIDENCES,
   CANDIDATE_CATEGORIES,
   CANDIDATE_STATUSES
-} from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
 import { InvalidStatusError } from "../errors.js"
 import { parseDate } from "./parse-date.js"
 import { coerceDbResult } from "../utils/db-result.js"
 
 // Re-export types and constants from @tx/types for convenience
-export type { CandidateRow } from "@jamesaphoenix/tx-types"
+export type { CandidateRow } from "../types/index.js"
 export {
   CANDIDATE_CONFIDENCES,
   CANDIDATE_CATEGORIES,

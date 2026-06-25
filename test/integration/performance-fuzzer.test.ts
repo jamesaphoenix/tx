@@ -19,7 +19,7 @@ import {
   fixtureId,
   chaos,
   type TestDatabase
-} from "@jamesaphoenix/tx-test-utils"
+} from "@jamesaphoenix/tx/testing"
 
 // Skip unless STRESS=1 environment variable is set
 const SKIP_STRESS = !process.env["STRESS"]

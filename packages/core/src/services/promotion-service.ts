@@ -8,7 +8,7 @@ import type {
   CandidateFilter,
   CandidateId,
   Learning
-} from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
 
 /**
  * Result of promoting a candidate to the learnings table.

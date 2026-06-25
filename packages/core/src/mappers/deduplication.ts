@@ -8,7 +8,7 @@ import type {
   ProcessedHashRow,
   FileProgress,
   FileProgressRow
-} from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
 import { parseDate } from "./parse-date.js"
 
 /**

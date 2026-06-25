@@ -5,8 +5,8 @@
  */
 
 import { Effect } from "effect"
-import { PinService } from "@jamesaphoenix/tx-core"
-import { isValidTaskId } from "@jamesaphoenix/tx-types"
+import { PinService } from "@jamesaphoenix/tx"
+import { isValidTaskId } from "@jamesaphoenix/tx/types"
 import { toJson } from "../output.js"
 import { type Flags, flag, opt, parseTaskId } from "../utils/parse.js"
 import { CliExitError } from "../cli-exit.js"

@@ -20,12 +20,12 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { Effect } from "effect"
-import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
+import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx/testing"
 import {
   MemoryService,
   MemoryDocumentRepository,
   MemoryRetrieverService,
-} from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
 import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, rmSync, unlinkSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"

@@ -20,10 +20,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(__dirname, "..")
 
 const PACKAGES = [
-  "packages/types",
   "packages/core",
-  "packages/test-utils",
-  "packages/tx",
 ]
 
 const restore = process.argv.includes("--restore")

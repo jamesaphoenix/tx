@@ -9,8 +9,8 @@ import type {
   RunId,
   RunStatus,
   RunRow
-} from "@jamesaphoenix/tx-types"
-import { RUN_STATUSES } from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
+import { RUN_STATUSES } from "../types/index.js"
 import { InvalidStatusError } from "../errors.js"
 import { parseDate } from "./parse-date.js"
 import { coerceDbResult } from "../utils/db-result.js"

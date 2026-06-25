@@ -1,5 +1,5 @@
 import { Context, Effect, Layer } from "effect"
-import type { LearningWithScore } from "@jamesaphoenix/tx-types"
+import type { LearningWithScore } from "../types/index.js"
 import { cosineSimilarity } from "../utils/math.js"
 import { EmbeddingDimensionMismatchError, ZeroMagnitudeVectorError } from "../errors.js"
 

@@ -13,8 +13,8 @@ import {
 } from "../repo/domain-event-repo.js"
 import { DatabaseError } from "../errors.js"
 import { generateUlid } from "../utils/ulid.js"
-import type { DomainEventEnvelope } from "@jamesaphoenix/tx-types"
-import { SupervisionEventTypeSchema } from "@jamesaphoenix/tx-types"
+import type { DomainEventEnvelope } from "../types/index.js"
+import { SupervisionEventTypeSchema } from "../types/index.js"
 
 // =============================================================================
 // TYPES

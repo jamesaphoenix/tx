@@ -35,7 +35,7 @@ import type {
   TaskDocLinkRow,
   InvariantRow,
   InvariantCheckRow,
-} from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
 
 export class DocRepository extends Context.Tag("DocRepository")<
   DocRepository,

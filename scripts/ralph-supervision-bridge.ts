@@ -23,7 +23,7 @@ import {
   DomainEventService,
   DocReviewService,
   type PublishDomainEventInput,
-} from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
 
 const projectDir = resolve(import.meta.dir, "..")
 const dbPath = process.env.TX_DB_PATH ?? resolve(projectDir, ".tx/tasks.db")

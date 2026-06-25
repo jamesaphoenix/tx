@@ -10,10 +10,10 @@ import { Effect } from "effect"
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
-import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
-import { DocService, SpecTraceService, parseBatchRunInput } from "@jamesaphoenix/tx-core"
+import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx/testing"
+import { DocService, SpecTraceService, parseBatchRunInput } from "@jamesaphoenix/tx"
 import { mapCoreError } from "../../apps/cli/src/api/api.js"
-import type { SpecSignoff, TraceabilityMatrix } from "@jamesaphoenix/tx-types"
+import type { SpecSignoff, TraceabilityMatrix } from "@jamesaphoenix/tx/types"
 
 type InvariantInput = {
   id: string

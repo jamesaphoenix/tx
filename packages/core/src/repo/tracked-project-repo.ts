@@ -6,7 +6,7 @@ import type {
   TrackedProject,
   TrackedProjectRow,
   CreateTrackedProjectInput
-} from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
 import { coerceDbResult } from "../utils/db-result.js"
 
 export class TrackedProjectRepository extends Context.Tag("TrackedProjectRepository")<

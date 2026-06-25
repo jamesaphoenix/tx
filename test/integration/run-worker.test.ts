@@ -47,7 +47,7 @@ async function makeTestLayer() {
     DependencyRepositoryLive,
     ReadyServiceLive,
     RunRepositoryLive
-  } = await import("@jamesaphoenix/tx-core")
+  } = await import("@jamesaphoenix/tx")
 
   const infra = SqliteClientLive(":memory:")
 
@@ -106,7 +106,7 @@ describe("runWorker", () => {
       OrchestratorService,
       TaskRepository,
       runWorker
-    } = await import("@jamesaphoenix/tx-core")
+    } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     // Track what the execute hook receives
@@ -185,7 +185,7 @@ describe("runWorker", () => {
       OrchestratorService,
       TaskRepository,
       runWorker
-    } = await import("@jamesaphoenix/tx-core")
+    } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     // Custom context to merge
@@ -259,7 +259,7 @@ describe("runWorker", () => {
       TaskRepository,
       RunRepository,
       runWorker
-    } = await import("@jamesaphoenix/tx-core")
+    } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     let capturedRunId = ""
@@ -327,7 +327,7 @@ describe("runWorker", () => {
       TaskRepository,
       RunRepository,
       runWorker
-    } = await import("@jamesaphoenix/tx-core")
+    } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     let capturedRunId = ""
@@ -389,7 +389,7 @@ describe("runWorker", () => {
       TaskRepository,
       RunRepository,
       runWorker
-    } = await import("@jamesaphoenix/tx-core")
+    } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     let capturedRunId = ""
@@ -451,7 +451,7 @@ describe("runWorker", () => {
       TaskRepository,
       RunRepository,
       runWorker
-    } = await import("@jamesaphoenix/tx-core")
+    } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     let capturedRunId = ""
@@ -512,7 +512,7 @@ describe("runWorker", () => {
       OrchestratorService,
       TaskRepository,
       runWorker
-    } = await import("@jamesaphoenix/tx-core")
+    } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const consoleSpy = vi.spyOn(console, "log")
@@ -569,7 +569,7 @@ describe("runWorker", () => {
       OrchestratorService,
       TaskRepository,
       runWorker
-    } = await import("@jamesaphoenix/tx-core")
+    } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const stateSnapshots: Record<string, unknown>[] = []
@@ -637,7 +637,7 @@ describe("runWorker", () => {
       TaskRepository,
       WorkerService,
       runWorker
-    } = await import("@jamesaphoenix/tx-core")
+    } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     let registeredWorkerId = ""
@@ -707,7 +707,7 @@ describe("runWorker", () => {
       ClaimService,
       ReadyService,
       runWorker
-    } = await import("@jamesaphoenix/tx-core")
+    } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     let executionCount = 0

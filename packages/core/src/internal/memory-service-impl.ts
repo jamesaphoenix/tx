@@ -23,7 +23,7 @@ import type {
   MemoryIndexStatus,
   MemorySearchOptions,
   CreateMemoryDocumentInput,
-} from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
 
 // Reserved frontmatter keys that are NOT synced as properties
 const RESERVED_FRONTMATTER_KEYS = new Set(["tags", "related", "created"])

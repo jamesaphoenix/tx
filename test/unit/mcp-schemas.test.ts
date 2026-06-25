@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from "vitest"
 import { Schema, Either } from "effect"
-import { TASK_STATUSES, type TaskWithDeps, type TaskId, TaskLinkedDocRefSchema } from "@jamesaphoenix/tx-types"
+import { TASK_STATUSES, type TaskWithDeps, type TaskId, TaskLinkedDocRefSchema } from "@jamesaphoenix/tx/types"
 import { fixtureId } from "../fixtures.js"
 
 // -----------------------------------------------------------------------------

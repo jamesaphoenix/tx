@@ -3,7 +3,7 @@
  */
 
 import { Effect } from "effect"
-import { MigrationService } from "@jamesaphoenix/tx-core"
+import { MigrationService } from "@jamesaphoenix/tx"
 import { toJson } from "../output.js"
 import { commandHelp } from "../help.js"
 import { unknownSubcommandError } from "../cli-errors.js"

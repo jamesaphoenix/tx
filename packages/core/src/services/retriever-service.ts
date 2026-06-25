@@ -7,7 +7,7 @@ import { GraphExpansionService, type SeedLearning } from "./graph-expansion.js"
 import { FeedbackTrackerService } from "./feedback-tracker.js"
 import { DiversifierService } from "./diversifier-service.js"
 import { RetrievalError, DatabaseError, EmbeddingDimensionMismatchError, ZeroMagnitudeVectorError } from "../errors.js"
-import type { Learning, LearningWithScore, LearningId, RetrievalOptions } from "@jamesaphoenix/tx-types"
+import type { Learning, LearningWithScore, LearningId, RetrievalOptions } from "../types/index.js"
 import {
   DEFAULT_RECENCY_WEIGHT,
   MAX_VECTOR_CANDIDATES,

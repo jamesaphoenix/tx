@@ -11,7 +11,7 @@ import type {
   CreateEdgeInput,
   UpdateEdgeInput,
   NeighborNode
-} from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
 import { coerceDbResult } from "../utils/db-result.js"
 
 export class EdgeRepository extends Context.Tag("EdgeRepository")<

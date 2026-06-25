@@ -43,9 +43,9 @@ import {
   ClaimRepositoryLive,
   ClaimServiceLive,
   OrchestratorStateRepositoryLive
-} from "@jamesaphoenix/tx-core"
-import type { TaskId } from "@jamesaphoenix/tx-types"
-import { fixtureId, createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
+} from "@jamesaphoenix/tx"
+import type { TaskId } from "@jamesaphoenix/tx/types"
+import { fixtureId, createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx/testing"
 
 // =============================================================================
 // Test Layer Factory

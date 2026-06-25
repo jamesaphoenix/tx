@@ -6,7 +6,7 @@
 
 import { HttpApiBuilder } from "@effect/platform"
 import { Effect } from "effect"
-import { SyncService } from "@jamesaphoenix/tx-core"
+import { SyncService } from "@jamesaphoenix/tx"
 import { TxApi, mapCoreError } from "../api.js"
 
 export const SyncLive = HttpApiBuilder.group(TxApi, "sync", (handlers) =>

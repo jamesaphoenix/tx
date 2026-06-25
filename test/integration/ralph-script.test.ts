@@ -6,18 +6,18 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { createHash } from "node:crypto"
 import { Effect, Layer } from "effect"
-import type { ReviewTriggerCause } from "@jamesaphoenix/tx-types"
+import type { ReviewTriggerCause } from "@jamesaphoenix/tx/types"
 import {
   SqliteClientLive,
   TaskRepositoryLive,
   DependencyRepositoryLive,
   SqliteClient,
-} from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
 import {
   DocRepositoryLive,
   DomainEventRepositoryLive,
   DocReviewRepositoryLive,
-} from "@jamesaphoenix/tx-core/repo"
+} from "@jamesaphoenix/tx/repo"
 import {
   SupervisionRepository,
   SupervisionRepositoryLive,
@@ -25,7 +25,7 @@ import {
   DomainEventServiceLive,
   DocReviewService,
   DocReviewServiceLive,
-} from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
 import { fixtureId } from "../fixtures.js"
 
 interface Harness {

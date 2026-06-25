@@ -6,15 +6,15 @@
  */
 import { describe, it, expect, beforeAll, afterEach, afterAll } from "vitest"
 import { Effect } from "effect"
-import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
+import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx/testing"
 import {
   TaskService,
   GuardService,
   ReflectService,
   AttemptService,
   RunRepository,
-} from "@jamesaphoenix/tx-core"
-import type { TaskId } from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx"
+import type { TaskId } from "@jamesaphoenix/tx/types"
 
 describe("Guard + Reflect integration", () => {
   let shared: SharedTestLayerResult

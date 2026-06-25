@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { Effect, Layer } from "effect"
-import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
+import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx/testing"
 import {
   SqliteClient,
   CompactionRepositoryLive,
@@ -8,7 +8,7 @@ import {
   CompactionService,
   CompactionServiceNoop,
   CompactionServiceAuto
-} from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
 import { existsSync, unlinkSync, readFileSync, writeFileSync, mkdtempSync, symlinkSync, rmSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"

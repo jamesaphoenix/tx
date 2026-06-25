@@ -7,8 +7,8 @@
 
 import { HttpApiBuilder } from "@effect/platform"
 import { Effect } from "effect"
-import { MemoryService, MemoryRetrieverService } from "@jamesaphoenix/tx-core"
-import { serializeMemoryDocument, serializeMemoryDocumentWithScore } from "@jamesaphoenix/tx-types"
+import { MemoryService, MemoryRetrieverService } from "@jamesaphoenix/tx"
+import { serializeMemoryDocument, serializeMemoryDocumentWithScore } from "@jamesaphoenix/tx/types"
 import { TxApi, mapCoreError } from "../api.js"
 
 // -----------------------------------------------------------------------------

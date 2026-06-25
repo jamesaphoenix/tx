@@ -14,7 +14,7 @@ import {
   writeDashboardDefaultTaskAssigmentType,
   scaffoldConfigToml,
   DASHBOARD_DEFAULT_TASK_ASSIGMENT_KEY,
-} from "@jamesaphoenix/tx-core";
+} from "@jamesaphoenix/tx";
 
 const tempDirs: string[] = [];
 const DEFAULTS = {

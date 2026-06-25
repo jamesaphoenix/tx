@@ -6,7 +6,7 @@
 
 import { HttpApiBuilder } from "@effect/platform"
 import { Effect } from "effect"
-import { ReflectService } from "@jamesaphoenix/tx-core"
+import { ReflectService } from "@jamesaphoenix/tx"
 import { TxApi, mapCoreError } from "../api.js"
 
 export const ReflectLive = HttpApiBuilder.group(TxApi, "reflect", (handlers) =>

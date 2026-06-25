@@ -12,7 +12,7 @@ import { DatabaseError, ExtractionUnavailableError, ValidationError } from "../e
 import { CompactionRepository, type CompactionLogEntry } from "../repo/compaction-repo.js"
 import { rowToTask, type TaskRow } from "../mappers/task.js"
 import { resolvePathWithin } from "../utils/file-path.js"
-import type { Task } from "@jamesaphoenix/tx-types"
+import type { Task } from "../types/index.js"
 import { LlmService } from "./llm-service.js"
 
 /**

@@ -28,7 +28,7 @@ import {
   AstGrepServiceNoop,
   EXT_TO_LANGUAGE,
   DEFAULT_SYMBOL_PATTERNS,
-} from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based IDs)

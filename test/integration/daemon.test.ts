@@ -26,7 +26,7 @@ import {
   wrapDbAsTestDatabase,
   type TestDatabase,
   type SharedTestLayerResult
-} from "@jamesaphoenix/tx-test-utils"
+} from "@jamesaphoenix/tx/testing"
 import {
   CandidateExtractorService,
   CandidateExtractorServiceNoop,
@@ -43,13 +43,13 @@ import {
   EdgeService,
   CandidateNotFoundError,
   ValidationError
-} from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
 import {
   generateLaunchdPlist,
   generateSystemdService,
   type LaunchdPlistOptions,
   type SystemdServiceOptions
-} from "@jamesaphoenix/tx-core/services"
+} from "@jamesaphoenix/tx/services"
 
 const CandidateExtractorServiceAutoNoop = CandidateExtractorServiceAuto.pipe(
   Layer.provide(LlmServiceNoop)

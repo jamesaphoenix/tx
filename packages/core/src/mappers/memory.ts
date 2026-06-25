@@ -14,8 +14,8 @@ import type {
   MemoryLinkRow,
   MemorySourceRow,
   MemoryPropertyRow,
-} from "@jamesaphoenix/tx-types"
-import { MEMORY_LINK_TYPES } from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
+import { MEMORY_LINK_TYPES } from "../types/index.js"
 import { InvalidStatusError } from "../errors.js"
 import { coerceDbResult } from "../utils/db-result.js"
 

@@ -15,7 +15,7 @@ import {
   type WorkerSessionRuntime,
   type WorkerSessionTerminalBackend,
   type WorkerSessionRow,
-} from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
 import { InvalidStatusError } from "../errors.js"
 
 // Local string arrays for .includes() checks

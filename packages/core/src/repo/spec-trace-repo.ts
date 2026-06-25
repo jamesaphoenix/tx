@@ -10,7 +10,7 @@ import type {
   SpecTestRow,
   SpecTestRunRow,
   SpecSignoffRow,
-} from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
 
 export type { InvariantSummary, SpecTraceFilter } from "./spec-trace-repo.types.js"
 

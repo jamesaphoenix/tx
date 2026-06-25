@@ -11,7 +11,7 @@ import type {
   AnchorId,
   AnchorType,
   AnchorStatus
-} from "@jamesaphoenix/tx-types"
+} from "../../types/index.js"
 import type { TestDatabase } from "../database/index.js"
 
 /**

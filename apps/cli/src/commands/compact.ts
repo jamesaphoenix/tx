@@ -6,7 +6,7 @@
 
 import { resolve, sep } from "node:path"
 import { Effect } from "effect"
-import { CompactionService } from "@jamesaphoenix/tx-core"
+import { CompactionService } from "@jamesaphoenix/tx"
 import { toJson } from "../output.js"
 import { type Flags, flag, opt } from "../utils/parse.js"
 

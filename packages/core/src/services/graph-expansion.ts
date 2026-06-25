@@ -1,6 +1,6 @@
 import { Context, Effect, Layer } from "effect"
 import { DatabaseError, ValidationError } from "../errors.js"
-import type { Learning, EdgeType, LearningId } from "@jamesaphoenix/tx-types"
+import type { Learning, EdgeType, LearningId } from "../types/index.js"
 import { buildGraphExpansionServiceLive } from "./graph-expansion/live.js"
 
 /**

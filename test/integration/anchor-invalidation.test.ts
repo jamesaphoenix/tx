@@ -27,7 +27,7 @@
 import { describe, it, expect, beforeAll, afterEach, afterAll } from "vitest"
 import { Effect, Layer } from "effect"
 import { createHash } from "node:crypto"
-import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
+import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx/testing"
 
 // Import services at module level (no more dynamic imports)
 import {
@@ -37,8 +37,8 @@ import {
   LearningRepositoryLive,
   AnchorService,
   LearningService
-} from "@jamesaphoenix/tx-core"
-import type { AnchorStatus } from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx"
+import type { AnchorStatus } from "@jamesaphoenix/tx/types"
 import type { Database } from "bun:sqlite"
 
 // =============================================================================

@@ -5,7 +5,7 @@
  */
 
 import { Effect } from "effect"
-import { ReflectService } from "@jamesaphoenix/tx-core"
+import { ReflectService } from "@jamesaphoenix/tx"
 import { toJson } from "../output.js"
 import { type Flags, flag, parseIntOpt, parseFloatOpt } from "../utils/parse.js"
 

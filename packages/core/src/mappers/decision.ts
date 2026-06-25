@@ -1,8 +1,8 @@
 /**
  * Decision mapper — converts DB rows to domain objects.
  */
-import type { DecisionRow, Decision, DecisionStatus, DecisionSource } from "@jamesaphoenix/tx-types"
-import { DECISION_STATUSES, DECISION_SOURCES } from "@jamesaphoenix/tx-types"
+import type { DecisionRow, Decision, DecisionStatus, DecisionSource } from "../types/index.js"
+import { DECISION_STATUSES, DECISION_SOURCES } from "../types/index.js"
 import { coerceDbResult } from "../utils/db-result.js"
 
 const validStatuses: readonly string[] = DECISION_STATUSES

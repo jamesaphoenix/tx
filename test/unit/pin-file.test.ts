@@ -11,7 +11,7 @@ import {
   upsertBlock,
   removeBlock,
   syncBlocks,
-} from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
 
 describe("parseBlocks", () => {
   it("returns empty map for content with no blocks", () => {

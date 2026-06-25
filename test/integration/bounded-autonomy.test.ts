@@ -11,7 +11,7 @@
 
 import { describe, it, expect, beforeAll, afterEach, afterAll } from "vitest"
 import { Effect } from "effect"
-import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
+import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx/testing"
 import {
   TaskService,
   ReadyService,
@@ -19,8 +19,8 @@ import {
   LabelRepository,
   VerifyService,
   ReflectService,
-} from "@jamesaphoenix/tx-core"
-import type { TaskId } from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx"
+import type { TaskId } from "@jamesaphoenix/tx/types"
 
 describe("Bounded Autonomy Primitives", () => {
   let shared: SharedTestLayerResult

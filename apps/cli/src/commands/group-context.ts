@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { TaskService } from "@jamesaphoenix/tx-core"
+import { TaskService } from "@jamesaphoenix/tx"
 import { toJson } from "../output.js"
 import { type Flags, flag, parseTaskId } from "../utils/parse.js"
 

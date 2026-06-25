@@ -9,7 +9,7 @@ import type {
   FileProgress,
   FileProgressRow,
   UpsertFileProgressInput
-} from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
 import { coerceDbResult } from "../utils/db-result.js"
 
 export class DeduplicationRepository extends Context.Tag("DeduplicationRepository")<

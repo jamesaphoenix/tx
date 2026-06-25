@@ -21,19 +21,19 @@ import { createHash } from "node:crypto"
 import type {
   ReviewTriggerCause,
   ReviewRunResult,
-} from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx/types"
 import {
   SqliteClientLive,
   TaskRepositoryLive,
   DependencyRepositoryLive,
   SqliteClient,
-} from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
 import {
   DocRepositoryLive,
   DomainEventRepositoryLive,
   DocReviewRepositoryLive,
   DocReviewRepository,
-} from "@jamesaphoenix/tx-core/repo"
+} from "@jamesaphoenix/tx/repo"
 import {
   DomainEventService,
   DomainEventServiceLive,
@@ -41,7 +41,7 @@ import {
   DocReviewServiceLive,
   ReviewRuntime,
   type ReviewExecutionParams,
-} from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based IDs)

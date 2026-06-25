@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import { AnchorNotFoundError } from "../../errors.js"
 import { getAnchorTTL, isStale } from "../anchor-verification.js"
-import type { AnchorStatus } from "@jamesaphoenix/tx-types"
+import type { AnchorStatus } from "../../types/index.js"
 import type { AnchorServiceDeps } from "./anchor-service-deps.js"
 
 export const createAnchorVerificationOps = ({ anchorRepo }: AnchorServiceDeps) => ({

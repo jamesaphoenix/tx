@@ -12,8 +12,8 @@ import {
 } from "node:fs"
 import { join, resolve } from "node:path"
 import { tmpdir } from "node:os"
-import { getSharedTestLayer, type SharedTestLayerResult, fixtureId } from "@jamesaphoenix/tx-test-utils"
-import { SyncService, SqliteClient, PinService } from "@jamesaphoenix/tx-core"
+import { getSharedTestLayer, type SharedTestLayerResult, fixtureId } from "@jamesaphoenix/tx/testing"
+import { SyncService, SqliteClient, PinService } from "@jamesaphoenix/tx"
 
 const readJsonl = (path: string): any[] => {
   if (!existsSync(path)) return []

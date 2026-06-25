@@ -12,8 +12,8 @@ import type {
   SyncImportResult,
   SyncHydrateResult,
   SyncStreamInfoResult
-} from "@jamesaphoenix/tx-core"
-import { SyncService } from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
+import { SyncService } from "@jamesaphoenix/tx"
 import { runEffect } from "../runtime.js"
 import { handleToolError, type McpToolResult } from "../response.js"
 

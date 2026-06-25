@@ -19,14 +19,14 @@
 import { describe, it, expect, beforeAll, afterEach, afterAll } from "vitest"
 import { Effect, Layer } from "effect"
 import { createHash } from "node:crypto"
-import { createSharedTestLayer, type SharedTestLayerResult as BaseSharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
+import { createSharedTestLayer, type SharedTestLayerResult as BaseSharedTestLayerResult } from "@jamesaphoenix/tx/testing"
 
 // Import services once at module level
 import {
   GraphExpansionService,
   LearningService,
   EdgeService
-} from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
 
 type SharedTestLayerResult = BaseSharedTestLayerResult & {
   readonly layer: Layer.Layer<any, any, never>

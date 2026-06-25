@@ -6,8 +6,8 @@
 
 import { HttpApiBuilder } from "@effect/platform"
 import { Effect } from "effect"
-import { serializePin } from "@jamesaphoenix/tx-types"
-import { PinService } from "@jamesaphoenix/tx-core"
+import { serializePin } from "@jamesaphoenix/tx/types"
+import { PinService } from "@jamesaphoenix/tx"
 import { TxApi, mapCoreError, NotFound } from "../api.js"
 
 // -----------------------------------------------------------------------------

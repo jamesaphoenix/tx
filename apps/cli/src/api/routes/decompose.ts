@@ -1,10 +1,10 @@
 import { HttpApiBuilder } from "@effect/platform"
 import { Effect } from "effect"
-import { DecomposeService } from "@jamesaphoenix/tx-core"
+import { DecomposeService } from "@jamesaphoenix/tx"
 import {
   serializeDecomposeResult,
-} from "@jamesaphoenix/tx-types"
-import type { DecomposeRequest } from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx/types"
+import type { DecomposeRequest } from "@jamesaphoenix/tx/types"
 import { TxApi, mapCoreError } from "../api.js"
 
 export const runDecomposeApi = (payload: DecomposeRequest) =>

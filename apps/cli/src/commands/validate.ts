@@ -3,8 +3,8 @@
  */
 
 import { Effect } from "effect"
-import { ValidationService } from "@jamesaphoenix/tx-core"
-import type { ValidationResult, CheckResult } from "@jamesaphoenix/tx-core"
+import { ValidationService } from "@jamesaphoenix/tx"
+import type { ValidationResult, CheckResult } from "@jamesaphoenix/tx"
 import { toJson } from "../output.js"
 
 type Flags = Record<string, string | boolean>

@@ -13,7 +13,7 @@ import {
   type SpecTestRow,
   type SpecTestRunRow,
   type SpecSignoffRow,
-} from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
 import { InvalidStatusError } from "../errors.js"
 import { parseDate } from "./parse-date.js"
 

@@ -11,13 +11,13 @@
 
 import { describe, it, expect, beforeEach } from "vitest"
 import { Effect, Layer } from "effect"
-import type { TaskId } from "@jamesaphoenix/tx-types"
+import type { TaskId } from "@jamesaphoenix/tx/types"
 import {
   createTestDatabase,
   fixtureId,
   chaos,
   type TestDatabase
-} from "@jamesaphoenix/tx-test-utils"
+} from "@jamesaphoenix/tx/testing"
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based IDs)
@@ -49,7 +49,7 @@ async function makeTestLayer() {
     ClaimRepositoryLive,
     ClaimServiceLive,
     OrchestratorStateRepositoryLive
-  } = await import("@jamesaphoenix/tx-core")
+  } = await import("@jamesaphoenix/tx")
 
   const infra = SqliteClientLive(":memory:")
   const repos = Layer.mergeAll(
@@ -323,7 +323,7 @@ describe("Chaos: Ready Detection Under Load", () => {
   })
 
   it("ready detection with limit parameter scales correctly", async () => {
-    const { ReadyService, TaskService } = await import("@jamesaphoenix/tx-core")
+    const { ReadyService, TaskService } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     // Create tasks via service layer (slower but ensures same database)

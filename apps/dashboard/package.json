@@ -16,8 +16,7 @@
   "dependencies": {
     "@effect/platform": "^0.96.0",
     "@hono/node-server": "^1.14.0",
-    "@jamesaphoenix/tx-core": "*",
-    "@jamesaphoenix/tx-types": "*",
+    "@jamesaphoenix/tx": "*",
     "@tanstack/react-query": "^5.66.0",
     "@tanstack/react-store": "^0.11.0",
     "@tanstack/store": "^0.11.0",

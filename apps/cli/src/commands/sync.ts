@@ -3,7 +3,7 @@
  */
 
 import { Effect } from "effect"
-import { SyncService } from "@jamesaphoenix/tx-core"
+import { SyncService } from "@jamesaphoenix/tx"
 import { toJson } from "../output.js"
 import { commandHelp } from "../help.js"
 import { type Flags, flag, opt } from "../utils/parse.js"

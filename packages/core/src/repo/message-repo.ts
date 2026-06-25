@@ -9,7 +9,7 @@ import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
 import { DatabaseError, EntityFetchError } from "../errors.js"
 import { rowToMessage, type MessageRow } from "../mappers/message.js"
-import type { Message } from "@jamesaphoenix/tx-types"
+import type { Message } from "../types/index.js"
 import { coerceDbResult } from "../utils/db-result.js"
 
 export class MessageRepository extends Context.Tag("MessageRepository")<

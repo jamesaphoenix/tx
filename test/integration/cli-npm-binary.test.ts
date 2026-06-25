@@ -29,9 +29,9 @@ const TIMEOUT = process.env.CI ? 60000 : 30000
 
 // Packages in dependency order
 const PACK_ORDER = [
-  { dir: "packages/types", name: "@jamesaphoenix/tx-types" },
-  { dir: "packages/core", name: "@jamesaphoenix/tx-core" },
-  { dir: "packages/test-utils", name: "@jamesaphoenix/tx-test-utils" },
+  { dir: "packages/types", name: "@jamesaphoenix/tx/types" },
+  { dir: "packages/core", name: "@jamesaphoenix/tx" },
+  { dir: "packages/test-utils", name: "@jamesaphoenix/tx/testing" },
   { dir: "packages/tx", name: "@jamesaphoenix/tx" },
   { dir: "apps/cli", name: "@jamesaphoenix/tx-cli" },
 ]

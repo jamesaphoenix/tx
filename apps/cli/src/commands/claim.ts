@@ -8,7 +8,7 @@
 
 import { Effect } from "effect"
 import * as os from "node:os"
-import { ClaimService, WorkerRepository } from "@jamesaphoenix/tx-core"
+import { ClaimService, WorkerRepository } from "@jamesaphoenix/tx"
 import { toJson } from "../output.js"
 import { type Flags, flag, parseIntOpt, parseTaskId } from "../utils/parse.js"
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { generateUlid, isUlid } from "@jamesaphoenix/tx-core"
+import { generateUlid, isUlid } from "@jamesaphoenix/tx"
 
 describe("ULID utility", () => {
   it("generates 26-character Crockford ULIDs", () => {

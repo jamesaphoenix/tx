@@ -25,8 +25,8 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { Effect } from "effect"
-import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
-import { MemoryService, MemoryRetrieverService } from "@jamesaphoenix/tx-core"
+import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx/testing"
+import { MemoryService, MemoryRetrieverService } from "@jamesaphoenix/tx"
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs"
 import { join } from "node:path"
 

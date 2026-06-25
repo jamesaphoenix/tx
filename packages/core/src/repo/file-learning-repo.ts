@@ -3,7 +3,7 @@ import { SqliteClient } from "../db.js"
 import { DatabaseError, EntityFetchError, FileLearningNotFoundError } from "../errors.js"
 import { rowToFileLearning, matchesPattern } from "../mappers/file-learning.js"
 import { DEFAULT_QUERY_LIMIT } from "../utils/sql.js"
-import type { FileLearning, FileLearningRow, CreateFileLearningInput } from "@jamesaphoenix/tx-types"
+import type { FileLearning, FileLearningRow, CreateFileLearningInput } from "../types/index.js"
 import { coerceDbResult } from "../utils/db-result.js"
 
 export class FileLearningRepository extends Context.Tag("FileLearningRepository")<

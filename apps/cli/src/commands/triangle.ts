@@ -4,7 +4,7 @@
  */
 
 import { Effect } from "effect"
-import { DecisionService, DocService, SpecTraceService } from "@jamesaphoenix/tx-core"
+import { DecisionService, DocService, SpecTraceService } from "@jamesaphoenix/tx"
 import { toJson } from "../output.js"
 import { type Flags, flag } from "../utils/parse.js"
 

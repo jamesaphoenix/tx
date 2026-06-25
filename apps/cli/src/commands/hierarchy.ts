@@ -3,8 +3,8 @@
  */
 
 import { Effect } from "effect"
-import { TaskService, type TaskNotFoundError, type DatabaseError } from "@jamesaphoenix/tx-core"
-import type { TaskWithDeps } from "@jamesaphoenix/tx-types"
+import { TaskService, type TaskNotFoundError, type DatabaseError } from "@jamesaphoenix/tx"
+import type { TaskWithDeps } from "@jamesaphoenix/tx/types"
 import { toJson, formatTaskLine } from "../output.js"
 import { type Flags, flag, parseTaskId } from "../utils/parse.js"
 

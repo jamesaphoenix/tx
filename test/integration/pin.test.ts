@@ -15,8 +15,8 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { Effect } from "effect"
-import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
-import { PinService } from "@jamesaphoenix/tx-core"
+import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx/testing"
+import { PinService } from "@jamesaphoenix/tx"
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, mkdirSync, symlinkSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"

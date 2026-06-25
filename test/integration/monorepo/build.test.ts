@@ -19,7 +19,7 @@ const ROOT = process.cwd()
 
 // Package paths
 const PACKAGES = {
-  types: resolve(ROOT, "packages/types"),
+  // @jamesaphoenix/tx (the merged library: types + core + test utilities) lives in packages/core
   core: resolve(ROOT, "packages/core"),
 }
 
@@ -29,8 +29,9 @@ const APPS = {
   dashboard: resolve(ROOT, "apps/dashboard"),
 }
 
-describe("Build Outputs: @tx/types", () => {
-  const distPath = resolve(PACKAGES.types, "dist")
+describe("Build Outputs: @jamesaphoenix/tx (./types subpath)", () => {
+  // types are now part of @jamesaphoenix/tx, built under dist/types
+  const distPath = resolve(PACKAGES.core, "dist", "types")
 
   it("has dist directory", () => {
     expect(existsSync(distPath)).toBe(true)
@@ -130,7 +131,7 @@ describe("Build Outputs: @jamesaphoenix/tx-cli", () => {
 
   it("imports @tx/core in built output", () => {
     const content = readFileSync(resolve(distPath, "cli.js"), "utf-8")
-    expect(content).toContain("@jamesaphoenix/tx-core")
+    expect(content).toContain("@jamesaphoenix/tx")
   })
 })
 
@@ -257,29 +258,18 @@ describe("Package.json Configuration", () => {
     }
   })
 
-  it("@tx/core depends on @tx/types", () => {
-    const pkg = readPackageJson(PACKAGES.core)
-    // Published packages use semver, workspace packages use "*"
-    expect(pkg.dependencies["@jamesaphoenix/tx-types"]).toMatch(/^(\*|\^[\d.]+)$/)
-  })
-
-  it("apps depend on @tx/core (except agent-sdk)", () => {
-    // tx-cli now bundles the MCP and API servers, so it carries their @tx/core dep
+  it("apps depend on @jamesaphoenix/tx", () => {
+    // tx-cli bundles the MCP and API servers; it and agent-sdk depend on the merged library
     const cliPkg = readPackageJson(APPS.cli)
-    expect(cliPkg.dependencies["@jamesaphoenix/tx-core"]).toMatch(/^(\*|\^[\d.]+)$/)
+    expect(cliPkg.dependencies["@jamesaphoenix/tx"]).toMatch(/^(\*|\^[\d.]+)$/)
 
-    // agent-sdk has @tx/core as optional
     const sdkPkg = readPackageJson(APPS.agentSdk)
-    expect(sdkPkg.optionalDependencies?.["@jamesaphoenix/tx-core"]).toMatch(/^(\*|\^[\d.]+)$/)
+    expect(sdkPkg.dependencies["@jamesaphoenix/tx"]).toMatch(/^(\*|\^[\d.]+)$/)
   })
 
-  it("packages use workspace protocol or semver for internal deps", () => {
-    const corePkg = readPackageJson(PACKAGES.core)
-    expect(corePkg.dependencies["@jamesaphoenix/tx-types"]).toMatch(/^(\*|\^[\d.]+)$/)
-
+  it("consumers reference the merged library with workspace protocol or semver", () => {
     const cliPkg = readPackageJson(APPS.cli)
-    expect(cliPkg.dependencies["@jamesaphoenix/tx-types"]).toMatch(/^(\*|\^[\d.]+)$/)
-    expect(cliPkg.dependencies["@jamesaphoenix/tx-core"]).toMatch(/^(\*|\^[\d.]+)$/)
+    expect(cliPkg.dependencies["@jamesaphoenix/tx"]).toMatch(/^(\*|\^[\d.]+)$/)
   })
 
   it("executable packages have bin field", () => {
@@ -334,23 +324,9 @@ describe("No Circular Dependencies", () => {
   const filterTxDeps = (deps: Record<string, string>) =>
     Object.keys(deps).filter((d) => d.startsWith("@tx/") || d.startsWith("@jamesaphoenix/tx-"))
 
-  // Check that there are no circular imports by verifying the dependency graph
-  it("@tx/types has no dependencies on other @tx/* packages", () => {
-    const pkg = JSON.parse(
-      readFileSync(resolve(PACKAGES.types, "package.json"), "utf-8")
-    )
-
-    const allDeps = {
-      ...pkg.dependencies,
-      ...pkg.devDependencies,
-      ...pkg.peerDependencies,
-    }
-
-    const txDeps = filterTxDeps(allDeps)
-    expect(txDeps).toHaveLength(0)
-  })
-
-  it("@tx/core only depends on @tx/types", () => {
+  // The library (@jamesaphoenix/tx) now bundles types + core + test utilities, so it
+  // must not depend on any other internal @jamesaphoenix/tx-* package.
+  it("@jamesaphoenix/tx has no internal @jamesaphoenix/tx-* package dependencies", () => {
     const pkg = JSON.parse(
       readFileSync(resolve(PACKAGES.core, "package.json"), "utf-8")
     )
@@ -362,7 +338,7 @@ describe("No Circular Dependencies", () => {
     }
 
     const txDeps = filterTxDeps(allDeps)
-    expect(txDeps).toEqual(["@jamesaphoenix/tx-types"])
+    expect(txDeps).toEqual([])
   })
 
   it("apps do not depend on each other", () => {

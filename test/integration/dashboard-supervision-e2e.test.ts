@@ -21,7 +21,7 @@ import { mkdirSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { createHash } from "node:crypto"
-import { applyMigrations } from "@jamesaphoenix/tx-core"
+import { applyMigrations } from "@jamesaphoenix/tx"
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based IDs)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { validateEarsRequirements } from "@jamesaphoenix/tx-core"
+import { validateEarsRequirements } from "@jamesaphoenix/tx"
 
 describe("EARS validator", () => {
   it("accepts valid requirements across all EARS patterns", () => {

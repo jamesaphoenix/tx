@@ -11,7 +11,7 @@ import { Effect, ManagedRuntime, Layer } from "effect"
 import { Database } from "bun:sqlite"
 import z from "zod"
 
-import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
+import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx/testing"
 import { seedFixtures, FIXTURES, fixtureId } from "../fixtures.js"
 import {
   SqliteClient,
@@ -44,9 +44,9 @@ import {
   ClaimRepositoryLive,
   ClaimServiceLive,
   OrchestratorStateRepositoryLive,
-} from "@jamesaphoenix/tx-core"
-import type { RunId, TaskId, TaskWithDeps, FileLearning, Learning, LearningWithScore } from "@jamesaphoenix/tx-types"
-import { LEARNING_SOURCE_TYPES } from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx"
+import type { RunId, TaskId, TaskWithDeps, FileLearning, Learning, LearningWithScore } from "@jamesaphoenix/tx/types"
+import { LEARNING_SOURCE_TYPES } from "@jamesaphoenix/tx/types"
 
 // -----------------------------------------------------------------------------
 // Types

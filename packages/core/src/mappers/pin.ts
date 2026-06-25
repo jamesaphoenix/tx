@@ -2,7 +2,7 @@
  * Pin row-to-entity mapper.
  */
 
-import type { Pin, PinRow } from "@jamesaphoenix/tx-types"
+import type { Pin, PinRow } from "../types/index.js"
 import { coerceDbResult } from "../utils/db-result.js"
 
 export const rowToPin = (row: PinRow): Pin => ({

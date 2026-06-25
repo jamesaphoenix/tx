@@ -6,7 +6,7 @@ import {
   discoverSpecTests,
   readSpecManifest,
   defaultSpecTestPatterns,
-} from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
 
 const tempDirs: string[] = []
 

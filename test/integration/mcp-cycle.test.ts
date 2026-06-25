@@ -14,8 +14,8 @@
 
 import { describe, it, expect, beforeEach } from "vitest"
 import { Effect } from "effect"
-import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
-import { SqliteClient } from "@jamesaphoenix/tx-core"
+import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx/testing"
+import { SqliteClient } from "@jamesaphoenix/tx"
 
 // =============================================================================
 // Types (mirror the MCP tool's internal types)

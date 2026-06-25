@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { ValidationError } from "../../errors.js"
-import type { AnchorStatus, AnchorType, CreateAnchorInput } from "@jamesaphoenix/tx-types"
+import type { AnchorStatus, AnchorType, CreateAnchorInput } from "../../types/index.js"
 import type { TypedAnchorInput } from "../anchor-service.js"
 
 const VALID_ANCHOR_TYPES: readonly AnchorType[] = ["glob", "hash", "symbol", "line_range"]

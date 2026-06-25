@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterEach, afterAll } from "vitest"
 import { Effect } from "effect"
-import type { LearningWithScore, LearningId } from "@jamesaphoenix/tx-types"
-import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
+import type { LearningWithScore, LearningId } from "@jamesaphoenix/tx/types"
+import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx/testing"
 
 // Import services once at module level
 import {
@@ -10,7 +10,7 @@ import {
   DiversifierServiceNoop,
   RetrieverService,
   LearningService
-} from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
 
 /**
  * DiversifierService Integration Tests

@@ -10,7 +10,7 @@ import {
   resolvePathWithin,
   findTxRoot,
   resolveTxDbPath,
-} from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
 
 describe("file-path utils", () => {
   it("normalizes path separators", () => {

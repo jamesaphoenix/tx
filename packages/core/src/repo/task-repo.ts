@@ -2,7 +2,7 @@ import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
 import { DatabaseError, TaskNotFoundError, StaleDataError } from "../errors.js"
 import { createTaskRepository } from "./task-repo/factory.js"
-import type { Task, TaskId, TaskFilter } from "@jamesaphoenix/tx-types"
+import type { Task, TaskId, TaskFilter } from "../types/index.js"
 
 export type EffectiveGroupContext = {
   readonly sourceTaskId: TaskId

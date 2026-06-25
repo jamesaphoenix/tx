@@ -5,7 +5,7 @@
 import type {
   DomainEventEnvelope,
   DomainEventRow,
-} from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
 
 /**
  * Safely parse a JSON string, returning empty object on failure.

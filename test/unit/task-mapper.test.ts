@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { rowToTask } from "@jamesaphoenix/tx-core"
+import { rowToTask } from "@jamesaphoenix/tx"
 import { fixtureId } from "../fixtures.js"
-import type { TaskRow } from "@jamesaphoenix/tx-types"
+import type { TaskRow } from "@jamesaphoenix/tx/types"
 
 const baseRow = (overrides: Partial<TaskRow> = {}): TaskRow => ({
   id: fixtureId("unit-task-row"),

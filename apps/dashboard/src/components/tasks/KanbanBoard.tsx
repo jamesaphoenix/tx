@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type DragEvent } from "react"
 import { useQueryClient } from "@tanstack/react-query"
-import { TASK_STATUSES, VALID_TRANSITIONS, type TaskStatus } from "@jamesaphoenix/tx-types/task"
+import { TASK_STATUSES, VALID_TRANSITIONS, type TaskStatus } from "@jamesaphoenix/tx/types"
 import { fetchers, type TaskWithDeps } from "../../api/client"
 import { useInfiniteTasks } from "../../hooks/useInfiniteTasks"
 import { Button } from "../ui"

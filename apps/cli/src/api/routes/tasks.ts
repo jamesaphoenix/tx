@@ -7,9 +7,9 @@
 
 import { HttpApiBuilder, HttpServerRequest } from "@effect/platform"
 import { Effect } from "effect"
-import type { TaskId, TaskWithDeps, TaskCursor, TaskStatus } from "@jamesaphoenix/tx-types"
-import { isValidTaskStatus, TASK_STATUSES, serializeTask } from "@jamesaphoenix/tx-types"
-import { TaskService, ReadyService, DependencyService, HierarchyService, ClaimService } from "@jamesaphoenix/tx-core"
+import type { TaskId, TaskWithDeps, TaskCursor, TaskStatus } from "@jamesaphoenix/tx/types"
+import { isValidTaskStatus, TASK_STATUSES, serializeTask } from "@jamesaphoenix/tx/types"
+import { TaskService, ReadyService, DependencyService, HierarchyService, ClaimService } from "@jamesaphoenix/tx"
 import { TxApi, BadRequest, mapCoreError } from "../api.js"
 
 // -----------------------------------------------------------------------------

@@ -7,7 +7,7 @@ import type {
   ExtractionResult,
   CandidateConfidence,
   CandidateCategory
-} from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
 
 /**
  * The prompt template for learning candidate extraction.

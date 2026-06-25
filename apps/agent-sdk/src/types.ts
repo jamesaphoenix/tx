@@ -14,7 +14,7 @@
 import type {
   TaskStatus as _TaskStatus,
   LearningSourceType as _LearningSourceType
-} from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx/types"
 
 // Re-export for consumers - using local aliases
 export type TaskStatus = _TaskStatus
@@ -32,7 +32,7 @@ export {
   type CreateTaskInput,
   type UpdateTaskInput,
   type TaskFilter
-} from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx/types"
 
 // Learning types
 export {
@@ -45,14 +45,14 @@ export {
   type LearningQuery,
   type ContextResult,
   type LearningSearchResult
-} from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx/types"
 
 // File learning types
 export {
   type FileLearningId,
   type FileLearning,
   type CreateFileLearningInput
-} from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx/types"
 
 // Message types
 export {
@@ -64,7 +64,7 @@ export {
   type InboxFilter,
   type MessageSerialized,
   serializeMessage,
-} from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx/types"
 
 // Attempt types
 export {
@@ -73,7 +73,7 @@ export {
   type AttemptId,
   type Attempt,
   type CreateAttemptInput
-} from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx/types"
 
 // Run types
 export {
@@ -83,7 +83,7 @@ export {
   type Run,
   type CreateRunInput,
   type UpdateRunInput
-} from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx/types"
 
 export {
   SPEC_DISCOVERY_METHODS,
@@ -94,7 +94,7 @@ export {
   type SpecPhase,
   type DiscoverResult,
   type FciResult,
-} from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx/types"
 
 export {
   DecomposeDocSummarySchema,
@@ -114,7 +114,7 @@ export {
   type MaterializedDecomposeTask,
   type DecomposeResult,
   type DecomposeResultSerialized,
-} from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx/types"
 
 // Decision types
 export {
@@ -125,7 +125,7 @@ export {
   type DecisionId,
   type Decision,
   type DecisionSerialized,
-} from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx/types"
 
 export interface SerializedDecision {
   id: string

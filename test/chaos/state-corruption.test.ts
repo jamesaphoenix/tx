@@ -11,13 +11,13 @@
 
 import { describe, it, expect, beforeEach } from "vitest"
 import { Effect, Layer } from "effect"
-import type { TaskId } from "@jamesaphoenix/tx-types"
+import type { TaskId } from "@jamesaphoenix/tx/types"
 import {
   createTestDatabase,
   fixtureId,
   chaos,
   type TestDatabase
-} from "@jamesaphoenix/tx-test-utils"
+} from "@jamesaphoenix/tx/testing"
 
 // =============================================================================
 // Test Fixtures (Rule 3: SHA256-based IDs)
@@ -52,7 +52,7 @@ async function makeTestLayer() {
     ClaimRepositoryLive,
     ClaimServiceLive,
     OrchestratorStateRepositoryLive
-  } = await import("@jamesaphoenix/tx-core")
+  } = await import("@jamesaphoenix/tx")
 
   const infra = SqliteClientLive(":memory:")
   const repos = Layer.mergeAll(
@@ -419,7 +419,7 @@ describe("Chaos: Crash Simulation", () => {
 
 describe("Chaos: Service Layer Corruption Handling", () => {
   it("TaskService.getWithDeps returns proper TaskWithDeps fields", async () => {
-    const { TaskService, DependencyService } = await import("@jamesaphoenix/tx-core")
+    const { TaskService, DependencyService } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(
@@ -451,7 +451,7 @@ describe("Chaos: Service Layer Corruption Handling", () => {
   })
 
   it("DependencyService rejects self-blocking (Rule 4)", async () => {
-    const { DependencyService, TaskService } = await import("@jamesaphoenix/tx-core")
+    const { DependencyService, TaskService } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
     const result = await Effect.runPromise(

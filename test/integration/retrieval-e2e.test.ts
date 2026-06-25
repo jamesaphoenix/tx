@@ -13,7 +13,7 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { Effect, Layer } from "effect"
 import { createHash } from "crypto"
-import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
+import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx/testing"
 import { seedFixtures } from "../fixtures.js"
 import {
   SqliteClient,
@@ -38,8 +38,8 @@ import {
   ClaimRepositoryLive,
   ClaimServiceLive,
   OrchestratorStateRepositoryLive
-} from "@jamesaphoenix/tx-core"
-import type { LearningWithScore } from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx"
+import type { LearningWithScore } from "@jamesaphoenix/tx/types"
 
 // ============================================================================
 // Test Data: 50+ learnings across various topics

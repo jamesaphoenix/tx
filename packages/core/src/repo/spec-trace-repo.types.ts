@@ -6,7 +6,7 @@ import type {
   SpecTest,
   SpecTestRun,
   SpecSignoff,
-} from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
 
 export type InvariantSummary = {
   readonly id: string

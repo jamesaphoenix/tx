@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { Effect, Layer } from "effect"
-import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx-test-utils"
+import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx/testing"
 import {
   SqliteClient,
   AnchorRepository,
   AnchorRepositoryLive,
   LearningRepositoryLive
-} from "@jamesaphoenix/tx-core"
-import type { Anchor } from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx"
+import type { Anchor } from "@jamesaphoenix/tx/types"
 
 function makeTestLayer(db: TestDatabase) {
   const infra = Layer.succeed(SqliteClient, db.db as any)

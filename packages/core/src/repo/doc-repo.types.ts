@@ -13,7 +13,7 @@ import type {
   DocStatus,
   DocLinkType,
   TaskDocLinkType,
-} from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
 
 export type DocInsertInput = {
   docId: DocStableId

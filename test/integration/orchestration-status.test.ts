@@ -11,9 +11,9 @@
  */
 import { describe, it, expect, beforeEach } from "vitest"
 import { Effect } from "effect"
-import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
-import { ClaimService, TaskService, ReadyService, AttemptService, SqliteClient } from "@jamesaphoenix/tx-core"
-import { serializeTask } from "@jamesaphoenix/tx-types"
+import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx/testing"
+import { ClaimService, TaskService, ReadyService, AttemptService, SqliteClient } from "@jamesaphoenix/tx"
+import { serializeTask } from "@jamesaphoenix/tx/types"
 
 const registerWorker = (workerId: string) =>
   Effect.gen(function* () {

@@ -20,7 +20,7 @@ import {
   delayedClaim,
   fixtureId as chaosFixtureId,
   type TestDatabase
-} from "@jamesaphoenix/tx-test-utils"
+} from "@jamesaphoenix/tx/testing"
 import { seedFixtures, fixtureId } from "../fixtures.js"
 import {
   SqliteClient,
@@ -44,8 +44,8 @@ import {
   AutoSyncServiceNoop,
   GuardRepositoryLive,
   PinRepositoryLive
-} from "@jamesaphoenix/tx-core"
-import type { TaskId } from "@jamesaphoenix/tx-types"
+} from "@jamesaphoenix/tx"
+import type { TaskId } from "@jamesaphoenix/tx/types"
 
 // Create test layer for task and dependency services
 function makeTaskTestLayer(db: TestDatabase) {

@@ -9,7 +9,7 @@
  */
 
 import { Effect, Layer } from "effect"
-import { DocReviewError } from "@jamesaphoenix/tx-types"
+import { DocReviewError } from "../types/index.js"
 import { ReviewRuntime, type ReviewExecutionParams } from "./review-runtime.js"
 
 /**

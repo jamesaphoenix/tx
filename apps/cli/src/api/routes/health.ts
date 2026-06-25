@@ -6,7 +6,7 @@
 
 import { HttpApiBuilder, HttpServerRequest } from "@effect/platform"
 import { Effect } from "effect"
-import { TaskService, LearningService, RunRepository } from "@jamesaphoenix/tx-core"
+import { TaskService, LearningService, RunRepository } from "@jamesaphoenix/tx"
 import { TxApi, mapCoreError } from "../api.js"
 import { extractApiKey, timingSafeEqual } from "../middleware/auth.js"
 

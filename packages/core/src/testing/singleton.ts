@@ -22,7 +22,7 @@ let instance: SharedTestLayerResult | null = null
  *
  * @example
  * ```typescript
- * import { getSharedTestLayer } from '@jamesaphoenix/tx-test-utils'
+ * import { getSharedTestLayer } from './index.js'
  *
  * it("test", async () => {
  *   const { layer } = await getSharedTestLayer()

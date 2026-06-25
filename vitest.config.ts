@@ -12,24 +12,24 @@ export default defineConfig({
     conditions: ["bun"],
     alias: [
       {
-        find: /^@jamesaphoenix\/tx-core\/services$/,
+        find: /^@jamesaphoenix\/tx\/services$/,
         replacement: resolve(ROOT_DIR, "packages/core/src/services/index.ts"),
       },
       {
-        find: /^@jamesaphoenix\/tx-core$/,
-        replacement: resolve(ROOT_DIR, "packages/core/src/index.ts"),
+        find: /^@jamesaphoenix\/tx\/repo$/,
+        replacement: resolve(ROOT_DIR, "packages/core/src/repo/index.ts"),
       },
       {
-        find: /^@jamesaphoenix\/tx-test-utils$/,
-        replacement: resolve(ROOT_DIR, "packages/test-utils/src/index.ts"),
+        find: /^@jamesaphoenix\/tx\/types$/,
+        replacement: resolve(ROOT_DIR, "packages/core/src/types/index.ts"),
       },
       {
-        find: /^@jamesaphoenix\/tx-types$/,
-        replacement: resolve(ROOT_DIR, "packages/types/src/index.ts"),
+        find: /^@jamesaphoenix\/tx\/testing$/,
+        replacement: resolve(ROOT_DIR, "packages/core/src/testing/index.ts"),
       },
       {
         find: /^@jamesaphoenix\/tx$/,
-        replacement: resolve(ROOT_DIR, "packages/tx/src/index.ts"),
+        replacement: resolve(ROOT_DIR, "packages/core/src/index.ts"),
       },
     ],
   },

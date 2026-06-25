@@ -9,7 +9,7 @@ import type {
   UpdateCandidateInput,
   CandidateFilter,
   CandidateStatus
-} from "@jamesaphoenix/tx-types"
+} from "../types/index.js"
 import { coerceDbResult } from "../utils/db-result.js"
 
 export class CandidateRepository extends Context.Tag("CandidateRepository")<

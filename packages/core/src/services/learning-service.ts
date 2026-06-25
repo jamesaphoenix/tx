@@ -5,7 +5,7 @@ import { EmbeddingService } from "./embedding-service.js"
 import { RetrieverService } from "./retriever-service.js"
 import { LearningNotFoundError, TaskNotFoundError, ValidationError, DatabaseError, RetrievalError, EmbeddingDimensionMismatchError, EmbeddingUnavailableError } from "../errors.js"
 import type { ZeroMagnitudeVectorError } from "../errors.js"
-import type { Learning, LearningWithScore, CreateLearningInput, LearningQuery, ContextOptions, ContextResult } from "@jamesaphoenix/tx-types"
+import type { Learning, LearningWithScore, CreateLearningInput, LearningQuery, ContextOptions, ContextResult } from "../types/index.js"
 
 /** Strips null bytes (\0) which cause C API truncation, JSON issues, and terminal corruption. */
 const stripNullBytes = (s: string): string => s.replace(/\0/g, "")

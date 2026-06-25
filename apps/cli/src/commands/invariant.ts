@@ -3,7 +3,7 @@
  */
 
 import { Effect } from "effect"
-import { DocService } from "@jamesaphoenix/tx-core"
+import { DocService } from "@jamesaphoenix/tx"
 import { toJson } from "../output.js"
 import { type Flags, flag, opt } from "../utils/parse.js"
 import { CliExitError } from "../cli-exit.js"

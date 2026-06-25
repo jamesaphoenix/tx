@@ -6,12 +6,12 @@
  */
 import { describe, it, expect, beforeAll, afterEach, afterAll } from "vitest"
 import { Effect } from "effect"
-import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
+import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx/testing"
 import {
   TaskService,
   ReadyService,
   LabelRepository,
-} from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
 
 describe("Label filtering integration", () => {
   let shared: SharedTestLayerResult

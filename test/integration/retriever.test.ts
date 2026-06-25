@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterEach, afterAll } from "vitest"
 import { Effect, Layer } from "effect"
-import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
+import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx/testing"
 import {
   SqliteClient,
   LearningRepositoryLive,
@@ -14,7 +14,7 @@ import {
   RetrieverService,
   RetrieverServiceLive,
   RetrieverServiceNoop
-} from "@jamesaphoenix/tx-core"
+} from "@jamesaphoenix/tx"
 
 /**
  * Create a deterministic embedding from text content.

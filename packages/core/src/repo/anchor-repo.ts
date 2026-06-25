@@ -3,7 +3,7 @@ import { SqliteClient } from "../db.js"
 import { DatabaseError, EntityFetchError, UnexpectedRowCountError } from "../errors.js"
 import { rowToAnchor, rowToInvalidationLog } from "../mappers/anchor.js"
 import { DEFAULT_QUERY_LIMIT } from "../utils/sql.js"
-import type { Anchor, AnchorRow, CreateAnchorInput, UpdateAnchorInput, AnchorStatus, InvalidationLog, InvalidationLogRow, InvalidationSource } from "@jamesaphoenix/tx-types"
+import type { Anchor, AnchorRow, CreateAnchorInput, UpdateAnchorInput, AnchorStatus, InvalidationLog, InvalidationLogRow, InvalidationSource } from "../types/index.js"
 import { coerceDbResult } from "../utils/db-result.js"
 
 /** Input for logging an invalidation event */

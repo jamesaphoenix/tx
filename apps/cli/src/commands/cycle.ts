@@ -6,12 +6,12 @@
  */
 
 import { Effect } from "effect"
-import { CycleScanService } from "@jamesaphoenix/tx-core"
+import { CycleScanService } from "@jamesaphoenix/tx"
 import { toJson } from "../output.js"
 import { flag, opt, parseIntOpt } from "../utils/parse.js"
 import { CliExitError } from "../cli-exit.js"
-import { AGENT_RUNTIMES } from "@jamesaphoenix/tx-types"
-import type { CycleProgressEvent, AgentRuntime } from "@jamesaphoenix/tx-types"
+import { AGENT_RUNTIMES } from "@jamesaphoenix/tx/types"
+import type { CycleProgressEvent, AgentRuntime } from "@jamesaphoenix/tx/types"
 
 /** Dispatch cycle command. */
 export const cycle = (

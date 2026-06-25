@@ -14,8 +14,8 @@ import {
 } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
-import { DocService } from "@jamesaphoenix/tx-core"
+import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx/testing"
+import { DocService } from "@jamesaphoenix/tx"
 import { fixtureId } from "../fixtures.js"
 
 const CLI_SRC = resolve(__dirname, "../../apps/cli/src/cli.ts")
