@@ -36,17 +36,7 @@ if echo "$changed_files" | grep -q "^packages/types/"; then
     fi
 fi
 
-# Check if api-server was changed
-if echo "$changed_files" | grep -q "^apps/api-server/"; then
-    for f in $(echo "$changed_files" | grep "^apps/api-server/src/.*\.ts$" | grep -v "\.test\.ts$"); do
-        test_file="${f%.ts}.test.ts"
-        if [ -f "$test_file" ]; then
-            test_files="$test_files $test_file"
-        fi
-    done
-fi
-
-# Check if CLI was changed
+# Check if CLI was changed (now also covers the merged MCP + API servers under apps/cli/src)
 if echo "$changed_files" | grep -q "^apps/cli/"; then
     for f in $(echo "$changed_files" | grep "^apps/cli/src/.*\.ts$" | grep -v "\.test\.ts$"); do
         test_file="${f%.ts}.test.ts"

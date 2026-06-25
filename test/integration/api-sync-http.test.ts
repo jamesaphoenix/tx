@@ -6,7 +6,7 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 
 const CLI_SRC = resolve(__dirname, "../../apps/cli/src/cli.ts")
-const API_SERVER_SRC = resolve(__dirname, "../../apps/api-server/src/server.ts")
+const API_SERVER_SRC = resolve(__dirname, "../../apps/cli/src/api/server.ts")
 const SYNC_MAX_BYTES = 10 * 1024 * 1024
 
 interface ExecResult {

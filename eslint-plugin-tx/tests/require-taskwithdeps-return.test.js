@@ -81,8 +81,8 @@ describe('require-taskwithdeps-return rule', () => {
       expect(visitor.ArrowFunctionExpression).toBeDefined();
     });
 
-    it('checks apps/api-server files', () => {
-      const context = createContext('/project/apps/api-server/routes/tasks.ts');
+    it('checks apps/cli/src/api files', () => {
+      const context = createContext('/project/apps/cli/src/api/routes/tasks.ts');
       const visitor = rule.create(context);
 
       expect(visitor.FunctionDeclaration).toBeDefined();
@@ -642,7 +642,7 @@ describe('require-taskwithdeps-return rule', () => {
     });
 
     it('skips Effect Schema objects (Schema.String, Schema.Number, etc.)', () => {
-      const context = createContext('/project/apps/api-server/src/api.ts');
+      const context = createContext('/project/apps/cli/src/api/api.ts');
       const visitor = rule.create(context);
 
       const schemaStructCall = {
@@ -706,7 +706,7 @@ describe('require-taskwithdeps-return rule', () => {
     });
 
     it('skips non-task serializer objects that share id/title/status (e.g. docs)', () => {
-      const context = createContext('/project/apps/api-server/src/api.ts');
+      const context = createContext('/project/apps/cli/src/api/api.ts');
       const visitor = rule.create(context);
 
       const objectNode = {

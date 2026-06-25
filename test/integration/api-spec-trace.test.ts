@@ -12,7 +12,7 @@ import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
 import { DocService, SpecTraceService, parseBatchRunInput } from "@jamesaphoenix/tx-core"
-import { mapCoreError } from "../../apps/api-server/src/api.js"
+import { mapCoreError } from "../../apps/cli/src/api/api.js"
 import type { SpecSignoff, TraceabilityMatrix } from "@jamesaphoenix/tx-types"
 
 type InvariantInput = {

@@ -9,7 +9,7 @@ import { Database } from "bun:sqlite"
 import { fixtureId } from "../fixtures.js"
 
 const CLI_SRC = resolve(__dirname, "../../apps/cli/src/cli.ts")
-const API_SERVER_SRC = resolve(__dirname, "../../apps/api-server/src/server.ts")
+const API_SERVER_SRC = resolve(__dirname, "../../apps/cli/src/api/server.ts")
 
 const FIXTURE_TIMESTAMP = "2026-02-24T12:00:00.000Z"
 

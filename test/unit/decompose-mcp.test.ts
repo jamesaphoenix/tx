@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest"
 import { Effect } from "effect"
 import type { DecomposeResult, TaskWithDeps } from "@jamesaphoenix/tx-types"
-import { handleDecompose } from "../../apps/mcp-server/src/tools/decompose.js"
-import type { McpServices } from "../../apps/mcp-server/src/runtime.js"
+import { handleDecompose } from "../../apps/cli/src/mcp/tools/decompose.js"
+import type { McpServices } from "../../apps/cli/src/mcp/runtime.js"
 
 function makeRootTask(): TaskWithDeps {
   const now = new Date("2026-03-27T12:00:00Z")

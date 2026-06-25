@@ -20,8 +20,8 @@ vi.mock("fs", () => ({
 const REGISTRY = {
   ready: {
     cli: "apps/cli/src/commands/task.ts",
-    mcp: "apps/mcp-server/src/tools/task.ts",
-    api: "apps/api-server/src/routes/tasks.ts",
+    mcp: "apps/cli/src/mcp/tools/task.ts",
+    api: "apps/cli/src/api/routes/tasks.ts",
     sdk: "apps/agent-sdk/src/client.ts",
     required: ["cli", "mcp", "api", "sdk"],
   },
@@ -111,7 +111,7 @@ describe("require-primitive-implementations rule", () => {
     it("reports missing MCP when its file does not exist", () => {
       setupMocks({
         existingFiles: (p) => {
-          if (p.includes("mcp-server")) return false
+          if (p.includes("src/mcp")) return false
           return true
         },
       })
@@ -134,8 +134,8 @@ describe("require-primitive-implementations rule", () => {
     it("reports all missing interfaces in one message", () => {
       setupMocks({
         existingFiles: (p) => {
-          if (p.includes("mcp-server")) return false
-          if (p.includes("api-server")) return false
+          if (p.includes("src/mcp")) return false
+          if (p.includes("src/api")) return false
           return true
         },
       })
@@ -302,7 +302,7 @@ describe("require-primitive-implementations rule", () => {
       const reg = {
         ready: {
           cli: ["apps/cli/src/commands/task.ts", "apps/cli/src/commands/task-v2.ts"],
-          mcp: "apps/mcp-server/src/tools/task.ts",
+          mcp: "apps/cli/src/mcp/tools/task.ts",
           required: ["cli", "mcp"],
         },
       }
@@ -312,14 +312,14 @@ describe("require-primitive-implementations rule", () => {
         registry: reg,
         existingFiles: (p) => {
           if (p.includes("task-v2.ts")) return true
-          if (p.includes("task.ts") && p.includes("cli")) return false
+          if (p.includes("commands/task.ts")) return false
           return true
         },
       })
 
       const context = createContext(
         { registryPath: "primitives-registry.json" },
-        "/project/apps/mcp-server/src/tools/task.ts"
+        "/project/apps/cli/src/mcp/tools/task.ts"
       )
       const visitor = rule.create(context)
       visitor.Program(createProgramNode())

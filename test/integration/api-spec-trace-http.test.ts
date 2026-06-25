@@ -7,7 +7,7 @@ import { join, resolve } from "node:path"
 import type { Readable } from "node:stream"
 
 const CLI_SRC = resolve(__dirname, "../../apps/cli/src/cli.ts")
-const API_SERVER_SRC = resolve(__dirname, "../../apps/api-server/src/server.ts")
+const API_SERVER_SRC = resolve(__dirname, "../../apps/cli/src/api/server.ts")
 const SPEC_BATCH_MAX_BYTES = 5 * 1024 * 1024
 const SPEC_BATCH_MAX_RECORDS = 50_000
 

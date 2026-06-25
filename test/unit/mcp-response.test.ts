@@ -4,7 +4,7 @@
  * Tests safeStringify and response formatters, including circular reference handling.
  */
 import { describe, it, expect, vi } from "vitest"
-import { safeStringify, mcpResponse, mcpError, classifyError, extractErrorMessage, buildStructuredError, handleToolError, formatErrorWithStack } from "../../apps/mcp-server/src/response.js"
+import { safeStringify, mcpResponse, mcpError, classifyError, extractErrorMessage, buildStructuredError, handleToolError, formatErrorWithStack } from "../../apps/cli/src/mcp/response.js"
 import { Data } from "effect"
 
 // -----------------------------------------------------------------------------

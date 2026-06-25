@@ -82,13 +82,13 @@ describe('interface-parity rule', () => {
     });
 
     it('checks MCP files', () => {
-      const context = createContext('/project/apps/mcp-server/src/tools/task.ts');
+      const context = createContext('/project/apps/cli/src/mcp/tools/task.ts');
       const visitor = rule.create(context);
       expect(visitor.VariableDeclaration).toBeDefined();
     });
 
     it('checks API files', () => {
-      const context = createContext('/project/apps/api-server/src/routes/tasks.ts');
+      const context = createContext('/project/apps/cli/src/api/routes/tasks.ts');
       const visitor = rule.create(context);
       expect(visitor.VariableDeclaration).toBeDefined();
     });
@@ -116,7 +116,7 @@ describe('interface-parity rule', () => {
     });
 
     it('reports error for local serializeTask function declaration', () => {
-      const context = createContext('/project/apps/mcp-server/src/tools/task.ts');
+      const context = createContext('/project/apps/cli/src/mcp/tools/task.ts');
       const visitor = rule.create(context);
 
       const node = {
@@ -514,7 +514,7 @@ describe('interface-parity rule', () => {
 
   describe('response shape checking for show operation', () => {
     it('reports missing task field in show handler', () => {
-      const context = createContext('/project/apps/api-server/src/routes/tasks.ts');
+      const context = createContext('/project/apps/cli/src/api/routes/tasks.ts');
       const visitor = rule.create(context);
 
       const funcNode = {
@@ -555,7 +555,7 @@ describe('interface-parity rule', () => {
 
   describe('response shape checking for list operation', () => {
     it('reports missing items field in list handler', () => {
-      const context = createContext('/project/apps/api-server/src/routes/tasks.ts');
+      const context = createContext('/project/apps/cli/src/api/routes/tasks.ts');
       const visitor = rule.create(context);
 
       const funcNode = {
@@ -596,7 +596,7 @@ describe('interface-parity rule', () => {
 
   describe('response shape checking for create operation', () => {
     it('reports missing task field in create handler', () => {
-      const context = createContext('/project/apps/api-server/src/routes/tasks.ts');
+      const context = createContext('/project/apps/cli/src/api/routes/tasks.ts');
       const visitor = rule.create(context);
 
       const funcNode = {
@@ -850,7 +850,7 @@ describe('interface-parity rule', () => {
 
   describe('Hono c.json call detection', () => {
     it('detects response shapes in c.json calls', () => {
-      const context = createContext('/project/apps/api-server/src/routes/tasks.ts');
+      const context = createContext('/project/apps/cli/src/api/routes/tasks.ts');
       const visitor = rule.create(context);
 
       const funcNode = {
@@ -950,7 +950,7 @@ describe('interface-parity rule', () => {
     });
 
     it('matches Get operation name for show schema', () => {
-      const context = createContext('/project/apps/api-server/src/routes/tasks.ts');
+      const context = createContext('/project/apps/cli/src/api/routes/tasks.ts');
       const visitor = rule.create(context);
 
       const funcNode = {
@@ -980,7 +980,7 @@ describe('interface-parity rule', () => {
     });
 
     it('matches Add operation name for create schema', () => {
-      const context = createContext('/project/apps/api-server/src/routes/tasks.ts');
+      const context = createContext('/project/apps/cli/src/api/routes/tasks.ts');
       const visitor = rule.create(context);
 
       const funcNode = {
@@ -1010,7 +1010,7 @@ describe('interface-parity rule', () => {
     });
 
     it('matches Update operation name', () => {
-      const context = createContext('/project/apps/api-server/src/routes/tasks.ts');
+      const context = createContext('/project/apps/cli/src/api/routes/tasks.ts');
       const visitor = rule.create(context);
 
       const funcNode = {
@@ -1040,7 +1040,7 @@ describe('interface-parity rule', () => {
     });
 
     it('matches Delete operation name', () => {
-      const context = createContext('/project/apps/api-server/src/routes/tasks.ts');
+      const context = createContext('/project/apps/cli/src/api/routes/tasks.ts');
       const visitor = rule.create(context);
 
       const funcNode = {
@@ -1070,7 +1070,7 @@ describe('interface-parity rule', () => {
     });
 
     it('matches deleteTask function name for delete schema', () => {
-      const context = createContext('/project/apps/api-server/src/routes/tasks.ts');
+      const context = createContext('/project/apps/cli/src/api/routes/tasks.ts');
       const visitor = rule.create(context);
 
       const funcNode = {

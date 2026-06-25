@@ -3,7 +3,7 @@
  *
  * Tests exercise the MemoryService and MemoryRetrieverService at the Effect
  * service level, covering the same operations that the MCP tool handlers
- * (apps/mcp-server/src/tools/memory.ts) delegate to.
+ * (apps/cli/src/mcp/tools/memory.ts) delegate to.
  *
  * Categories:
  * 1.  Source management (addSource, removeSource, listSources)

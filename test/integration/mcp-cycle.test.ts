@@ -3,7 +3,7 @@
  *
  * Tests the cycle scan query logic at the service level using raw SQL
  * via SqliteClient (same pattern as the MCP cycle tool handlers in
- * apps/mcp-server/src/tools/cycle.ts).
+ * apps/cli/src/mcp/tools/cycle.ts).
  *
  * Inserts test data directly into the `runs`, `events`, and `tasks` tables
  * to validate the cycle list and get queries.
@@ -43,7 +43,7 @@ interface IssueRow {
 }
 
 // =============================================================================
-// Helpers (mirror the logic from apps/mcp-server/src/tools/cycle.ts)
+// Helpers (mirror the logic from apps/cli/src/mcp/tools/cycle.ts)
 // =============================================================================
 
 /**

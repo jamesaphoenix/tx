@@ -2,7 +2,7 @@
  * Integration tests for REST API cycle endpoints.
  *
  * Tests the cycle route handlers at the service level (same pattern as api-claim tests).
- * The REST handlers in apps/api-server/src/routes/cycles.ts use raw SQL against
+ * The REST handlers in apps/cli/src/api/routes/cycles.ts use raw SQL against
  * SqliteClient to query runs, events, and tasks tables.
  *
  * Critical bug regression tests:
@@ -59,7 +59,7 @@ class InternalError {
 }
 
 // =============================================================================
-// Helpers — replicate handler logic from apps/api-server/src/routes/cycles.ts
+// Helpers — replicate handler logic from apps/cli/src/api/routes/cycles.ts
 // =============================================================================
 
 /**

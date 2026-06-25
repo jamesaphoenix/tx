@@ -146,7 +146,7 @@ describe('no-throw-in-services rule', () => {
 
   describe('allowHttpException option', () => {
     it('blocks HTTPException by default', () => {
-      const context = createContext('/project/apps/api-server/src/routes/tasks.ts');
+      const context = createContext('/project/apps/cli/src/api/routes/tasks.ts');
       const visitor = rule.create(context);
 
       const node = {
@@ -164,7 +164,7 @@ describe('no-throw-in-services rule', () => {
 
     it('allows HTTPException when option is enabled', () => {
       const options = [{ allowHttpException: true }];
-      const context = createContext('/project/apps/api-server/src/routes/tasks.ts', options);
+      const context = createContext('/project/apps/cli/src/api/routes/tasks.ts', options);
       const visitor = rule.create(context);
 
       const node = {
