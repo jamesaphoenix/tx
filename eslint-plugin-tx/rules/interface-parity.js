@@ -107,10 +107,13 @@ const OPERATION_PATTERNS = {
 /**
  * Interface types based on file paths
  */
+// The MCP and API servers now live under apps/cli/src/mcp and apps/cli/src/api.
+// Order matters: detectInterface returns the first match, so the more-specific
+// mcp/api subpaths must be checked before the broad cli command path.
 const INTERFACE_PATHS = {
-  cli: ['apps/cli/', 'src/commands/'],
-  mcp: ['apps/mcp-server/', 'src/mcp/', 'src/tools/'],
-  api: ['apps/api-server/', 'src/routes/']
+  mcp: ['src/mcp/', 'src/tools/'],
+  api: ['src/api/', 'src/routes/'],
+  cli: ['src/commands/']
 };
 
 /**

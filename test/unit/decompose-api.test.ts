@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { Effect, Layer } from "effect"
 import { DecomposeService } from "@jamesaphoenix/tx-core"
 import type { DecomposeResult, TaskWithDeps } from "@jamesaphoenix/tx-types"
-import { runDecomposeApi } from "../../apps/api-server/src/routes/decompose.js"
+import { runDecomposeApi } from "../../apps/cli/src/api/routes/decompose.js"
 
 function makeRootTask(): TaskWithDeps {
   const now = new Date("2026-03-27T12:00:00Z")

@@ -14,7 +14,7 @@ import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx-test-utils"
 import { DocService, SpecTraceService, parseBatchRunInput } from "@jamesaphoenix/tx-core"
-import { registerSpecTraceTools } from "../../apps/mcp-server/src/tools/spec-trace.js"
+import { registerSpecTraceTools } from "../../apps/cli/src/mcp/tools/spec-trace.js"
 
 type InvariantInput = {
   id: string

@@ -41,8 +41,8 @@ const SERVICES_CONFIG = {
   services: {
     tasks: {
       cli: "apps/cli/src/commands/task.ts",
-      mcp: "apps/mcp-server/src/tools/task.ts",
-      api: "apps/api-server/src/routes/tasks.ts",
+      mcp: "apps/cli/src/mcp/tools/task.ts",
+      api: "apps/cli/src/api/routes/tasks.ts",
       sdk: "apps/agent-sdk/src/client.ts",
       required: ["cli", "mcp", "api", "sdk"],
     },
@@ -90,7 +90,7 @@ describe("require-interface-coverage rule", () => {
   describe("2: MCP missing - reports missing MCP", () => {
     it("reports missing MCP when its file does not exist", () => {
       fs.existsSync.mockImplementation((p) => {
-        if (p.includes("mcp-server")) return false
+        if (p.includes("src/mcp")) return false
         return true
       })
 
@@ -108,8 +108,8 @@ describe("require-interface-coverage rule", () => {
   describe("3: multiple interfaces missing - reports all", () => {
     it("reports all missing interfaces in a single message", () => {
       fs.existsSync.mockImplementation((p) => {
-        if (p.includes("mcp-server")) return false
-        if (p.includes("api-server")) return false
+        if (p.includes("src/mcp")) return false
+        if (p.includes("src/api")) return false
         return true
       })
 
@@ -134,8 +134,8 @@ describe("require-interface-coverage rule", () => {
         services: {
           tasks: {
             cli: "apps/cli/src/commands/task.ts",
-            mcp: "apps/mcp-server/src/tools/task.ts",
-            api: "apps/api-server/src/routes/tasks.ts",
+            mcp: "apps/cli/src/mcp/tools/task.ts",
+            api: "apps/cli/src/api/routes/tasks.ts",
             sdk: "apps/agent-sdk/src/client.ts",
             required: ["cli", "mcp", "api"], // no sdk
           },
@@ -262,7 +262,7 @@ describe("require-interface-coverage rule", () => {
       fs.existsSync.mockImplementation((p) => {
         // Only the second path exists
         if (p.includes("task-v2.ts")) return true
-        if (p.includes("task.ts") && p.includes("cli")) return false
+        if (p.includes("commands/task.ts")) return false
         return true
       })
 
@@ -273,7 +273,7 @@ describe("require-interface-coverage rule", () => {
               "apps/cli/src/commands/task.ts",
               "apps/cli/src/commands/task-v2.ts",
             ],
-            mcp: "apps/mcp-server/src/tools/task.ts",
+            mcp: "apps/cli/src/mcp/tools/task.ts",
             required: ["cli", "mcp"],
           },
         },
@@ -281,7 +281,7 @@ describe("require-interface-coverage rule", () => {
 
       const context = createContext(
         config,
-        "/project/apps/mcp-server/src/tools/task.ts"
+        "/project/apps/cli/src/mcp/tools/task.ts"
       )
       const visitor = rule.create(context)
       visitor.Program(createProgramNode())
@@ -291,7 +291,7 @@ describe("require-interface-coverage rule", () => {
 
     it("fails when none of the array paths exist", () => {
       fs.existsSync.mockImplementation((p) => {
-        if (p.includes("cli")) return false
+        if (p.includes("commands/")) return false
         return true
       })
 
@@ -302,7 +302,7 @@ describe("require-interface-coverage rule", () => {
               "apps/cli/src/commands/task.ts",
               "apps/cli/src/commands/task-v2.ts",
             ],
-            mcp: "apps/mcp-server/src/tools/task.ts",
+            mcp: "apps/cli/src/mcp/tools/task.ts",
             required: ["cli", "mcp"],
           },
         },
@@ -310,7 +310,7 @@ describe("require-interface-coverage rule", () => {
 
       const context = createContext(
         config,
-        "/project/apps/mcp-server/src/tools/task.ts"
+        "/project/apps/cli/src/mcp/tools/task.ts"
       )
       const visitor = rule.create(context)
       visitor.Program(createProgramNode())
@@ -396,8 +396,8 @@ describe("require-interface-coverage rule", () => {
 
     it("handles multiple services with different missing interfaces", () => {
       fs.existsSync.mockImplementation((p) => {
-        if (p.includes("mcp-server/src/tools/task")) return false
-        if (p.includes("api-server/src/routes/learnings")) return false
+        if (p.includes("src/mcp/tools/task")) return false
+        if (p.includes("src/api/routes/learnings")) return false
         return true
       })
 
@@ -405,12 +405,12 @@ describe("require-interface-coverage rule", () => {
         services: {
           tasks: {
             cli: "apps/cli/src/commands/task.ts",
-            mcp: "apps/mcp-server/src/tools/task.ts",
+            mcp: "apps/cli/src/mcp/tools/task.ts",
             required: ["cli", "mcp"],
           },
           learnings: {
             cli: "apps/cli/src/commands/task.ts", // shared file triggers for both
-            api: "apps/api-server/src/routes/learnings.ts",
+            api: "apps/cli/src/api/routes/learnings.ts",
             required: ["cli", "api"],
           },
         },
@@ -433,7 +433,7 @@ describe("require-interface-coverage rule", () => {
 
     it("supports .tsx files", () => {
       fs.existsSync.mockImplementation((p) => {
-        if (p.includes("mcp-server")) return false
+        if (p.includes("src/mcp")) return false
         return true
       })
 
@@ -441,7 +441,7 @@ describe("require-interface-coverage rule", () => {
         services: {
           tasks: {
             cli: "apps/cli/src/commands/task.tsx",
-            mcp: "apps/mcp-server/src/tools/task.ts",
+            mcp: "apps/cli/src/mcp/tools/task.ts",
             required: ["cli", "mcp"],
           },
         },

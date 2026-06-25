@@ -146,7 +146,7 @@ const plugin = {
           servicePaths: ['src/services/']
         }],
         'tx/require-taskwithdeps-return': ['error', {
-          externalPaths: ['src/mcp/', 'apps/api-server/', 'apps/agent-sdk/', 'packages/core/src/'],
+          externalPaths: ['src/mcp/', 'src/api/', 'apps/agent-sdk/', 'packages/core/src/'],
           internalPaths: ['src/repo/', 'test/', 'tests/', '__tests__/', '.test.', '.spec.'],
           checkObjectLiterals: true
         }],

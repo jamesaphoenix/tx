@@ -2,7 +2,7 @@
  * Integration tests for MCP invariant tools.
  *
  * Tests exercise the DocService at the Effect service level, covering the same
- * operations that the MCP tool handlers (apps/mcp-server/src/tools/invariant.ts)
+ * operations that the MCP tool handlers (apps/cli/src/mcp/tools/invariant.ts)
  * delegate to:
  *
  * 1. List invariants — empty initially, returns results after creating some
@@ -33,7 +33,7 @@ import type { Invariant, InvariantCheck } from "@jamesaphoenix/tx-types"
 // =============================================================================
 
 /**
- * Mirrors the serializeInvariant function from apps/mcp-server/src/tools/invariant.ts.
+ * Mirrors the serializeInvariant function from apps/cli/src/mcp/tools/invariant.ts.
  * The MCP tool converts Date fields to ISO strings before returning to clients.
  */
 const serializeInvariant = (inv: Invariant) => ({
@@ -50,7 +50,7 @@ const serializeInvariant = (inv: Invariant) => ({
 })
 
 /**
- * Mirrors the serializeInvariantCheck function from apps/mcp-server/src/tools/invariant.ts.
+ * Mirrors the serializeInvariantCheck function from apps/cli/src/mcp/tools/invariant.ts.
  */
 const serializeInvariantCheck = (check: InvariantCheck) => ({
   id: check.id,

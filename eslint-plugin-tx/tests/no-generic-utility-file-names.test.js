@@ -31,7 +31,7 @@ describe("no-generic-utility-file-names rule", () => {
   })
 
   it("reports helpers.ts by default", () => {
-    const context = createContext(projectFile("apps/api-server/src/helpers.ts"))
+    const context = createContext(projectFile("apps/cli/src/api/helpers.ts"))
     const visitor = rule.create(context)
 
     visitor.Program({ type: "Program" })

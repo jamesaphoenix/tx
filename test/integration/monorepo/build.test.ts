@@ -25,8 +25,6 @@ const PACKAGES = {
 
 const APPS = {
   cli: resolve(ROOT, "apps/cli"),
-  mcpServer: resolve(ROOT, "apps/mcp-server"),
-  apiServer: resolve(ROOT, "apps/api-server"),
   agentSdk: resolve(ROOT, "apps/agent-sdk"),
   dashboard: resolve(ROOT, "apps/dashboard"),
 }
@@ -136,8 +134,8 @@ describe("Build Outputs: @jamesaphoenix/tx-cli", () => {
   })
 })
 
-describe("Build Outputs: @jamesaphoenix/tx-mcp-server", () => {
-  const distPath = resolve(APPS.mcpServer, "dist")
+describe("Build Outputs: @jamesaphoenix/tx-cli/mcp", () => {
+  const distPath = resolve(APPS.cli, "dist", "mcp")
 
   it("has dist directory", () => {
     expect(existsSync(distPath)).toBe(true)
@@ -170,8 +168,8 @@ describe("Build Outputs: @jamesaphoenix/tx-mcp-server", () => {
   })
 })
 
-describe("Build Outputs: @jamesaphoenix/tx-api-server", () => {
-  const distPath = resolve(APPS.apiServer, "dist")
+describe("Build Outputs: @jamesaphoenix/tx-cli/api", () => {
+  const distPath = resolve(APPS.cli, "dist", "api")
 
   it("has dist directory", () => {
     expect(existsSync(distPath)).toBe(true)
@@ -266,14 +264,9 @@ describe("Package.json Configuration", () => {
   })
 
   it("apps depend on @tx/core (except agent-sdk)", () => {
+    // tx-cli now bundles the MCP and API servers, so it carries their @tx/core dep
     const cliPkg = readPackageJson(APPS.cli)
     expect(cliPkg.dependencies["@jamesaphoenix/tx-core"]).toMatch(/^(\*|\^[\d.]+)$/)
-
-    const mcpPkg = readPackageJson(APPS.mcpServer)
-    expect(mcpPkg.dependencies["@jamesaphoenix/tx-core"]).toMatch(/^(\*|\^[\d.]+)$/)
-
-    const apiPkg = readPackageJson(APPS.apiServer)
-    expect(apiPkg.dependencies["@jamesaphoenix/tx-core"]).toMatch(/^(\*|\^[\d.]+)$/)
 
     // agent-sdk has @tx/core as optional
     const sdkPkg = readPackageJson(APPS.agentSdk)
@@ -290,17 +283,12 @@ describe("Package.json Configuration", () => {
   })
 
   it("executable packages have bin field", () => {
+    // tx-cli exposes all three bins after the server merge
     const cliPkg = readPackageJson(APPS.cli)
     expect(cliPkg.bin).toBeDefined()
     expect(cliPkg.bin.tx).toBe("./dist/cli.js")
-
-    const mcpPkg = readPackageJson(APPS.mcpServer)
-    expect(mcpPkg.bin).toBeDefined()
-    expect(mcpPkg.bin["tx-mcp"]).toBe("./dist/server.js")
-
-    const apiPkg = readPackageJson(APPS.apiServer)
-    expect(apiPkg.bin).toBeDefined()
-    expect(apiPkg.bin["tx-api"]).toBe("./dist/server.js")
+    expect(cliPkg.bin["tx-mcp"]).toBe("./dist/mcp/server.js")
+    expect(cliPkg.bin["tx-api"]).toBe("./dist/api/server.js")
   })
 })
 
@@ -310,7 +298,7 @@ describe("TypeScript Configuration", () => {
   }
 
   // Exclude dashboard (uses noEmit for Vite/React bundling)
-  const COMPILED_PACKAGES = { ...PACKAGES, cli: APPS.cli, mcpServer: APPS.mcpServer, apiServer: APPS.apiServer, agentSdk: APPS.agentSdk }
+  const COMPILED_PACKAGES = { ...PACKAGES, cli: APPS.cli, agentSdk: APPS.agentSdk }
 
   it("all packages have tsconfig.json", () => {
     for (const [_name, path] of Object.entries({ ...PACKAGES, ...APPS })) {
@@ -331,8 +319,6 @@ describe("TypeScript Configuration", () => {
       types: "index.d.ts",
       core: "index.d.ts",
       cli: "cli.d.ts",
-      mcpServer: "server.d.ts",
-      apiServer: "server.d.ts",
       agentSdk: "index.d.ts"
     }
     for (const [name, path] of Object.entries(COMPILED_PACKAGES)) {

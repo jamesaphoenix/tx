@@ -524,9 +524,9 @@ export default [
       }]
     }
   },
-  // Apps (api-server, agent-sdk, cli, mcp-server)
+  // Apps (cli — which now bundles the mcp + api servers under src/mcp and src/api — and agent-sdk)
   {
-    files: ['apps/api-server/**/*.ts', 'apps/agent-sdk/**/*.ts', 'apps/cli/**/*.ts', 'apps/mcp-server/**/*.ts'],
+    files: ['apps/agent-sdk/**/*.ts', 'apps/cli/**/*.ts'],
     languageOptions: {
       parser: tseslintParser,
       parserOptions: {
@@ -555,7 +555,7 @@ export default [
 
       // tx plugin rules - require TaskWithDeps for external APIs (CLAUDE.md RULE 1)
       'tx/require-taskwithdeps-return': ['error', {
-        externalPaths: ['apps/mcp-server/', 'apps/api-server/', 'apps/agent-sdk/', 'packages/core/src/'],
+        externalPaths: ['apps/cli/src/mcp/', 'apps/cli/src/api/', 'apps/agent-sdk/', 'packages/core/src/'],
         internalPaths: ['packages/core/src/repo/', 'packages/core/src/services/', 'test/', 'tests/', '__tests__/', '.test.', '.spec.'],
         checkObjectLiterals: true
       }],

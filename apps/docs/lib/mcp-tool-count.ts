@@ -3,7 +3,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const CURRENT_DIR = dirname(fileURLToPath(import.meta.url));
-const MCP_TOOLS_DIR = join(CURRENT_DIR, "..", "..", "mcp-server", "src", "tools");
+// The MCP server now lives inside tx-cli (apps/cli/src/mcp).
+const MCP_TOOLS_DIR = join(CURRENT_DIR, "..", "..", "cli", "src", "mcp", "tools");
 
 const REGISTRATION_PATTERNS = [
   /registerEffectTool\s*\(\s*server\s*,/g,

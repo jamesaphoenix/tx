@@ -48,7 +48,7 @@ jobs:
       - name: Strip bun export conditions for npm
         run: node scripts/strip-bun-exports.js
 
-      # Publish in dependency order: types -> core -> test-utils -> tx -> tx-agent-sdk -> tx-api-server -> tx-mcp-server -> tx-cli
+      # Publish in dependency order: types -> core -> test-utils -> tx -> tx-agent-sdk -> tx-cli
       - name: Publish @jamesaphoenix/tx-types
         working-directory: packages/types
         run: npm publish --provenance --access public
@@ -69,14 +69,7 @@ jobs:
         working-directory: apps/agent-sdk
         run: npm publish --provenance --access public
 
-      - name: Publish @jamesaphoenix/tx-api-server
-        working-directory: apps/api-server
-        run: npm publish --provenance --access public
-
-      - name: Publish @jamesaphoenix/tx-mcp-server
-        working-directory: apps/mcp-server
-        run: npm publish --provenance --access public
-
+      # tx-cli now bundles the MCP server (bin: tx-mcp) and API server (bin: tx-api)
       - name: Publish @jamesaphoenix/tx-cli
         working-directory: apps/cli
         run: npm publish --provenance --access public

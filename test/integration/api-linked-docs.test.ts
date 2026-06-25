@@ -8,7 +8,7 @@ import type { Readable } from "node:stream"
 import { Database } from "bun:sqlite"
 
 const CLI_SRC = resolve(__dirname, "../../apps/cli/src/cli.ts")
-const API_SERVER_SRC = resolve(__dirname, "../../apps/api-server/src/server.ts")
+const API_SERVER_SRC = resolve(__dirname, "../../apps/cli/src/api/server.ts")
 
 type ApiProcess = ChildProcessByStdio<null, Readable, Readable>
 

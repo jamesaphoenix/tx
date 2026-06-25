@@ -10,8 +10,8 @@
  *     services: {
  *       tasks: {
  *         cli: "apps/cli/src/commands/task.ts",
- *         mcp: "apps/mcp-server/src/tools/task.ts",
- *         api: "apps/api-server/src/routes/tasks.ts",
+ *         mcp: "apps/cli/src/mcp/tools/task.ts",
+ *         api: "apps/cli/src/api/routes/tasks.ts",
  *         sdk: "apps/agent-sdk/src/client.ts",
  *         required: ["cli", "mcp", "api", "sdk"]
  *       }

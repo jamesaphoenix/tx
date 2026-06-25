@@ -22,7 +22,7 @@ const REQUIRED_DEPS_PROPERTIES = ['blockedBy', 'blocks', 'children', 'isReady'];
 /**
  * Paths that are considered external-facing (API/MCP/SDK boundaries)
  */
-const EXTERNAL_PATHS = ['src/mcp/', 'apps/api-server/', 'apps/agent-sdk/', 'packages/core/src/'];
+const EXTERNAL_PATHS = ['src/mcp/', 'src/api/', 'apps/agent-sdk/', 'packages/core/src/'];
 
 /**
  * Paths that are internal and allowed to return bare Task

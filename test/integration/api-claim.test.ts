@@ -2,7 +2,7 @@
  * Integration tests for REST API claim endpoints.
  *
  * Tests the claim route handlers at the service level (same pattern as MCP tests).
- * The REST handlers in apps/api-server/src/routes/tasks.ts delegate to ClaimService
+ * The REST handlers in apps/cli/src/api/routes/tasks.ts delegate to ClaimService
  * and serialize results via serializeClaim (Date -> ISO string conversion).
  *
  * Uses singleton test database pattern (Doctrine Rule 8).
@@ -31,7 +31,7 @@ const registerWorker = (workerId: string) =>
 // =============================================================================
 
 /**
- * Mirrors the serializeClaim function from apps/api-server/src/routes/tasks.ts.
+ * Mirrors the serializeClaim function from apps/cli/src/api/routes/tasks.ts.
  * The REST API converts Date fields to ISO strings before returning to clients.
  */
 const serializeClaim = (claim: {

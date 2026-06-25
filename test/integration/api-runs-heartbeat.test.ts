@@ -10,7 +10,7 @@ import { fixtureId } from "../fixtures.js"
 import { TxClient } from "@jamesaphoenix/tx-agent-sdk"
 
 const CLI_SRC = resolve(__dirname, "../../apps/cli/src/cli.ts")
-const API_SERVER_SRC = resolve(__dirname, "../../apps/api-server/src/server.ts")
+const API_SERVER_SRC = resolve(__dirname, "../../apps/cli/src/api/server.ts")
 
 const runFixtureId = (name: string): string => `run-${fixtureId(`api-runs-heartbeat:${name}`).slice(3)}`
 const taskFixtureId = (name: string): string => fixtureId(`api-runs-heartbeat:${name}`)

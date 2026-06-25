@@ -6,8 +6,8 @@
  *
  * Tests:
  * - @jamesaphoenix/tx-cli imports @tx/core correctly
- * - @jamesaphoenix/tx-mcp-server imports @tx/core correctly
- * - @jamesaphoenix/tx-api-server imports @tx/core correctly
+ * - @jamesaphoenix/tx-cli/mcp imports @tx/core correctly
+ * - @jamesaphoenix/tx-cli/api imports @tx/core correctly
  * - @jamesaphoenix/tx-agent-sdk imports @tx/types correctly
  * - All packages resolve workspace dependencies
  *
@@ -198,16 +198,16 @@ describe("Package Resolution: @jamesaphoenix/tx-cli", () => {
   })
 })
 
-describe("Package Resolution: @jamesaphoenix/tx-mcp-server", () => {
+describe("Package Resolution: @jamesaphoenix/tx-cli/mcp", () => {
   it("exports server creation functions", async () => {
-    const mcp = await import("@jamesaphoenix/tx-mcp-server")
+    const mcp = await import("@jamesaphoenix/tx-cli/mcp")
 
     expect(mcp.createMcpServer).toBeDefined()
     expect(typeof mcp.createMcpServer).toBe("function")
   })
 
   it("exports runtime management functions", async () => {
-    const mcp = await import("@jamesaphoenix/tx-mcp-server")
+    const mcp = await import("@jamesaphoenix/tx-cli/mcp")
 
     expect(mcp.initRuntime).toBeDefined()
     expect(mcp.disposeRuntime).toBeDefined()
@@ -216,14 +216,14 @@ describe("Package Resolution: @jamesaphoenix/tx-mcp-server", () => {
   })
 
   it("exports response helpers", async () => {
-    const mcp = await import("@jamesaphoenix/tx-mcp-server")
+    const mcp = await import("@jamesaphoenix/tx-cli/mcp")
 
     expect(mcp.mcpResponse).toBeDefined()
     expect(mcp.mcpError).toBeDefined()
   })
 
   it("exports tool registration functions", async () => {
-    const mcp = await import("@jamesaphoenix/tx-mcp-server")
+    const mcp = await import("@jamesaphoenix/tx-cli/mcp")
 
     expect(mcp.registerTaskTools).toBeDefined()
     expect(mcp.registerLearningTools).toBeDefined()
@@ -234,29 +234,32 @@ describe("Package Resolution: @jamesaphoenix/tx-mcp-server", () => {
     const fs = await import("node:fs")
     const path = await import("node:path")
 
-    const mcpPackageJson = JSON.parse(
+    const cliPackageJson = JSON.parse(
       fs.readFileSync(
-        path.resolve(process.cwd(), "apps/mcp-server/package.json"),
+        path.resolve(process.cwd(), "apps/cli/package.json"),
         "utf-8"
       )
     )
 
-    expect(mcpPackageJson.dependencies["@jamesaphoenix/tx-core"]).toBe("*")
-    expect(mcpPackageJson.dependencies["@jamesaphoenix/tx-types"]).toBe("*")
-    expect(mcpPackageJson.name).toBe("@jamesaphoenix/tx-mcp-server")
+    // The MCP server is now bundled into tx-cli (bin: tx-mcp, export: ./mcp)
+    expect(cliPackageJson.dependencies["@jamesaphoenix/tx-core"]).toBe("*")
+    expect(cliPackageJson.dependencies["@jamesaphoenix/tx-types"]).toBe("*")
+    expect(cliPackageJson.dependencies["@modelcontextprotocol/sdk"]).toBeDefined()
+    expect(cliPackageJson.exports["./mcp"]).toBeDefined()
+    expect(cliPackageJson.bin["tx-mcp"]).toBe("./dist/mcp/server.js")
   })
 })
 
-describe("Package Resolution: @jamesaphoenix/tx-api-server", () => {
+describe("Package Resolution: @jamesaphoenix/tx-cli/api", () => {
   it("exports makeServerLive layer factory", async () => {
-    const api = await import("@jamesaphoenix/tx-api-server")
+    const api = await import("@jamesaphoenix/tx-cli/api")
 
     expect(api.makeServerLive).toBeDefined()
     expect(typeof api.makeServerLive).toBe("function")
   })
 
   it("exports TxApi definition and error types", async () => {
-    const api = await import("@jamesaphoenix/tx-api-server")
+    const api = await import("@jamesaphoenix/tx-cli/api")
 
     expect(api.TxApi).toBeDefined()
     expect(api.NotFound).toBeDefined()
@@ -269,7 +272,7 @@ describe("Package Resolution: @jamesaphoenix/tx-api-server", () => {
   })
 
   it("exports API group definitions", async () => {
-    const api = await import("@jamesaphoenix/tx-api-server")
+    const api = await import("@jamesaphoenix/tx-cli/api")
 
     expect(api.HealthGroup).toBeDefined()
     expect(api.TasksGroup).toBeDefined()
@@ -279,7 +282,7 @@ describe("Package Resolution: @jamesaphoenix/tx-api-server", () => {
   })
 
   it("exports route handler layers", async () => {
-    const api = await import("@jamesaphoenix/tx-api-server")
+    const api = await import("@jamesaphoenix/tx-cli/api")
 
     expect(api.TasksLive).toBeDefined()
     expect(api.HealthLive).toBeDefined()
@@ -292,16 +295,19 @@ describe("Package Resolution: @jamesaphoenix/tx-api-server", () => {
     const fs = await import("node:fs")
     const path = await import("node:path")
 
-    const apiPackageJson = JSON.parse(
+    const cliPackageJson = JSON.parse(
       fs.readFileSync(
-        path.resolve(process.cwd(), "apps/api-server/package.json"),
+        path.resolve(process.cwd(), "apps/cli/package.json"),
         "utf-8"
       )
     )
 
-    expect(apiPackageJson.dependencies["@jamesaphoenix/tx-core"]).toBe("*")
-    expect(apiPackageJson.dependencies["@jamesaphoenix/tx-types"]).toBe("*")
-    expect(apiPackageJson.name).toBe("@jamesaphoenix/tx-api-server")
+    // The API server is now bundled into tx-cli (bin: tx-api, export: ./api)
+    expect(cliPackageJson.dependencies["@jamesaphoenix/tx-core"]).toBe("*")
+    expect(cliPackageJson.dependencies["@jamesaphoenix/tx-types"]).toBe("*")
+    expect(cliPackageJson.dependencies["@effect/platform"]).toBeDefined()
+    expect(cliPackageJson.exports["./api"]).toBeDefined()
+    expect(cliPackageJson.bin["tx-api"]).toBe("./dist/api/server.js")
   })
 })
 

@@ -21,7 +21,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const projectRoot = path.resolve(__dirname, "../..")
 const docsDir = path.join(projectRoot, "apps/docs/content/docs/primitives")
 const registryPath = path.join(projectRoot, "primitives-registry.json")
-const mcpToolsDir = path.join(projectRoot, "apps/mcp-server/src/tools")
+const mcpToolsDir = path.join(projectRoot, "apps/cli/src/mcp/tools")
 const llmsPath = path.join(projectRoot, "apps/docs/public/llms.txt")
 
 // Load real project data
@@ -434,7 +434,7 @@ describe("SDK method names in docs match TxClient implementation", () => {
 // =============================================================================
 
 describe("REST API routes in docs match server endpoints", () => {
-  const apiFilePath = path.join(projectRoot, "apps/api-server/src/api.ts")
+  const apiFilePath = path.join(projectRoot, "apps/cli/src/api/api.ts")
   const apiSource = fs.readFileSync(apiFilePath, "utf-8")
 
   // Extract all endpoint paths from HttpApiEndpoint definitions

@@ -6,12 +6,74 @@
   "main": "./dist/cli.js",
   "types": "./dist/cli.d.ts",
   "bin": {
-    "tx": "./dist/cli.js"
+    "tx": "./dist/cli.js",
+    "tx-mcp": "./dist/mcp/server.js",
+    "tx-api": "./dist/api/server.js"
   },
   "exports": {
     ".": {
       "types": "./dist/cli.d.ts",
       "import": "./dist/cli.js"
+    },
+    "./mcp": {
+      "types": "./dist/mcp/server.d.ts",
+      "import": "./dist/mcp/server.js"
+    },
+    "./mcp/runtime": {
+      "types": "./dist/mcp/runtime.d.ts",
+      "import": "./dist/mcp/runtime.js"
+    },
+    "./mcp/response": {
+      "types": "./dist/mcp/response.d.ts",
+      "import": "./dist/mcp/response.js"
+    },
+    "./mcp/tools/task": {
+      "types": "./dist/mcp/tools/task.d.ts",
+      "import": "./dist/mcp/tools/task.js"
+    },
+    "./mcp/tools/learning": {
+      "types": "./dist/mcp/tools/learning.d.ts",
+      "import": "./dist/mcp/tools/learning.js"
+    },
+    "./mcp/tools/sync": {
+      "types": "./dist/mcp/tools/sync.d.ts",
+      "import": "./dist/mcp/tools/sync.js"
+    },
+    "./mcp/tools/spec-trace": {
+      "types": "./dist/mcp/tools/spec-trace.d.ts",
+      "import": "./dist/mcp/tools/spec-trace.js"
+    },
+    "./api": {
+      "types": "./dist/api/index.d.ts",
+      "import": "./dist/api/index.js"
+    },
+    "./api/runtime": {
+      "types": "./dist/api/runtime.d.ts",
+      "import": "./dist/api/runtime.js"
+    },
+    "./api/routes/tasks": {
+      "types": "./dist/api/routes/tasks.d.ts",
+      "import": "./dist/api/routes/tasks.js"
+    },
+    "./api/routes/runs": {
+      "types": "./dist/api/routes/runs.d.ts",
+      "import": "./dist/api/routes/runs.js"
+    },
+    "./api/routes/learnings": {
+      "types": "./dist/api/routes/learnings.d.ts",
+      "import": "./dist/api/routes/learnings.js"
+    },
+    "./api/routes/sync": {
+      "types": "./dist/api/routes/sync.d.ts",
+      "import": "./dist/api/routes/sync.js"
+    },
+    "./api/routes/spec-trace": {
+      "types": "./dist/api/routes/spec-trace.d.ts",
+      "import": "./dist/api/routes/spec-trace.js"
+    },
+    "./api/routes/health": {
+      "types": "./dist/api/routes/health.d.ts",
+      "import": "./dist/api/routes/health.js"
     }
   },
   "files": [
@@ -34,19 +96,15 @@
   },
   "dependencies": {
     "@clack/prompts": "^1.0.1",
+    "@effect/platform": "^0.96.0",
+    "@effect/platform-node": "^0.107.0",
     "@jamesaphoenix/tx-core": "*",
     "@jamesaphoenix/tx-test-utils": "*",
     "@jamesaphoenix/tx-types": "*",
+    "@modelcontextprotocol/sdk": "^1.25.3",
     "effect": "^3.19.15",
-    "yaml": "^2.5.0"
-  },
-  "peerDependencies": {
-    "@modelcontextprotocol/sdk": "^1.25.3"
-  },
-  "peerDependenciesMeta": {
-    "@modelcontextprotocol/sdk": {
-      "optional": true
-    }
+    "yaml": "^2.5.0",
+    "zod": "^4.3.6"
   },
   "repository": {
     "type": "git",

@@ -2,7 +2,7 @@
  * Integration tests for REST API invariant endpoints.
  *
  * Tests the invariant route handlers at the service level (same pattern as api-claim tests).
- * The REST handlers in apps/api-server/src/routes/invariants.ts delegate to DocService
+ * The REST handlers in apps/cli/src/api/routes/invariants.ts delegate to DocService
  * and serialize results via serializeInvariant / serializeCheck (Date -> ISO string conversion).
  *
  * The invariant lifecycle requires first creating a Doc (via DocService), which triggers
@@ -27,7 +27,7 @@ import type { Invariant, InvariantCheck } from "@jamesaphoenix/tx-types"
 // =============================================================================
 
 /**
- * Mirrors the serializeInvariant function from apps/api-server/src/routes/invariants.ts.
+ * Mirrors the serializeInvariant function from apps/cli/src/api/routes/invariants.ts.
  * The REST API converts Date fields to ISO strings before returning to clients.
  */
 const serializeInvariant = (inv: Invariant) => ({
@@ -44,7 +44,7 @@ const serializeInvariant = (inv: Invariant) => ({
 })
 
 /**
- * Mirrors the serializeCheck function from apps/api-server/src/routes/invariants.ts.
+ * Mirrors the serializeCheck function from apps/cli/src/api/routes/invariants.ts.
  */
 const serializeCheck = (check: InvariantCheck) => ({
   id: check.id,
