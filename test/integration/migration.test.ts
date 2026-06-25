@@ -141,6 +141,39 @@ describe("Migration system", () => {
       expect(version).toBe(getLatestVersion())
     })
 
+    it("leaves docs with a valid self-referencing parent FK (no dangling docs_new) so doc inserts work", () => {
+      // Regression: migrations 036/041 rebuilt docs with `parent_doc_id REFERENCES
+      // docs_new(id)` and renamed docs_new -> docs with foreign keys disabled (so
+      // DROP TABLE could not cascade). SQLite only rewrites a renamed table's own
+      // FK references when foreign keys are ON, so the self-reference was left
+      // dangling and every insert into docs failed at runtime with
+      // "no such table: docs_new" -- breaking `tx doc add`. Migration 046 repairs it.
+      const db = new Database(":memory:")
+      db.run("PRAGMA foreign_keys = ON")
+      applyMigrations(db)
+
+      const docsSchema = (db.prepare(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='docs'"
+      ).get() as { sql: string }).sql
+      expect(docsSchema).not.toContain("docs_new")
+
+      // With foreign keys enforced, doc inserts must succeed (the broken state threw here).
+      db.prepare(
+        "INSERT INTO docs (id, hash, kind, name, title, file_path) VALUES (1, 'h1', 'design', 'root', 'Root', 'p1')"
+      ).run()
+      db.prepare(
+        "INSERT INTO docs (id, hash, kind, name, title, file_path, parent_doc_id) VALUES (2, 'h2', 'design', 'child', 'Child', 'p2', 1)"
+      ).run()
+      expect((db.prepare("SELECT COUNT(*) AS c FROM docs").get() as { c: number }).c).toBe(2)
+
+      // The self-referencing FK must still be enforced: a non-existent parent is rejected.
+      expect(() =>
+        db.prepare(
+          "INSERT INTO docs (hash, kind, name, title, file_path, parent_doc_id) VALUES ('h3', 'design', 'orphan', 'Orphan', 'p3', 999)"
+        ).run()
+      ).toThrow()
+    })
+
     it("repairs missing anchor tables on drifted schema-version-head databases", () => {
       const db = new Database(":memory:")
       db.run("PRAGMA foreign_keys = ON")
