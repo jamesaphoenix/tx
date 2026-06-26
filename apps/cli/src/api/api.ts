@@ -987,7 +987,7 @@ export const CyclesGroup = HttpApiGroup.make("cycles")
 // DOCS GROUP
 // =============================================================================
 
-const DocNameParam = HttpApiSchema.param("name", Schema.String.pipe(Schema.minLength(1)))
+const DocNameParam = HttpApiSchema.param("name", SafePathString.pipe(Schema.minLength(1)))
 
 const DocSerializedSchema = Schema.Struct({
   id: Schema.Number.pipe(Schema.int()),
@@ -1015,7 +1015,7 @@ const DocListParams = Schema.Struct({
 
 const CreateDocBody = Schema.Struct({
   kind: Schema.Literal(...DOC_KINDS),
-  name: Schema.String.pipe(Schema.minLength(1)),
+  name: SafePathString.pipe(Schema.minLength(1)),
   title: Schema.String.pipe(Schema.minLength(1)),
   content: Schema.String.pipe(Schema.minLength(1)),
   metadata: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.Unknown })),
@@ -1210,12 +1210,12 @@ const MemoryDocIdParam = HttpApiSchema.param("id", Schema.String.pipe(
 const PropKeyParam = HttpApiSchema.param("key", Schema.String.pipe(Schema.minLength(1)))
 
 const AddSourceBody = Schema.Struct({
-  dir: Schema.String.pipe(Schema.minLength(1)),
+  dir: SafePathString.pipe(Schema.minLength(1)),
   label: Schema.optional(Schema.String),
 })
 
 const RemoveSourceBody = Schema.Struct({
-  dir: Schema.String.pipe(Schema.minLength(1)),
+  dir: SafePathString.pipe(Schema.minLength(1)),
 })
 
 const SourceListResponse = Schema.Struct({

@@ -49,7 +49,7 @@ export const CyclesLive = HttpApiBuilder.group(TxApi, "cycles", (handlers) =>
           .prepare(`SELECT id, agent FROM runs WHERE id = ?`)
           .get(path.id) as { id: string; agent: string } | undefined
 
-        if (!row) {
+        if (!row || row.agent !== "cycle-scanner") {
           return yield* Effect.fail(new NotFound({ message: `Cycle not found: ${path.id}` }))
         }
 
