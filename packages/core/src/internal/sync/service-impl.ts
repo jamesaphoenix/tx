@@ -1122,8 +1122,8 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
                         const dir = dirname(resolvedPath);
                         mkdirSync(dir, { recursive: true });
                         const tempPath = `${resolvedPath}.tmp.${Date.now()}.${process.pid}`;
-                        writeFileSync(tempPath, updated, "utf-8");
                         try {
+                            writeFileSync(tempPath, updated, "utf-8");
                             renameSync(tempPath, resolvedPath);
                         }
                         finally {
@@ -2181,10 +2181,8 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
                 yield* setConfig("last_export", new Date().toISOString());
                 return { eventCount: 0, streamId: stream.streamId, path: eventPath };
             }
-            yield* Effect.tryPromise({
-                try: () => appendFile(eventPath, `${events.map(e => JSON.stringify(e)).join("\n")}\n`, "utf-8"),
-                catch: (cause) => new DatabaseError({ cause })
-            });
+            // Write to DB first so a crash before the file write leaves data only in DB.
+            // Re-export will then append the same event_ids (INSERT OR IGNORE is a no-op).
             yield* Effect.try({
                 try: () => {
                     const insertStmt = db.prepare(`INSERT OR IGNORE INTO sync_events (event_id, stream_id, seq, ts, type, entity_id, v, payload)
@@ -2195,6 +2193,10 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
                         }
                     });
                 },
+                catch: (cause) => new DatabaseError({ cause })
+            });
+            yield* Effect.tryPromise({
+                try: () => appendFile(eventPath, `${events.map(e => JSON.stringify(e)).join("\n")}\n`, "utf-8"),
                 catch: (cause) => new DatabaseError({ cause })
             });
             const lastEvent = events[events.length - 1];

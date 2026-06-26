@@ -789,8 +789,11 @@ export const MemoryServiceLive = Layer.effect(
                 if (code === "EEXIST") return "exists" as const
                 return Promise.reject(openErr)
               }
-              await fd!.writeFile(fileContent, "utf-8")
-              await fd!.close()
+              try {
+                await fd!.writeFile(fileContent, "utf-8")
+              } finally {
+                await fd!.close()
+              }
               return "created" as const
             },
             catch: (cause) => new DatabaseError({ cause })

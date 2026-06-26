@@ -1069,7 +1069,15 @@ export const DocServiceLive = Layer.effect(
       get: (name, version?) =>
         Effect.gen(function* () {
           const doc = yield* resolveDocReference(name, version)
-          ensureDocIdInFile(doc, getDocsPath())
+          yield* Effect.try({
+            try: () => ensureDocIdInFile(doc, getDocsPath()),
+            catch: (cause) => {
+              if (cause instanceof DocNotFoundError) return cause
+              if (cause instanceof InvalidDocYamlError)
+                return new ValidationError({ reason: cause.reason })
+              return new ValidationError({ reason: String(cause) })
+            }
+          })
           return doc
         }),
 
@@ -1318,7 +1326,13 @@ export const DocServiceLive = Layer.effect(
             last_reviewed_at: today,
           })
           const patchContent = `---\n${patchFrontmatter}---\n\n# Summary\nPatch for ${parentDoc.name}: ${patchTitle}\n\n# Architecture\nPatch architecture details.\n\n# Interfaces\n\`\`\`yaml\ninterfaces: []\n\`\`\`\n\n# Data Model\nNo data model changes.\n\n# Invariants\n\`\`\`yaml\ninvariants: []\n\`\`\`\n\n# Failure Modes\n\`\`\`yaml\nfailure_modes: []\n\`\`\`\n\n# Verification\n\`\`\`yaml\nverification: []\n\`\`\`\n`
-          parseMarkdownSpecDocContent(patchName, patchContent)
+          yield* Effect.try({
+            try: () => parseMarkdownSpecDocContent(patchName, patchContent),
+            catch: (cause) =>
+              cause instanceof InvalidDocYamlError
+                ? new ValidationError({ reason: cause.reason })
+                : new ValidationError({ reason: String(cause) })
+          })
 
           const hash = computeDocHash(patchContent)
           const docsPath = getDocsPath()
