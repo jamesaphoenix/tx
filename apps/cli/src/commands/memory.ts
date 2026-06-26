@@ -22,6 +22,11 @@ import { commandHelp } from "../help.js"
 import { type Flags, flag, opt, parseIntOpt, parseFloatOpt, parseTaskId } from "../utils/parse.js"
 import { CliExitError } from "../cli-exit.js"
 
+const parseTags = (flags: Flags): string[] | undefined => {
+  const raw = opt(flags, "tags", "t")
+  return raw ? raw.split(",").map(t => t.trim()).filter(t => t.length > 0) : undefined
+}
+
 // =============================================================================
 // Source management
 // =============================================================================
@@ -120,8 +125,7 @@ const memoryAdd = (pos: string[], flags: Flags) =>
     }
 
     const svc = yield* MemoryService
-    const tagsStr = opt(flags, "tags", "t")
-    const tags = tagsStr ? tagsStr.split(",").map(t => t.trim()).filter(t => t.length > 0) : undefined
+    const tags = parseTags(flags)
 
     // Parse properties from --prop flags (key=value)
     const propsStr = opt(flags, "prop")
@@ -346,8 +350,7 @@ const memorySearch = (pos: string[], flags: Flags) =>
     const limit = parseIntOpt(flags, "limit", "limit", "n") ?? 10
     const minScore = parseFloatOpt(flags, "min-score", "min-score") ?? 0
 
-    const tagsStr = opt(flags, "tags", "t")
-    const tags = tagsStr ? tagsStr.split(",").map(t => t.trim()).filter(t => t.length > 0) : undefined
+    const tags = parseTags(flags)
 
     // Parse property filters
     const propStr = opt(flags, "prop")
@@ -489,8 +492,7 @@ const memoryList = (_pos: string[], flags: Flags) =>
     const rawSource = opt(flags, "source")
     // Expand tilde + resolve to absolute path so it matches the DB's absolute root_dir values
     const sourceDir = rawSource ? resolve(expandTilde(rawSource)) : undefined
-    const tagsStr = opt(flags, "tags", "t")
-    const tags = tagsStr ? tagsStr.split(",").map(t => t.trim()).filter(t => t.length > 0) : undefined
+    const tags = parseTags(flags)
 
     const docs = yield* svc.listDocuments({ source: sourceDir, tags })
 
@@ -548,6 +550,18 @@ const extractBody = (content: string): string => {
   const titleMatch = body.match(/^#[^\r\n]*\r?\n+/)
   return (titleMatch ? body.slice(titleMatch[0].length) : body).trim()
 }
+
+const mapFileLearningsToJson = (docs: Array<{ id: string; frontmatter: string | null; content: string; filePath: string }>) =>
+  docs.map(d => {
+    const fm = d.frontmatter ? JSON.parse(d.frontmatter) : {}
+    return {
+      id: d.id,
+      filePattern: fm.file_pattern,
+      note: extractBody(d.content),
+      taskId: fm.task_id ?? null,
+      filePath: d.filePath,
+    }
+  })
 
 /** Relative path (from cwd) where learning .md files live */
 const LEARNINGS_DIR = "docs/learnings"
@@ -790,16 +804,7 @@ const memoryRecall = (pos: string[], flags: Flags) =>
       })
 
       if (flag(flags, "json")) {
-        console.log(toJson(matching.map(d => {
-          const fm = d.frontmatter ? JSON.parse(d.frontmatter) : {}
-          return {
-            id: d.id,
-            filePattern: fm.file_pattern,
-            note: extractBody(d.content),
-            taskId: fm.task_id ?? null,
-            filePath: d.filePath,
-          }
-        })))
+        console.log(toJson(mapFileLearningsToJson(matching)))
       } else {
         if (matching.length === 0) {
           console.log(`No learnings found for: ${path}`)
@@ -826,16 +831,7 @@ const memoryRecall = (pos: string[], flags: Flags) =>
       })
 
       if (flag(flags, "json")) {
-        console.log(toJson(fileLearnings.map(d => {
-          const fm = d.frontmatter ? JSON.parse(d.frontmatter) : {}
-          return {
-            id: d.id,
-            filePattern: fm.file_pattern,
-            note: extractBody(d.content),
-            taskId: fm.task_id ?? null,
-            filePath: d.filePath,
-          }
-        })))
+        console.log(toJson(mapFileLearningsToJson(fileLearnings)))
       } else {
         if (fileLearnings.length === 0) {
           console.log("No file learnings found")
