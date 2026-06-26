@@ -155,7 +155,12 @@ const pinSync = (_pos: string[], flags: Flags) =>
     if (flag(flags, "json")) {
       console.log(JSON.stringify(result, null, 2))
     } else if (result.synced.length === 0) {
-      console.log("No target files configured. Run: tx pin targets CLAUDE.md")
+      const targets = yield* svc.getTargetFiles()
+      if (targets.length === 0) {
+        console.log("No target files configured. Run: tx pin targets CLAUDE.md")
+      } else {
+        console.log(`Already in sync (${targets.length} target${targets.length === 1 ? "" : "s"}, no changes needed)`)
+      }
     } else {
       console.log(`Synced to: ${result.synced.join(", ")}`)
     }

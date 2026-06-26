@@ -7,7 +7,7 @@
 import { Effect, Either } from "effect"
 import { existsSync, readFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { execSync } from "node:child_process"
+import { spawnSync } from "node:child_process"
 import {
   DocService,
   formatEarsValidationErrors,
@@ -201,9 +201,9 @@ const docEdit = (pos: string[], _flags: Flags) =>
     const config = readTxConfig()
     const absPath = resolve(config.docs.path, doc.filePath)
 
-    try {
-      execSync(`${editor} "${absPath}"`, { stdio: "inherit" })
-    } catch {
+    const [editorCmd, ...editorArgs] = editor.split(/\s+/).filter(Boolean)
+    const result = spawnSync(editorCmd!, [...editorArgs, absPath], { stdio: "inherit" })
+    if (result.error || (result.status !== null && result.status !== 0)) {
       console.error(`Failed to open editor: ${editor}`)
       throw new CliExitError(1)
     }
