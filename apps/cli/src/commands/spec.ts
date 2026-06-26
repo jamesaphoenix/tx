@@ -33,7 +33,13 @@ const parseScopeFilter = (flags: Flags): { doc?: string; subsystem?: string } =>
 
 const readStdin = (): string | null => {
   if (process.stdin.isTTY) return null
-  const raw = readFileSync(0, "utf-8")
+  let raw: string
+  try {
+    raw = readFileSync(0, "utf-8")
+  } catch (err) {
+    console.error(`Failed to read stdin: ${err instanceof Error ? err.message : String(err)}`)
+    throw new CliExitError(1)
+  }
   if (Buffer.byteLength(raw, "utf8") > MAX_BATCH_STDIN_BYTES) {
     console.error(`Batch input exceeds ${MAX_BATCH_STDIN_BYTES} bytes`)
     throw new CliExitError(1)
