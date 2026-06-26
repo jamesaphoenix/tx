@@ -263,6 +263,51 @@ const readTranscriptToolCalls = (
   }
 }
 
+const traceReadRunFile = (
+  pos: string[],
+  field: "transcriptPath" | "stderrPath",
+  label: string
+) =>
+  Effect.gen(function* () {
+    const runId = pos[0]
+    if (!runId) {
+      console.error(`Error: run-id is required`)
+      console.error(`Usage: tx trace ${label} <run-id>`)
+      throw new CliExitError(1)
+    }
+
+    const runRepo = yield* RunRepository
+    const run = yield* runRepo.findById(runId as RunId)
+    if (!run) {
+      console.error(`Error: Run not found: ${runId}`)
+      throw new CliExitError(1)
+    }
+
+    const filePath = run[field]
+    if (!filePath) {
+      console.error(`Error: No ${label} recorded for run: ${runId}`)
+      throw new CliExitError(1)
+    }
+
+    const txDir = join(process.cwd(), ".tx")
+    const fullPath = filePath.startsWith("/") ? filePath : resolve(txDir, filePath)
+
+    if (!existsSync(fullPath)) {
+      const capitalized = label.charAt(0).toUpperCase() + label.slice(1)
+      console.error(`Error: ${capitalized} file not found: ${fullPath}`)
+      throw new CliExitError(1)
+    }
+
+    try {
+      const content = readFileSync(fullPath, "utf-8")
+      process.stdout.write(content)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      console.error(`Error: Failed to read ${label} file: ${message}`)
+      throw new CliExitError(1)
+    }
+  }) as Effect.Effect<void, DatabaseError, RunRepository>
+
 /**
  * tx trace transcript <run-id> - Display raw transcript content.
  *
@@ -270,50 +315,7 @@ const readTranscriptToolCalls = (
  * Designed to be piped to jq for filtering tool calls.
  */
 export const traceTranscript = (pos: string[], _flags: Flags) =>
-  Effect.gen(function* () {
-    const runId = pos[0]
-    if (!runId) {
-      console.error("Error: run-id is required")
-      console.error("Usage: tx trace transcript <run-id>")
-      throw new CliExitError(1)
-    }
-
-    const runRepo = yield* RunRepository
-
-    // Get run details
-    const run = yield* runRepo.findById(runId as RunId)
-    if (!run) {
-      console.error(`Error: Run not found: ${runId}`)
-      throw new CliExitError(1)
-    }
-
-    // Check if transcript path exists
-    if (!run.transcriptPath) {
-      console.error(`Error: No transcript recorded for run: ${runId}`)
-      throw new CliExitError(1)
-    }
-
-    // Resolve transcript path relative to .tx directory
-    const txDir = join(process.cwd(), ".tx")
-    const fullPath = run.transcriptPath.startsWith("/")
-      ? run.transcriptPath
-      : resolve(txDir, run.transcriptPath)
-
-    if (!existsSync(fullPath)) {
-      console.error(`Error: Transcript file not found: ${fullPath}`)
-      throw new CliExitError(1)
-    }
-
-    // Read and output raw content
-    try {
-      const content = readFileSync(fullPath, "utf-8")
-      process.stdout.write(content)
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      console.error(`Error: Failed to read transcript file: ${message}`)
-      throw new CliExitError(1)
-    }
-  }) as Effect.Effect<void, DatabaseError, RunRepository>
+  traceReadRunFile(pos, "transcriptPath", "transcript")
 
 /**
  * tx trace stderr <run-id> - Display stderr file content.
@@ -322,50 +324,7 @@ export const traceTranscript = (pos: string[], _flags: Flags) =>
  * Useful for debugging failed runs.
  */
 export const traceStderr = (pos: string[], _flags: Flags) =>
-  Effect.gen(function* () {
-    const runId = pos[0]
-    if (!runId) {
-      console.error("Error: run-id is required")
-      console.error("Usage: tx trace stderr <run-id>")
-      throw new CliExitError(1)
-    }
-
-    const runRepo = yield* RunRepository
-
-    // Get run details
-    const run = yield* runRepo.findById(runId as RunId)
-    if (!run) {
-      console.error(`Error: Run not found: ${runId}`)
-      throw new CliExitError(1)
-    }
-
-    // Check if stderr path exists
-    if (!run.stderrPath) {
-      console.error(`Error: No stderr recorded for run: ${runId}`)
-      throw new CliExitError(1)
-    }
-
-    // Resolve stderr path relative to .tx directory
-    const txDir = join(process.cwd(), ".tx")
-    const fullPath = run.stderrPath.startsWith("/")
-      ? run.stderrPath
-      : resolve(txDir, run.stderrPath)
-
-    if (!existsSync(fullPath)) {
-      console.error(`Error: Stderr file not found: ${fullPath}`)
-      throw new CliExitError(1)
-    }
-
-    // Read and output raw content
-    try {
-      const content = readFileSync(fullPath, "utf-8")
-      process.stdout.write(content)
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      console.error(`Error: Failed to read stderr file: ${message}`)
-      throw new CliExitError(1)
-    }
-  }) as Effect.Effect<void, DatabaseError, RunRepository>
+  traceReadRunFile(pos, "stderrPath", "stderr")
 
 /**
  * tx trace show <run-id> - Show metrics events for a run.

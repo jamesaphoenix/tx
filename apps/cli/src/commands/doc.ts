@@ -202,7 +202,11 @@ const docEdit = (pos: string[], _flags: Flags) =>
     const absPath = resolve(config.docs.path, doc.filePath)
 
     const [editorCmd, ...editorArgs] = editor.split(/\s+/).filter(Boolean)
-    const result = spawnSync(editorCmd!, [...editorArgs, absPath], { stdio: "inherit" })
+    if (!editorCmd) {
+      console.error(`$EDITOR is empty or invalid: "${editor}". Set EDITOR to a valid editor command.`)
+      throw new CliExitError(1)
+    }
+    const result = spawnSync(editorCmd, [...editorArgs, absPath], { stdio: "inherit" })
     if (result.error || (result.status !== null && result.status !== 0)) {
       console.error(`Failed to open editor: ${editor}`)
       throw new CliExitError(1)
