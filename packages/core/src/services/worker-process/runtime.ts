@@ -160,37 +160,34 @@ export const runAgent = (
     state.agentProcess = proc
 
     let stderr = ""
+    let settled = false
+
+    const settle = (result: AgentResult): void => {
+      if (settled) return
+      settled = true
+      state.agentProcess = null
+      resume(Effect.succeed(result))
+    }
+
+    // Register error handler immediately after spawn so no error event is missed.
+    proc.on("error", (err) => {
+      settle({ success: false, error: err.message, exitCode: 1 })
+    })
 
     proc.stderr?.on("data", (data) => {
       stderr += data.toString()
     })
 
     proc.on("close", (code) => {
-      state.agentProcess = null
-
       if (code === 0) {
-        resume(Effect.succeed({ success: true, exitCode: code ?? 0 }))
+        settle({ success: true, exitCode: code ?? 0 })
       } else {
-        resume(
-          Effect.succeed({
-            success: false,
-            error: stderr || `Exit code ${code}`,
-            exitCode: code ?? 1
-          })
-        )
-      }
-    })
-
-    proc.on("error", (err) => {
-      state.agentProcess = null
-
-      resume(
-        Effect.succeed({
+        settle({
           success: false,
-          error: err.message,
-          exitCode: 1
+          error: stderr || `Exit code ${code}`,
+          exitCode: code ?? 1
         })
-      )
+      }
     })
   })
 

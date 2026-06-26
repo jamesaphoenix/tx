@@ -6,285 +6,34 @@
  * optionally fixes them. Repeats in rounds within each cycle until convergence.
  */
 
-import { Context, Effect, Layer } from "effect"
-import { mkdirSync } from "node:fs"
-import { appendFile } from "node:fs/promises"
-import { resolve } from "node:path"
-import { randomBytes } from "node:crypto"
-import { readFileSync, existsSync, statSync } from "node:fs"
+import { Context, Duration, Effect, Layer } from "effect"
+import { existsSync } from "node:fs"
 import type { Finding, DedupResult, CycleConfig, CycleResult, CycleProgressEvent, AgentRuntime } from "../types/index.js"
 import { LOSS_WEIGHTS } from "../types/index.js"
 import { CycleScanError } from "../errors.js"
 import { AgentService } from "../services/agent-service.js"
 import { SqliteClient } from "../db.js"
-
-// =============================================================================
-// JSON Schemas for Structured Output
-// =============================================================================
-
-const FINDINGS_SCHEMA: Record<string, unknown> = {
-  type: "object",
-  properties: {
-    findings: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          title: { type: "string", description: "Short, descriptive issue title" },
-          description: { type: "string", description: "Detailed explanation of the issue and why it matters" },
-          severity: { type: "string", enum: ["high", "medium", "low"] },
-          issueType: { type: "string", description: "Category: bug, anti-pattern, security, performance, testing, ddd, etc." },
-          file: { type: "string", description: "File path relative to project root" },
-          line: { type: "number", description: "Approximate line number" },
-        },
-        required: ["title", "description", "severity", "issueType", "file", "line"],
-      },
-    },
-  },
-  required: ["findings"],
-}
-
-const DEDUP_SCHEMA: Record<string, unknown> = {
-  type: "object",
-  properties: {
-    newIssues: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          title: { type: "string" },
-          description: { type: "string" },
-          severity: { type: "string", enum: ["high", "medium", "low"] },
-          issueType: { type: "string" },
-          file: { type: "string" },
-          line: { type: "number" },
-        },
-        required: ["title", "description", "severity", "issueType", "file", "line"],
-      },
-    },
-    duplicates: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          findingIdx: { type: "number", description: "Index into the findings array" },
-          existingIssueId: { type: "string", description: "Task ID of the existing issue this duplicates" },
-          reason: { type: "string", description: "Why this is considered a duplicate" },
-        },
-        required: ["findingIdx", "existingIssueId", "reason"],
-      },
-    },
-  },
-  required: ["newIssues", "duplicates"],
-}
-
-// =============================================================================
-// Helpers
-// =============================================================================
-
-function composeScanPrompt(task: string, scan: string): string {
-  return `## Context
-${task}
-
-## Your Mission
-${scan}
-
-## Instructions
-Explore the codebase thoroughly using Read, Glob, and Grep.
-Look for real issues — not style nits. Focus on bugs, logic errors,
-missing error handling, security vulnerabilities, and structural problems.
-
-Return your findings as structured JSON. Only report issues you are
-confident about after reading the actual code.`
-}
-
-function composeDedupPrompt(findings: readonly Finding[], existingIssues: Array<{ id: string; title: string; description: string; severity: string; file: string; line: number }>): string {
-  return `## Task
-Compare these new findings against known issues. Return only genuinely new issues.
-
-## New Findings (${findings.length} total)
-${JSON.stringify(findings, null, 2)}
-
-## Known Issues (${existingIssues.length} total)
-${JSON.stringify(existingIssues, null, 2)}
-
-## Instructions
-For each new finding, check if it describes the same problem as any known issue.
-Use semantic understanding — the same issue might be worded differently or reference
-a slightly different line number in the same file. Be conservative: if in doubt,
-treat it as new rather than duplicate.
-
-Return your analysis as structured JSON.`
-}
-
-function composeFixPrompt(issues: readonly Finding[]): string {
-  const issuesSummary = issues
-    .map(
-      (i, idx) =>
-        `${idx + 1}. [${i.severity.toUpperCase()}] ${i.title} (${i.file}:${i.line})\n   ${i.description}`
-    )
-    .join("\n\n")
-  return `## Task
-Fix these ${issues.length} issues found in the codebase:
-
-${issuesSummary}
-
-## Instructions
-Work through the issues above. For each one:
-1. Read the relevant file to understand context
-2. Make the minimal fix needed
-3. Move to the next issue
-
-Focus on correctness. Skip issues you're not confident about fixing safely.`
-}
-
-function resolvePrompt(value: string): string {
-  const filePath = resolve(value)
-  if (existsSync(filePath) && statSync(filePath).isFile()) {
-    return readFileSync(filePath, "utf-8").trim()
-  }
-  return value
-}
-
-function generateId(prefix: string): string {
-  return `${prefix}-${randomBytes(4).toString("hex")}`
-}
-
-// =============================================================================
-// Transcript Logging
-// =============================================================================
-
-const LOGS_DIR = resolve(".tx", "logs")
-const RUNS_DIR = resolve(".tx", "runs")
-
-type RunLogStream = "stdout" | "stderr"
-
-type RunLogPathHints = {
-  readonly stdoutPath?: string | null
-  readonly stderrPath?: string | null};
-
-type RunPathRow = {
-  readonly transcript_path: string | null
-  readonly stdout_path: string | null
-  readonly stderr_path: string | null
-  readonly metadata: unknown};
-
-function ensureLogsDir(): void {
-  mkdirSync(LOGS_DIR, { recursive: true })
-}
-
-function logPath(runId: string): string {
-  return resolve(LOGS_DIR, `${runId}.jsonl`)
-}
-
-function writeTranscriptLine(runId: string, message: unknown): void {
-  try {
-    const line = JSON.stringify(message) + "\n"
-    // Use async appendFile to avoid blocking the event loop during concurrent scans
-    appendFile(logPath(runId), line).catch(() => {
-      // Don't let transcript writing break the scan
-    })
-  } catch {
-    // Don't let transcript writing break the scan
-  }
-}
-
-function writeOrchestratorLog(runId: string, text: string): void {
-  writeTranscriptLine(runId, {
-    type: "assistant",
-    message: {
-      role: "assistant",
-      content: [{ type: "text", text }],
-    },
-    timestamp: new Date().toISOString(),
-  })
-}
-
-function asNonEmptyPath(value: unknown): string | null {
-  if (typeof value !== "string") return null
-  const trimmed = value.trim()
-  return trimmed.length > 0 ? trimmed : null
-}
-
-function extractRunLogPathHints(message: unknown): RunLogPathHints {
-  if (!message || typeof message !== "object") {
-    return {}
-  }
-
-  const queue: Array<{ readonly value: unknown; readonly depth: number }> = [{ value: message, depth: 0 }]
-  const seen = new Set<unknown>()
-  let stdoutPath: string | null = null
-  let stderrPath: string | null = null
-
-  while (queue.length > 0 && (!stdoutPath || !stderrPath)) {
-    const next = queue.shift()
-    if (!next) break
-    const { value, depth } = next
-
-    if (!value || typeof value !== "object" || seen.has(value)) {
-      continue
-    }
-    seen.add(value)
-
-    const record = value as Record<string, unknown>
-    if (!stdoutPath) {
-      stdoutPath = asNonEmptyPath(record.stdout_path) ?? asNonEmptyPath(record.stdoutPath)
-    }
-    if (!stderrPath) {
-      stderrPath = asNonEmptyPath(record.stderr_path) ?? asNonEmptyPath(record.stderrPath)
-    }
-
-    if (depth >= 2) continue
-
-    for (const child of Object.values(record)) {
-      if (child && typeof child === "object") {
-        queue.push({ value: child, depth: depth + 1 })
-      }
-    }
-  }
-
-  return {
-    ...(stdoutPath ? { stdoutPath } : {}),
-    ...(stderrPath ? { stderrPath } : {}),
-  }
-}
-
-function buildRunLogPathCandidates(runId: string, stream: RunLogStream): readonly string[] {
-  const suffixes = stream === "stdout" ? ["stdout", "stdout.log"] : ["stderr", "stderr.log"]
-
-  return [
-    resolve(LOGS_DIR, `${runId}.${suffixes[0]}`),
-    resolve(LOGS_DIR, `${runId}.${suffixes[1]}`),
-    resolve(RUNS_DIR, `${runId}.${suffixes[0]}`),
-    resolve(RUNS_DIR, `${runId}.${suffixes[1]}`),
-  ]
-}
-
-function discoverRunLogPath(runId: string, stream: RunLogStream): string | null {
-  const candidates = buildRunLogPathCandidates(runId, stream)
-  for (const candidate of candidates) {
-    if (existsSync(candidate)) {
-      return candidate
-    }
-  }
-  return null
-}
-
-function parseRunMetadata(raw: unknown): Record<string, unknown> {
-  if (!raw) return {}
-  if (typeof raw === "object" && !Array.isArray(raw)) {
-    return raw as Record<string, unknown>
-  }
-  if (typeof raw !== "string") return {}
-  try {
-    const parsed = JSON.parse(raw)
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? parsed as Record<string, unknown>
-      : {}
-  } catch {
-    return {}
-  }
-}
+import {
+  FINDINGS_SCHEMA,
+  DEDUP_SCHEMA,
+  composeScanPrompt,
+  composeDedupPrompt,
+  composeFixPrompt,
+  resolvePrompt,
+  generateId,
+} from "./cycle-scan-prompts.js"
+import {
+  type RunLogPathHints,
+  type RunPathRow,
+  ensureLogsDir,
+  logPath,
+  writeTranscriptLine,
+  writeOrchestratorLog,
+  asNonEmptyPath,
+  extractRunLogPathHints,
+  discoverRunLogPath,
+  parseRunMetadata,
+} from "./cycle-scan-logging.js"
 
 // =============================================================================
 // DB Row Types
@@ -671,13 +420,24 @@ export const CycleScanServiceLive = Layer.effect(
             writeTranscriptLine(runId, { ...msg as Record<string, unknown>, timestamp: new Date().toISOString() })
           })
           .pipe(
-            Effect.mapError(
-              (e) =>
+            Effect.timeoutFail({
+              duration: Duration.minutes(5),
+              onTimeout: () =>
                 new CycleScanError({
                   phase: "dedup",
-                  reason: extractErrorReason(e, "Dedup agent failed"),
-                  cause: e,
-                })
+                  reason: "Dedup agent timed out after 5 minutes",
+                  cause: new Error("Timeout"),
+                }),
+            }),
+            Effect.mapError(
+              (e) =>
+                e._tag === "CycleScanError"
+                  ? e
+                  : new CycleScanError({
+                      phase: "dedup",
+                      reason: extractErrorReason(e, "Dedup agent failed"),
+                      cause: e,
+                    })
             )
           )
         const output = result.structuredOutput as DedupResult | null

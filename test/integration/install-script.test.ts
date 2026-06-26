@@ -73,11 +73,26 @@ describe("install.sh", () => {
     expect(result.stdout).toMatch(/\d+\.\d+\.\d+/)
   })
 
-  it("rejects TX_VERSION that does not match semver pattern", () => {
+  it("rejects TX_VERSION containing non-digit non-dot characters", () => {
+    // "not-a-version" has letters which hit the [!0-9.] check ("invalid characters")
     const result = spawnSync("sh", [INSTALL_SCRIPT], {
       env: {
         ...process.env,
         TX_VERSION: "not-a-version",
+        TX_INSTALL_DIR: tmpDir,
+      },
+      timeout: 5_000,
+    })
+    expect(result.status).toBe(1)
+    expect(result.stderr.toString()).toContain("invalid characters")
+  })
+
+  it("rejects TX_VERSION that is not three-component semver", () => {
+    // "1.2" has only dots+digits but doesn't match X.Y.Z ("does not look like")
+    const result = spawnSync("sh", [INSTALL_SCRIPT], {
+      env: {
+        ...process.env,
+        TX_VERSION: "1.2",
         TX_INSTALL_DIR: tmpDir,
       },
       timeout: 5_000,

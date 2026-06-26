@@ -2051,6 +2051,10 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
                     upsertOps.push(parsed);
                 } else if (parsed.op === "decision_delete") {
                     deleteOps.push(parsed);
+                } else {
+                    yield* Effect.fail(new ValidationError({
+                        reason: `Unknown decision operation type "${parsed.op ?? "(missing)"}". Expected "decision_upsert" or "decision_delete".`
+                    }));
                 }
             }
             if (upsertOps.length === 0 && deleteOps.length === 0)
