@@ -15,6 +15,60 @@ Use it when you need to:
 - refresh skills in an existing project after upgrading tx,
 - preserve local custom skills while updating tx-managed ones.
 
+## Usage
+
+<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
+<Tab value="CLI">
+
+```bash
+# Generate skills bundles (default: both targets)
+tx skills generate
+
+# Generate for a specific target
+tx skills generate --target claude
+tx skills generate --target codex
+
+# Sync skills into an existing project
+tx skills sync
+tx skills sync --target claude
+tx skills sync --project-dir /path/to/project
+```
+
+</Tab>
+<Tab value="TypeScript SDK">
+
+```typescript
+import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+
+const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
+
+// Skills generation is CLI-only; use the CLI via a subprocess
+// or invoke tx skills generate/sync directly in your shell.
+```
+
+</Tab>
+<Tab value="MCP">
+
+Skills generation is not exposed as an MCP tool. Use the CLI directly:
+
+```bash
+tx skills generate --target claude
+tx skills sync
+```
+
+</Tab>
+<Tab value="REST API">
+
+Skills generation is not exposed via the REST API. Use the CLI directly:
+
+```bash
+tx skills generate
+tx skills sync
+```
+
+</Tab>
+</Tabs>
+
 ## What `tx init` Installs
 
 By default, onboarding is skills-first:
