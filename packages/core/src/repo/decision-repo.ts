@@ -76,7 +76,7 @@ export const DecisionRepositoryLive = Layer.effect(
           yield* Effect.try({
             try: () =>
               db.prepare(
-                `INSERT INTO decisions (id, content, question, status, source, commit_sha, run_id, task_id, doc_id, content_hash)
+                `INSERT OR IGNORE INTO decisions (id, content, question, status, source, commit_sha, run_id, task_id, doc_id, content_hash)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
               ).run(
                 input.id,

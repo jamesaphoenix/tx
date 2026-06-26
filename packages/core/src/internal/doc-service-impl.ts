@@ -946,6 +946,16 @@ export const DocServiceLive = Layer.effect(
           const parsedDoc = parseMarkdownSpecDocContent(name, contentForParse)
           const frontmatter = parsedDoc.frontmatter
           const parsedKind = parseSpecTypeAsDocKind(name, frontmatter.spec_type)
+
+          // Deprecation warnings for legacy PRD frontmatter fields
+          if (parsedKind === "prd") {
+            if ((frontmatter as Record<string, unknown>).requirements !== undefined) {
+              console.warn(`[tx] Deprecated field 'requirements' detected in PRD YAML; use 'ears_requirements' instead.`)
+            }
+            if ((frontmatter as Record<string, unknown>).out_of_scope !== undefined) {
+              console.warn(`[tx] Deprecated field 'out_of_scope' detected in PRD YAML; use 'non_goals' instead.`)
+            }
+          }
           const generatedDocId = (frontmatter.doc_id ??
             (yield* generateDocStableId())) as DocStableId
 

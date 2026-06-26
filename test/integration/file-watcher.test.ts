@@ -389,7 +389,8 @@ describe("FileWatcherServiceLive File Add Detection", () => {
           yield* watcher.start({
             patterns: [path.join(tempDir, "*.jsonl")],
             debounceMs: 100,
-            ignoreInitial: true
+            ignoreInitial: true,
+            pollInterval: 50
           })
 
           yield* waitForReady()
@@ -428,7 +429,8 @@ describe("FileWatcherServiceLive File Add Detection", () => {
           yield* watcher.start({
             patterns: [path.join(tempDir, "*.jsonl")],
             debounceMs: 100,
-            ignoreInitial: true
+            ignoreInitial: true,
+            pollInterval: 50
           })
 
           yield* waitForReady()
@@ -508,7 +510,8 @@ describe("FileWatcherServiceLive File Add Detection", () => {
           yield* watcher.start({
             patterns: [path.join(tempDir, "**/*.jsonl")],
             debounceMs: 100,
-            ignoreInitial: true
+            ignoreInitial: true,
+            pollInterval: 50
           })
 
           yield* waitForReady()
@@ -705,7 +708,8 @@ describe("FileWatcherServiceLive File Delete Detection", () => {
           yield* watcher.start({
             patterns: [path.join(tempDir, "*.jsonl")],
             debounceMs: 100,
-            ignoreInitial: true
+            ignoreInitial: true,
+            pollInterval: 50
           })
 
           yield* waitForReady()
@@ -849,7 +853,8 @@ describe("FileWatcherServiceLive Debounce Behavior", () => {
           yield* watcher.start({
             patterns: [path.join(tempDir, "*.jsonl")],
             debounceMs: 1000, // 1 second stabilization
-            ignoreInitial: true
+            ignoreInitial: true,
+            pollInterval: 50
           })
 
           yield* waitForReady()
@@ -906,7 +911,8 @@ describe("FileWatcherServiceLive Events Counter", () => {
           yield* watcher.start({
             patterns: [path.join(tempDir, "*.jsonl")],
             debounceMs: 100,
-            ignoreInitial: true
+            ignoreInitial: true,
+            pollInterval: 50
           })
 
           yield* waitForReady()
