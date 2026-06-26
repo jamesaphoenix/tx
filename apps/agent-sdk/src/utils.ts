@@ -179,9 +179,10 @@ export const parseApiError = async (response: Response): Promise<TxError> => {
     details = await response.text()
   }
 
-  const errorObj = details as { error?: { code?: string; message?: string } }
-  const code = errorObj?.error?.code ?? "API_ERROR"
-  const message = errorObj?.error?.message ?? `HTTP ${response.status}`
+  // @effect/platform encodes TaggedErrors as { _tag, message } directly (no wrapper)
+  const errorObj = details as { _tag?: string; message?: string }
+  const code = errorObj?._tag ?? "API_ERROR"
+  const message = errorObj?.message ?? `HTTP ${response.status}`
 
   return new TxError(message, code, response.status, details)
 }

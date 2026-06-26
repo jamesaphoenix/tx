@@ -650,7 +650,7 @@ reconcile_running_runs() {
         continue
       fi
       sqlite3 "$DB_PATH" \
-        "UPDATE runs SET status='cancelled', ended_at=datetime('now'), exit_code=137, error_message='Watchdog: missing PID for running run' WHERE id='$(sql_escape "$run_id")';" \
+        "UPDATE runs SET status='cancelled', ended_at=strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), exit_code=137, error_message='Watchdog: missing PID for running run' WHERE id='$(sql_escape "$run_id")';" \
         >/dev/null 2>&1 || true
       [ -n "$task_id" ] && reset_task_and_expire_claims "$task_id"
       log "Reconciled run=$run_id (missing pid)"
@@ -663,7 +663,7 @@ reconcile_running_runs() {
         continue
       fi
       sqlite3 "$DB_PATH" \
-        "UPDATE runs SET status='cancelled', ended_at=datetime('now'), exit_code=137, error_message='Watchdog: process not alive' WHERE id='$(sql_escape "$run_id")';" \
+        "UPDATE runs SET status='cancelled', ended_at=strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), exit_code=137, error_message='Watchdog: process not alive' WHERE id='$(sql_escape "$run_id")';" \
         >/dev/null 2>&1 || true
       [ -n "$task_id" ] && reset_task_and_expire_claims "$task_id"
       log "Reconciled run=$run_id (dead pid=$pid)"
@@ -678,7 +678,7 @@ reconcile_running_runs() {
       if ! run_pid_is_owned_by_tx_runtime "$pid" "$runtime" "$worker"; then
         log "Stale run detected run=$run_id pid=$pid age=${age}s; ownership not confirmed, cancelling without kill"
         sqlite3 "$DB_PATH" \
-          "UPDATE runs SET status='cancelled', ended_at=datetime('now'), exit_code=137, error_message='Watchdog: stale running run cancelled without kill (ownership not confirmed for pid $pid, age ${age}s)' WHERE id='$(sql_escape "$run_id")';" \
+          "UPDATE runs SET status='cancelled', ended_at=strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), exit_code=137, error_message='Watchdog: stale running run cancelled without kill (ownership not confirmed for pid $pid, age ${age}s)' WHERE id='$(sql_escape "$run_id")';" \
           >/dev/null 2>&1 || true
         [ -n "$task_id" ] && reset_task_and_expire_claims "$task_id"
         continue
@@ -691,7 +691,7 @@ reconcile_running_runs() {
         terminate_pid_tree "$pid" KILL
       fi
       sqlite3 "$DB_PATH" \
-        "UPDATE runs SET status='cancelled', ended_at=datetime('now'), exit_code=137, error_message='Watchdog: stale running run killed (age ${age}s)' WHERE id='$(sql_escape "$run_id")';" \
+        "UPDATE runs SET status='cancelled', ended_at=strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), exit_code=137, error_message='Watchdog: stale running run killed (age ${age}s)' WHERE id='$(sql_escape "$run_id")';" \
         >/dev/null 2>&1 || true
       [ -n "$task_id" ] && reset_task_and_expire_claims "$task_id"
     fi
@@ -765,7 +765,7 @@ check_error_burst_for_worker() {
     "SELECT COUNT(*)
      FROM runs
      WHERE status IN ('failed', 'cancelled')
-       AND started_at >= datetime('now', '-${ERROR_BURST_WINDOW_MINUTES} minutes')
+       AND started_at >= strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-${ERROR_BURST_WINDOW_MINUTES} minutes')
        AND json_extract(metadata, '$.worker') = '$(sql_escape "$worker")';" 2>/dev/null || echo "0")
 
   if [ "$count" -ge "$ERROR_BURST_THRESHOLD" ]; then
