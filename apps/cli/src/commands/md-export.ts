@@ -212,17 +212,18 @@ export const mdExport = (_pos: string[], flags: Flags) =>
       console.log(`Watching for changes every ${interval}s. Press Ctrl+C to stop.`)
       yield* exportAndHash()
 
-      // Poll loop — SIGINT/SIGTERM exit immediately via process.exit
+      // Poll loop — exit cleanly on SIGINT/SIGTERM so Effect scope finalizers run
+      let shouldStop = false
       const cleanup = () => {
         console.log("\nStopped watching.")
-        process.exit(0)
+        shouldStop = true
       }
       process.on("SIGINT", cleanup)
       process.on("SIGTERM", cleanup)
 
-      while (true) {
+      while (!shouldStop) {
         yield* Effect.sleep(Duration.seconds(interval))
-        yield* exportAndHash()
+        if (!shouldStop) yield* exportAndHash()
       }
     }
   })

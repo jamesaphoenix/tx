@@ -159,8 +159,8 @@ export const DeduplicationRepositoryLive = Layer.effect(
           `)
 
           const runBatchInsert = (batch: readonly CreateProcessedHashInput[]): { ok: true; inserted: number } | { ok: false; error: unknown } => {
-            db.exec("BEGIN IMMEDIATE")
             try {
+              db.exec("BEGIN IMMEDIATE")
               let inserted = 0
               for (const input of batch) {
                 const result = stmt.run(input.contentHash, input.sourceFile, input.sourceLine)

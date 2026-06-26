@@ -25,8 +25,8 @@ export const WorkerRepositoryLive = Layer.effect(
   Effect.gen(function* () {
     const db = yield* SqliteClient
     const runImmediateTransaction = <T>(body: () => T): { ok: true; value: T } | { ok: false; error: unknown } => {
-      db.exec("BEGIN IMMEDIATE")
       try {
+        db.exec("BEGIN IMMEDIATE")
         const value = body()
         db.exec("COMMIT")
         return { ok: true, value }

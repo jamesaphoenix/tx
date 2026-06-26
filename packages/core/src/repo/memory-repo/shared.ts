@@ -55,8 +55,8 @@ export const runImmediateTransaction = <T>(
   db: SqliteDatabase,
   body: () => T
 ): { ok: true; value: T } | { ok: false; error: unknown } => {
-  db.exec("BEGIN IMMEDIATE")
   try {
+    db.exec("BEGIN IMMEDIATE")
     const value = body()
     db.exec("COMMIT")
     return { ok: true, value }
