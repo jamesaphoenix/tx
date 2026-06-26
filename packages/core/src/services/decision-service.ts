@@ -59,7 +59,7 @@ export class DecisionService extends Context.Tag("DecisionService")<
     supersede: (
       id: string,
       newContent: string
-    ) => Effect.Effect<{ old: Decision; new: Decision }, DecisionNotFoundError | DatabaseError>
+    ) => Effect.Effect<{ old: Decision; new: Decision }, DecisionNotFoundError | DecisionAlreadyReviewedError | DatabaseError>
     pending: () => Effect.Effect<Decision[], DatabaseError>
   }
 >() {}
@@ -185,6 +185,11 @@ export const DecisionServiceLive = Layer.effect(
           const old = yield* repo.findById(id)
           if (!old) {
             return yield* Effect.fail(new DecisionNotFoundError({ id }))
+          }
+
+          // Cannot supersede an already-superseded decision - it breaks the chain
+          if (old.status === "superseded") {
+            return yield* Effect.fail(new DecisionAlreadyReviewedError({ id, status: old.status }))
           }
 
           // Dedup: check if identical content already exists

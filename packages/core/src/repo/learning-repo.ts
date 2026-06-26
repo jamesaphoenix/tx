@@ -239,7 +239,7 @@ export const LearningRepositoryLive = Layer.effect(
               WHERE learnings_fts MATCH ?
               ORDER BY bm25_score
               LIMIT ?
-            `).all(ftsQuery, limit * 3))
+            `).all(ftsQuery, limit))
 
             if (rows.length === 0) return []
 

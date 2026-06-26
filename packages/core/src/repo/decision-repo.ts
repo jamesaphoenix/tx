@@ -3,6 +3,7 @@
  */
 import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
+import { runImmediateTransaction } from "./task-repo/shared.js"
 import { rowToDecision } from "../mappers/decision.js"
 import { readNumberField } from "../utils/db-result.js"
 import { DatabaseError } from "../errors.js"
@@ -217,58 +218,43 @@ export const DecisionRepositoryLive = Layer.effect(
 
       supersedeAtomic: (oldId, newInput) =>
         Effect.gen(function* () {
-          // Run insert + update + reads in a single BEGIN/COMMIT transaction
-          yield* Effect.try({
-            try: () => db.exec("BEGIN IMMEDIATE"),
-            catch: (cause) => new DatabaseError({ cause }),
+          const txResult = runImmediateTransaction(db, () => {
+            db.prepare(
+              `INSERT INTO decisions (id, content, question, status, source, commit_sha, run_id, task_id, doc_id, content_hash)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            ).run(
+              newInput.id,
+              newInput.content,
+              newInput.question ?? null,
+              "pending",
+              newInput.source ?? "manual",
+              newInput.commitSha ?? null,
+              newInput.runId ?? null,
+              newInput.taskId ?? null,
+              newInput.docId ?? null,
+              newInput.contentHash
+            )
+            db.prepare(
+              `UPDATE decisions SET status = 'superseded', superseded_by = ?, updated_at = datetime('now') WHERE id = ?`
+            ).run(newInput.id, oldId)
+            const newRow = db
+              .prepare<DecisionRow>("SELECT * FROM decisions WHERE id = ?")
+              .get(newInput.id)
+            const oldRow = db
+              .prepare<DecisionRow>("SELECT * FROM decisions WHERE id = ?")
+              .get(oldId)
+            if (!oldRow || !newRow) return null
+            return { old: rowToDecision(oldRow), new: rowToDecision(newRow) }
           })
-          const result = yield* Effect.try({
-            try: () => {
-              // Insert new decision
-              db.prepare(
-                `INSERT INTO decisions (id, content, question, status, source, commit_sha, run_id, task_id, doc_id, content_hash)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-              ).run(
-                newInput.id,
-                newInput.content,
-                newInput.question ?? null,
-                "pending",
-                newInput.source ?? "manual",
-                newInput.commitSha ?? null,
-                newInput.runId ?? null,
-                newInput.taskId ?? null,
-                newInput.docId ?? null,
-                newInput.contentHash
-              )
-              // Mark old as superseded
-              db.prepare(
-                `UPDATE decisions SET status = 'superseded', superseded_by = ?, updated_at = datetime('now') WHERE id = ?`
-              ).run(newInput.id, oldId)
-              // Read both back
-              const newRow = db
-                .prepare<DecisionRow>("SELECT * FROM decisions WHERE id = ?")
-                .get(newInput.id)
-              const oldRow = db
-                .prepare<DecisionRow>("SELECT * FROM decisions WHERE id = ?")
-                .get(oldId)
-              if (!oldRow || !newRow) {
-                db.exec("ROLLBACK")
-                return null
-              }
-              db.exec("COMMIT")
-              return { old: rowToDecision(oldRow), new: rowToDecision(newRow) }
-            },
-            catch: (cause) => {
-              try { db.exec("ROLLBACK") } catch { /* already rolled back */ }
-              return new DatabaseError({ cause })
-            },
-          })
-          if (!result) {
+          if (!txResult.ok) {
+            return yield* Effect.fail(new DatabaseError({ cause: txResult.error }))
+          }
+          if (!txResult.value) {
             return yield* Effect.fail(
               new DatabaseError({ cause: `Failed to read decisions after supersede: old=${oldId}, new=${newInput.id}` })
             )
           }
-          return result
+          return txResult.value
         }),
     }
   })

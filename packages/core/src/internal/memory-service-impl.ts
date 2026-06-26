@@ -7,7 +7,7 @@
 
 import { Context, Effect, Layer } from "effect"
 import { createHash, randomBytes } from "node:crypto"
-import { readFile, writeFile, readdir, stat, mkdir, rename, unlink } from "node:fs/promises"
+import { readFile, writeFile, open, readdir, stat, mkdir, rename, unlink } from "node:fs/promises"
 import { join, relative, basename, extname, resolve } from "node:path"
 import { MemoryDocumentRepository } from "../repo/memory-repo.js"
 import { MemoryLinkRepository } from "../repo/memory-repo.js"
@@ -755,24 +755,6 @@ export const MemoryServiceLive = Layer.effect(
           const filename = `${slug}.md`
           const filePath = join(targetDir, filename)
 
-          // Check if file already exists to prevent silent overwrite
-          const fileExists = yield* Effect.tryPromise({
-            try: async () => {
-              try {
-                await stat(filePath)
-                return true
-              } catch {
-                return false
-              }
-            },
-            catch: (cause) => new DatabaseError({ cause })
-          })
-          if (fileExists) {
-            return yield* Effect.fail(new ValidationError({
-              reason: `File already exists: ${filePath}`
-            }))
-          }
-
           // Build content with frontmatter
           const fmData: Record<string, unknown> = {}
           if (input.tags && input.tags.length > 0) fmData.tags = [...input.tags]
@@ -794,11 +776,31 @@ export const MemoryServiceLive = Layer.effect(
           }
           fileContent += `# ${input.title}\n\n${input.content ?? ""}\n`
 
-          // Write file atomically (temp + rename prevents partial writes on crash)
+          // Atomically create the file — open with O_CREAT|O_EXCL ('wx') fails
+          // immediately if the path already exists, closing the TOCTOU window
+          // that a stat-then-write pattern would leave open.
           yield* Effect.tryPromise({
-            try: () => atomicWriteFile(filePath, fileContent),
+            try: async () => {
+              const [fd, openErr] = await open(filePath, "wx")
+                .then((f) => [f, null] as const)
+                .catch((e: unknown) => [null, e] as const)
+              if (openErr !== null) {
+                const code = (openErr as NodeJS.ErrnoException).code
+                if (code === "EEXIST") return "exists" as const
+                return Promise.reject(openErr)
+              }
+              await fd!.writeFile(fileContent, "utf-8")
+              await fd!.close()
+              return "created" as const
+            },
             catch: (cause) => new DatabaseError({ cause })
-          })
+          }).pipe(
+            Effect.flatMap((result) =>
+              result === "exists"
+                ? Effect.fail(new ValidationError({ reason: `File already exists: ${filePath}` }))
+                : Effect.void
+            )
+          )
 
           // Index the new file using the resolved rootDir
           yield* indexFile(filePath, rootDir, fileContent)
@@ -1079,8 +1081,9 @@ export const MemoryServiceLive = Layer.effect(
           const limit = Math.max(1, options?.limit ?? 10)
           const minScore = options?.minScore ?? 0
 
-          // Fetch extra rows when minScore filtering is active to avoid undercounting
-          const fetchLimit = minScore > 0 ? limit * 3 : limit
+          // Fetch extra rows when any post-fetch filter is active to avoid undercounting
+          const hasPostFilter = (options?.tags && options.tags.length > 0) || (options?.props && options.props.length > 0)
+          const fetchLimit = (minScore > 0 || hasPostFilter) ? limit * 3 : limit
 
           // BM25 search
           let bm25Results = yield* docRepo.searchBM25(query, fetchLimit)
