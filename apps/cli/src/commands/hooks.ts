@@ -138,16 +138,19 @@ export function generatePostCommitHook(config: TxrcConfig): string {
     return true
   })
 
-  // Generate the high-value file pattern matching
-  const highValuePatterns = safePatterns
-    .map(pattern => {
-      // Convert glob pattern to grep pattern
-      const grepPattern = pattern
-        .replace(/\./g, "\\.")
-        .replace(/\*/g, ".*")
-      return `echo "$CHANGED_FILES" | grep -qE '${grepPattern}'`
-    })
-    .join(" || ")
+  // Generate the high-value file pattern matching condition.
+  // Fall back to "false" when no safe patterns remain so the generated
+  // bash `if false; then` is a valid no-op rather than a syntax error.
+  const highValuePatterns = safePatterns.length > 0
+    ? safePatterns
+        .map(pattern => {
+          const grepPattern = pattern
+            .replace(/\./g, "\\.")
+            .replace(/\*/g, ".*")
+          return `echo "$CHANGED_FILES" | grep -qE '${grepPattern}'`
+        })
+        .join(" || ")
+    : "false"
 
   return `#!/bin/bash
 # tx post-commit hook - Automatic anchor verification after refactors
