@@ -1165,6 +1165,7 @@ class DirectTransport implements Transport {
 
   private runtime: any
   private dbPath: string
+  private runtimeRefCounted = false
 
   constructor(config: TxClientConfig) {
     if (!config.dbPath) {
@@ -1179,7 +1180,10 @@ class DirectTransport implements Transport {
     // Check if we already have a cached runtime for this dbPath
     const cached = runtimeCache.get(this.dbPath)
     if (cached) {
-      cached.refCount++
+      if (!this.runtimeRefCounted) {
+        cached.refCount++
+        this.runtimeRefCounted = true
+      }
       this.runtime = cached.runtime
       ;(this as any).Effect = cached.Effect
       ;(this as any).core = cached.core
@@ -1194,10 +1198,14 @@ class DirectTransport implements Transport {
     if (pending) {
       const result = await pending
       // After the pending init resolves, the cache entry exists.
-      // Increment refCount for this new consumer.
-      const nowCached = runtimeCache.get(this.dbPath)
-      if (nowCached) {
-        nowCached.refCount++
+      // Only increment refCount once per transport instance - concurrent calls
+      // on the same transport must not inflate the count.
+      if (!this.runtimeRefCounted) {
+        const nowCached = runtimeCache.get(this.dbPath)
+        if (nowCached) {
+          nowCached.refCount++
+        }
+        this.runtimeRefCounted = true
       }
       this.runtime = result.runtime
       ;(this as any).Effect = result.Effect
@@ -1215,6 +1223,8 @@ class DirectTransport implements Transport {
       this.runtime = result.runtime
       ;(this as any).Effect = result.Effect
       ;(this as any).core = result.core
+      // initRuntime() already set refCount=1 for this transport in the cache
+      this.runtimeRefCounted = true
     } finally {
       pendingInit.delete(this.dbPath)
     }
@@ -3671,7 +3681,7 @@ class DirectTransport implements Transport {
         ).get(id) as any
 
         if (!row) {
-          return yield* Effect.fail(new Error(`Cycle not found: ${id}`))
+          return yield* Effect.fail(new TxError(`Cycle not found: ${id}`, "NOT_FOUND", 404))
         }
 
         const meta = typeof row.metadata === "string" ? JSON.parse(row.metadata) : (row.metadata ?? {})
