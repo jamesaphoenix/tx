@@ -42,6 +42,8 @@ export class DecisionRepository extends Context.Tag("DecisionRepository")<
         invariantId?: string
         supersededBy?: string
         syncedToDoc?: boolean
+        /** When set, the UPDATE is only applied if the current status is one of these values. Returns null if the guard rejects. */
+        allowedStatuses?: readonly string[]
       }
     ) => Effect.Effect<Decision | null, DatabaseError>
     countByStatus: (status: string) => Effect.Effect<number, DatabaseError>
@@ -191,9 +193,20 @@ export const DecisionRepositoryLive = Layer.effect(
             }
 
             params.push(id)
-            db.prepare(
-              `UPDATE decisions SET ${sets.join(", ")} WHERE id = ?`
+
+            const allowedStatuses = fields?.allowedStatuses
+            let where = "WHERE id = ?"
+            if (allowedStatuses && allowedStatuses.length > 0) {
+              const placeholders = allowedStatuses.map(() => "?").join(", ")
+              where += ` AND status IN (${placeholders})`
+              params.push(...allowedStatuses)
+            }
+
+            const result = db.prepare(
+              `UPDATE decisions SET ${sets.join(", ")} ${where}`
             ).run(...params)
+
+            if (result.changes === 0) return null
 
             const row = db
               .prepare<DecisionRow>("SELECT * FROM decisions WHERE id = ?")
