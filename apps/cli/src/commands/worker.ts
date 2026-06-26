@@ -1,3 +1,4 @@
+import { CliExitError } from "../cli-exit.js"
 /**
  * Worker commands: start, stop, status, list
  *
@@ -71,7 +72,7 @@ export const worker = (pos: string[], flags: Flags) =>
       if (heartbeatParsed !== undefined) {
         if (heartbeatParsed < 1) {
           console.error(`Invalid heartbeat value: '${heartbeatParsed}'. Must be a positive integer.`)
-          process.exit(1)
+          throw new CliExitError(1)
         }
         heartbeatIntervalSeconds = heartbeatParsed
       }
@@ -143,7 +144,7 @@ export const worker = (pos: string[], flags: Flags) =>
 
         if (!worker) {
           console.error(`Worker not found: ${workerId}`)
-          process.exit(1)
+          throw new CliExitError(1)
         }
 
         if (flag(flags, "json")) {
@@ -209,6 +210,6 @@ export const worker = (pos: string[], flags: Flags) =>
     } else {
       console.error(`Unknown worker subcommand: ${subcommand}`)
       console.error(`Run 'tx worker --help' for usage information`)
-      process.exit(1)
+      throw new CliExitError(1)
     }
   })

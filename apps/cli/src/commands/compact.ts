@@ -1,3 +1,4 @@
+import { CliExitError } from "../cli-exit.js"
 /**
  * Compaction commands: compact, history
  *
@@ -49,7 +50,7 @@ export const compact = (pos: string[], flags: Flags) =>
       const parsed = parseDate(beforeStr)
       if (isNaN(parsed.getTime())) {
         console.error(`Invalid date format: ${beforeStr}. Use YYYY-MM-DD or Nd (e.g., 7d for 7 days ago).`)
-        process.exit(1)
+        throw new CliExitError(1)
       }
       before = parsed
     } else {
@@ -59,7 +60,7 @@ export const compact = (pos: string[], flags: Flags) =>
     }
 
     if (!before) {
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const outputFile = opt(flags, "output", "o") ?? "CLAUDE.md"
@@ -69,7 +70,7 @@ export const compact = (pos: string[], flags: Flags) =>
     const resolvedOutput = resolve(projectRoot, outputFile)
     if (!resolvedOutput.startsWith(projectRoot + sep)) {
       console.error(`Error: output path '${outputFile}' resolves outside project directory.`)
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const dryRun = flag(flags, "dry-run", "preview")
@@ -119,7 +120,7 @@ export const compact = (pos: string[], flags: Flags) =>
       console.error("  export ANTHROPIC_API_KEY=sk-ant-...")
       console.error("")
       console.error("Use --dry-run to preview tasks without an API key.")
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     // Execute compaction

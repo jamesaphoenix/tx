@@ -1,3 +1,4 @@
+import { CliExitError } from "../cli-exit.js"
 /**
  * Bulk commands: batch operations on multiple tasks
  */
@@ -42,7 +43,7 @@ export const bulk = (pos: string[], flags: Flags) =>
     if (!subcommand) {
       console.error("Usage: tx bulk <done|score|reset|delete> <id...> [options]")
       console.error("Run 'tx bulk --help' for more information")
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     switch (subcommand) {
@@ -57,7 +58,7 @@ export const bulk = (pos: string[], flags: Flags) =>
       default:
         console.error(`Unknown bulk subcommand: ${subcommand}`)
         console.error("Valid subcommands: done, score, reset, delete")
-        process.exit(1)
+        throw new CliExitError(1)
     }
   })
 
@@ -65,7 +66,7 @@ const bulkDone = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     if (pos.length === 0) {
       console.error("Usage: tx bulk done <id> [id...] [--human] [--json]")
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const taskSvc = yield* TaskService
@@ -113,13 +114,13 @@ const bulkScore = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     if (pos.length < 2) {
       console.error("Usage: tx bulk score <score> <id> [id...] [--json]")
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const scoreVal = parseInt(pos[0], 10)
     if (Number.isNaN(scoreVal)) {
       console.error(`Invalid score: "${pos[0]}" is not a valid number`)
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const ids = pos.slice(1)
@@ -149,7 +150,7 @@ const bulkReset = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     if (pos.length === 0) {
       console.error("Usage: tx bulk reset <id> [id...] [--json]")
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const taskSvc = yield* TaskService
@@ -178,7 +179,7 @@ const bulkDelete = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     if (pos.length === 0) {
       console.error("Usage: tx bulk delete <id> [id...] [--json]")
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const taskSvc = yield* TaskService

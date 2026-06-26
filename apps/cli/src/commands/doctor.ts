@@ -1,3 +1,4 @@
+import { CliExitError } from "../cli-exit.js"
 /**
  * Doctor command: consolidated system diagnostics (database health + system checks)
  *
@@ -245,6 +246,6 @@ export const doctor = (_pos: string[], flags: Flags) =>
     }
 
     if (!healthy) {
-      process.exit(1)
+      throw new CliExitError(1)
     }
   })

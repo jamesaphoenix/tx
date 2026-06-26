@@ -266,7 +266,8 @@ const readSearchableIndexMetadata = (
   let parsedFrontmatter: unknown
   try {
     parsedFrontmatter = parseYaml(split.frontmatter)
-  } catch {
+  } catch (err) {
+    console.warn(`[tx] malformed YAML frontmatter in ${doc.filePath}: ${err}`)
     return { description: "", domain: "", tags: [], searchKeywords: [] }
   }
 

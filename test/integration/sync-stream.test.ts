@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
-import { Effect } from "effect"
+import { Effect, Either } from "effect"
 import {
   mkdtempSync,
   mkdirSync,
@@ -971,5 +971,90 @@ describe("Sync stream event logs", () => {
     // Re-import must dedup every row (old code's 1000-capped dedup set re-inserted
     // the rows beyond 1000, duplicating them on each sync).
     expect(result.after).toBe(N)
+  })
+})
+
+describe("importTaskOps cycle detection", () => {
+  let shared: SharedTestLayerResult
+  let originalCwd: string
+  let tempProjectDir: string
+
+  const run = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    Effect.runPromise(
+      effect.pipe(Effect.provide(shared.layer as any)) as Effect.Effect<A, E, never>
+    )
+
+  beforeEach(async () => {
+    shared = await getSharedTestLayer()
+    originalCwd = process.cwd()
+    tempProjectDir = mkdtempSync(join(tmpdir(), "tx-cycle-detect-"))
+    mkdirSync(join(tempProjectDir, ".tx"), { recursive: true })
+    process.chdir(tempProjectDir)
+  })
+
+  afterEach(() => {
+    process.chdir(originalCwd)
+    rmSync(tempProjectDir, { recursive: true, force: true })
+  })
+
+  it("rejects import with circular parent-child task hierarchy", async () => {
+    const now = new Date().toISOString()
+    const taskA = fixtureId("cycle-detect-task-a")
+    const taskB = fixtureId("cycle-detect-task-b")
+
+    // A claims B as its parent AND B claims A as its parent - circular
+    const ops = [
+      { v: 1, op: "upsert", ts: now, id: taskA, data: { title: "Task A", description: "", status: "backlog", score: 100, parentId: taskB, createdAt: now, completedAt: null, metadata: {} } },
+      { v: 1, op: "upsert", ts: now, id: taskB, data: { title: "Task B", description: "", status: "backlog", score: 100, parentId: taskA, createdAt: now, completedAt: null, metadata: {} } },
+    ]
+    const tasksPath = join(tempProjectDir, ".tx", "tasks.jsonl")
+    writeFileSync(
+      tasksPath,
+      ops.map(o => JSON.stringify(o)).join("\n") + "\n",
+      "utf-8"
+    )
+
+    const result = await run(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        // Pass explicit path to use importTaskOps legacy path (import without arg uses stream events)
+        return yield* Effect.either(sync.import(tasksPath))
+      })
+    )
+
+    expect(Either.isLeft(result)).toBe(true)
+    if (Either.isLeft(result)) {
+      const err = result.left as { _tag?: string; reason?: string }
+      expect(err._tag).toBe("ValidationError")
+      expect(err.reason).toMatch(/circular/i)
+    }
+  })
+
+  it("allows import with valid parent-child hierarchy (no cycle)", async () => {
+    const now = new Date().toISOString()
+    const parentId = fixtureId("cycle-detect-parent")
+    const childId = fixtureId("cycle-detect-child")
+
+    // Parent first, then child with parentId pointing to parent - valid
+    const ops = [
+      { v: 1, op: "upsert", ts: now, id: parentId, data: { title: "Parent", description: "", status: "backlog", score: 100, parentId: null, createdAt: now, completedAt: null, metadata: {} } },
+      { v: 1, op: "upsert", ts: now, id: childId, data: { title: "Child", description: "", status: "backlog", score: 100, parentId, createdAt: now, completedAt: null, metadata: {} } },
+    ]
+    const tasksPath = join(tempProjectDir, ".tx", "tasks.jsonl")
+    writeFileSync(
+      tasksPath,
+      ops.map(o => JSON.stringify(o)).join("\n") + "\n",
+      "utf-8"
+    )
+
+    const result = await run(
+      Effect.gen(function* () {
+        const sync = yield* SyncService
+        return yield* Effect.either(sync.import(tasksPath))
+      })
+    )
+
+    // Valid hierarchy should succeed
+    expect(Either.isRight(result)).toBe(true)
   })
 })

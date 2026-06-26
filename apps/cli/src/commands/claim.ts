@@ -1,3 +1,4 @@
+import { CliExitError } from "../cli-exit.js"
 /**
  * Claim commands: claim, claim release, claim renew
  *
@@ -45,7 +46,7 @@ const claimDirect = (pos: string[], flags: Flags) =>
       console.error("Options:")
       console.error("  --lease <m>  Lease duration in minutes (default: 30)")
       console.error("  --json       Output in JSON format")
-      process.exit(1)
+      throw new CliExitError(1)
     }
     const taskId = parseTaskId(rawTaskId)
 
@@ -96,7 +97,7 @@ export const claimRelease = (pos: string[], flags: Flags) =>
 
     if (!rawTaskId || !workerId) {
       console.error("Usage: tx claim release <task-id> <worker-id> [--json]")
-      process.exit(1)
+      throw new CliExitError(1)
     }
     const taskId = parseTaskId(rawTaskId)
 
@@ -125,7 +126,7 @@ export const claimRenew = (pos: string[], flags: Flags) =>
 
     if (!rawTaskId || !workerId) {
       console.error("Usage: tx claim renew <task-id> <worker-id> [--json]")
-      process.exit(1)
+      throw new CliExitError(1)
     }
     const taskId = parseTaskId(rawTaskId)
 

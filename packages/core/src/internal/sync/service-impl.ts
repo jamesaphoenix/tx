@@ -412,11 +412,12 @@ function topologicalSortTasks(entries) {
             }
         }
     }
-    // If we didn't process all tasks, there's a cycle - fall back to original order
-    // (This shouldn't happen with valid data since parent-child can't be circular)
     if (sorted.length < upsertEntries.length) {
-        // Return original upsert entries followed by deletes
-        return [...upsertEntries, ...deleteEntries];
+        const cycleIds = upsertEntries
+            .filter(([id]) => !sorted.some(([sid]) => sid === id))
+            .map(([id]) => id)
+            .join(", ");
+        throw new ValidationError({ reason: `Circular parent-child reference detected in import data. Affected task IDs: ${cycleIds}` });
     }
     // Return sorted upserts followed by deletes
     return [...sorted, ...deleteEntries];
@@ -1188,7 +1189,10 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
             // Apply task operations in topological order (parents before children)
             // This ensures foreign key constraints are satisfied when importing
             // tasks where child timestamp < parent timestamp
-            const sortedTaskEntries = topologicalSortTasks([...taskStates.entries()]);
+            const sortedTaskEntries = yield* Effect.try({
+                try: () => topologicalSortTasks([...taskStates.entries()]),
+                catch: (cause) => cause instanceof ValidationError ? cause : new ValidationError({ reason: `Task sort failed: ${cause}` })
+            });
             // Prepare statements outside transaction to minimize write lock duration.
             // better-sqlite3 prepared statements are reusable across transactions.
             const findTaskStmt = db.prepare("SELECT * FROM tasks WHERE id = ?");

@@ -1,3 +1,4 @@
+import { CliExitError } from "../cli-exit.js"
 /**
  * Graph commands: graph:verify, graph:invalidate, graph:restore, graph:prune, graph:status, graph:pin, graph:unpin,
  * graph:link, graph:show, graph:neighbors
@@ -56,13 +57,13 @@ export const graphInvalidate = (pos: string[], flags: Flags) =>
     const anchorIdStr = pos[0]
     if (!anchorIdStr) {
       console.error("Usage: tx graph:invalidate <anchor-id> --reason <reason> [--json]")
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const anchorId = parseInt(anchorIdStr, 10)
     if (isNaN(anchorId)) {
       console.error("Error: Anchor ID must be a number")
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const reason = opt(flags, "reason") ?? "Manual invalidation"
@@ -89,13 +90,13 @@ export const graphRestore = (pos: string[], flags: Flags) =>
     const anchorIdStr = pos[0]
     if (!anchorIdStr) {
       console.error("Usage: tx graph:restore <anchor-id> [--json]")
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const anchorId = parseInt(anchorIdStr, 10)
     if (isNaN(anchorId)) {
       console.error("Error: Anchor ID must be a number")
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const svc = yield* AnchorService
@@ -174,13 +175,13 @@ export const graphPin = (pos: string[], flags: Flags) =>
     const anchorIdStr = pos[0]
     if (!anchorIdStr) {
       console.error("Usage: tx graph:pin <anchor-id> [--json]")
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const anchorId = parseInt(anchorIdStr, 10)
     if (isNaN(anchorId)) {
       console.error("Error: Anchor ID must be a number")
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const svc = yield* AnchorService
@@ -205,13 +206,13 @@ export const graphUnpin = (pos: string[], flags: Flags) =>
     const anchorIdStr = pos[0]
     if (!anchorIdStr) {
       console.error("Usage: tx graph:unpin <anchor-id> [--json]")
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const anchorId = parseInt(anchorIdStr, 10)
     if (isNaN(anchorId)) {
       console.error("Error: Anchor ID must be a number")
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const svc = yield* AnchorService
@@ -238,20 +239,20 @@ export const graphLink = (pos: string[], flags: Flags) =>
 
     if (!learningIdStr || !filePath) {
       console.error("Usage: tx graph:link <learning-id> <file-path> [--type glob|hash|symbol] [--value <value>] [--json]")
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const learningId = parseInt(learningIdStr, 10)
     if (isNaN(learningId)) {
       console.error("Error: Learning ID must be a number")
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const anchorType = (opt(flags, "type", "t") ?? "glob") as AnchorType
     const validTypes: AnchorType[] = ["glob", "hash", "symbol", "line_range"]
     if (!validTypes.includes(anchorType)) {
       console.error(`Error: Invalid anchor type. Valid types: ${validTypes.join(", ")}`)
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     // Default value based on type
@@ -263,15 +264,15 @@ export const graphLink = (pos: string[], flags: Flags) =>
           break
         case "hash":
           console.error("Error: --value is required for hash anchors (SHA256 hash)")
-          process.exit(1)
+          throw new CliExitError(1)
         // eslint-disable-next-line no-fallthrough
         case "symbol":
           console.error("Error: --value is required for symbol anchors (symbol name)")
-          process.exit(1)
+          throw new CliExitError(1)
         // eslint-disable-next-line no-fallthrough
         case "line_range":
           console.error("Error: --value is required for line_range anchors (e.g., '10-20')")
-          process.exit(1)
+          throw new CliExitError(1)
       }
     }
 
@@ -304,25 +305,25 @@ export const graphLink = (pos: string[], flags: Flags) =>
       const rangeParts = value!.split("-")
       if (rangeParts.length < 1 || rangeParts.length > 2 || !rangeParts[0]) {
         console.error(`Error: Invalid line range "${value}". Expected format: start-end (e.g., 10-20) or start (e.g., 10)`)
-        process.exit(1)
+        throw new CliExitError(1)
       }
       if (rangeParts.length === 2 && !rangeParts[1]) {
         console.error(`Error: Invalid line range "${value}". Expected format: start-end (e.g., 10-20) or start (e.g., 10)`)
-        process.exit(1)
+        throw new CliExitError(1)
       }
       input.lineStart = parseInt(rangeParts[0], 10)
       input.lineEnd = rangeParts.length === 2 ? parseInt(rangeParts[1], 10) : input.lineStart
       if (isNaN(input.lineStart) || isNaN(input.lineEnd)) {
         console.error(`Error: Invalid line range "${value}". Start and end must be numbers`)
-        process.exit(1)
+        throw new CliExitError(1)
       }
       if (input.lineStart < 1 || input.lineEnd < 1) {
         console.error(`Error: Invalid line range "${value}". Line numbers must be positive`)
-        process.exit(1)
+        throw new CliExitError(1)
       }
       if (input.lineEnd < input.lineStart) {
         console.error(`Error: Invalid line range "${value}". End line must be >= start line`)
-        process.exit(1)
+        throw new CliExitError(1)
       }
     }
 
@@ -354,13 +355,13 @@ export const graphShow = (pos: string[], flags: Flags) =>
 
     if (!learningIdStr) {
       console.error("Usage: tx graph:show <learning-id> [--json]")
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const learningId = parseInt(learningIdStr, 10)
     if (isNaN(learningId)) {
       console.error("Error: Learning ID must be a number")
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const edgeSvc = yield* EdgeService
@@ -435,20 +436,20 @@ export const graphNeighbors = (pos: string[], flags: Flags) =>
 
     if (!nodeId) {
       console.error("Usage: tx graph:neighbors <node-id> [--node-type learning|file|task|run] [--depth 2] [--edge-type IMPORTS] [--direction both] [--json]")
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const nodeType = (opt(flags, "node-type", "n") ?? "learning") as NodeType
     const validNodeTypes: NodeType[] = ["learning", "file", "task", "run"]
     if (!validNodeTypes.includes(nodeType)) {
       console.error(`Error: Invalid node type. Valid types: ${validNodeTypes.join(", ")}`)
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const depth = parseIntOpt(flags, "depth", "depth", "d") ?? 2
     if (depth < 1) {
       console.error("Error: Depth must be a positive integer")
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const edgeTypes = parseEdgeTypes(opt(flags, "edge-type", "e"))
@@ -456,7 +457,7 @@ export const graphNeighbors = (pos: string[], flags: Flags) =>
     const validDirections = ["outgoing", "incoming", "both"]
     if (!validDirections.includes(direction)) {
       console.error(`Error: Invalid direction. Valid directions: ${validDirections.join(", ")}`)
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const svc = yield* EdgeService

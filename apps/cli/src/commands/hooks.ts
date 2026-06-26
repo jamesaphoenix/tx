@@ -1,3 +1,4 @@
+import { CliExitError } from "../cli-exit.js"
 /**
  * Git hooks commands: hooks:install, hooks:uninstall, hooks:status
  *
@@ -230,7 +231,7 @@ export const hooksInstall = (_pos: string[], flags: Flags) =>
         return
       }
       console.error("Error: Not a git repository (or any parent up to mount point)")
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const hooksDir = resolve(gitRoot, ".git", "hooks")
@@ -254,7 +255,7 @@ export const hooksInstall = (_pos: string[], flags: Flags) =>
       }
       console.error("Error: A post-commit hook already exists.")
       console.error("Use --force to overwrite, or manually integrate tx verification.")
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     // Read existing config or create default
@@ -282,7 +283,7 @@ export const hooksInstall = (_pos: string[], flags: Flags) =>
         }
         console.error(`Error: Unsafe patterns rejected: ${invalid.join(", ")}`)
         console.error("Patterns may only contain: a-z A-Z 0-9 . _ / * ? - [ ]")
-        process.exit(1)
+        throw new CliExitError(1)
       }
       config.hooks.highValueFiles = patterns
     }
@@ -346,7 +347,7 @@ export const hooksUninstall = (_pos: string[], flags: Flags) =>
         return
       }
       console.error("Error: Not a git repository (or any parent up to mount point)")
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const hookPath = resolve(gitRoot, ".git", "hooks", "post-commit")
@@ -368,7 +369,7 @@ export const hooksUninstall = (_pos: string[], flags: Flags) =>
       }
       console.error("Error: Existing post-commit hook was not installed by tx.")
       console.error("Please manually remove the hook if desired.")
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     unlinkSync(hookPath)

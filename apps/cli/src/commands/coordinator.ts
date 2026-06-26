@@ -1,3 +1,4 @@
+import { CliExitError } from "../cli-exit.js"
 /**
  * Coordinator commands: start, stop, status, reconcile
  *
@@ -37,7 +38,7 @@ export const coordinator = (pos: string[], flags: Flags) =>
       const workers = parseIntOpt(flags, "workers", "workers", "w")
       if (workers !== undefined && workers < 1) {
         console.error(`Invalid workers value: '${workers}'. Must be a positive integer.`)
-        process.exit(1)
+        throw new CliExitError(1)
       }
       const isDaemon = flag(flags, "daemon", "d")
 
@@ -126,6 +127,6 @@ export const coordinator = (pos: string[], flags: Flags) =>
     } else {
       console.error(`Unknown coordinator subcommand: ${subcommand}`)
       console.error(`Run 'tx coordinator --help' for usage information`)
-      process.exit(1)
+      throw new CliExitError(1)
     }
   })

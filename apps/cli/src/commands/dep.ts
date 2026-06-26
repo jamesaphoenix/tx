@@ -1,3 +1,4 @@
+import { CliExitError } from "../cli-exit.js"
 /**
  * Dependency commands: block, unblock
  */
@@ -13,7 +14,7 @@ export const block = (pos: string[], flags: Flags) =>
     const rawBlocker = pos[1]
     if (!rawId || !rawBlocker) {
       console.error("Usage: tx dep block <task-id> <blocker-id> [--json]")
-      process.exit(1)
+      throw new CliExitError(1)
     }
     const id = parseTaskId(rawId)
     const blocker = parseTaskId(rawBlocker)
@@ -38,7 +39,7 @@ export const unblock = (pos: string[], flags: Flags) =>
     const rawBlocker = pos[1]
     if (!rawId || !rawBlocker) {
       console.error("Usage: tx dep unblock <task-id> <blocker-id> [--json]")
-      process.exit(1)
+      throw new CliExitError(1)
     }
     const id = parseTaskId(rawId)
     const blocker = parseTaskId(rawBlocker)

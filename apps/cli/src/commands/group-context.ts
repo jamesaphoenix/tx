@@ -1,3 +1,4 @@
+import { CliExitError } from "../cli-exit.js"
 import { Effect } from "effect"
 import { TaskService } from "@jamesaphoenix/tx"
 import { toJson } from "../output.js"
@@ -27,7 +28,7 @@ export const groupContextSet = (pos: string[], flags: Flags) =>
     const context = pos.slice(1).join(" ").trim()
     if (!rawId || context.length === 0) {
       console.error("Usage: tx group-context set <task-id> <context> [--json]")
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const taskId = parseTaskId(rawId)
@@ -48,7 +49,7 @@ export const groupContextClear = (pos: string[], flags: Flags) =>
     const rawId = pos[0]
     if (!rawId) {
       console.error("Usage: tx group-context clear <task-id> [--json]")
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const taskId = parseTaskId(rawId)

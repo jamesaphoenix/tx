@@ -1,3 +1,4 @@
+import { CliExitError } from "../cli-exit.js"
 /**
  * Validate command: Pre-flight database health checks
  */
@@ -106,6 +107,6 @@ export const validate = (_pos: string[], flags: Flags) =>
 
     // Exit with code 1 if validation failed (errors found)
     if (!result.valid) {
-      process.exit(1)
+      throw new CliExitError(1)
     }
   })

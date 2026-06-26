@@ -1,3 +1,4 @@
+import { CliExitError } from "../cli-exit.js"
 /**
  * Daemon commands: start, stop, status, process, review, promote, reject, track, untrack, list
  */
@@ -172,7 +173,7 @@ export const daemon = (pos: string[], flags: Flags) =>
             console.error(`Failed to start daemon: ${error.message}`)
           }
         }
-        process.exit(1)
+        throw new CliExitError(1)
       }
 
       if (flag(flags, "json")) {
@@ -191,7 +192,7 @@ export const daemon = (pos: string[], flags: Flags) =>
         } else {
           console.error(`Failed to stop daemon: ${error.message}`)
         }
-        process.exit(1)
+        throw new CliExitError(1)
       }
 
       if (flag(flags, "json")) {
@@ -213,7 +214,7 @@ export const daemon = (pos: string[], flags: Flags) =>
         } else {
           console.error(`Failed to get daemon status: ${error.message}`)
         }
-        process.exit(1)
+        throw new CliExitError(1)
       }
 
       const status = statusResult.right
@@ -279,7 +280,7 @@ export const daemon = (pos: string[], flags: Flags) =>
             console.error("No tracked projects found. Use 'tx daemon track <path>' to add one.")
             console.error("Or specify a path pattern with --path <glob>")
           }
-          process.exit(1)
+          throw new CliExitError(1)
         }
 
         // Find JSONL files in tracked projects
@@ -418,7 +419,7 @@ export const daemon = (pos: string[], flags: Flags) =>
         if (invalid.length > 0) {
           console.error(`Invalid confidence level(s): ${invalid.join(", ")}`)
           console.error(`Valid levels: ${CANDIDATE_CONFIDENCES.join(", ")}`)
-          process.exit(1)
+          throw new CliExitError(1)
         }
         confidences = parts as CandidateConfidence[]
       }
@@ -427,7 +428,7 @@ export const daemon = (pos: string[], flags: Flags) =>
       const limit = parseIntOpt(flags, "limit", "limit", "l")
       if (limit !== undefined && limit <= 0) {
         console.error(`Invalid limit: ${limit}`)
-        process.exit(1)
+        throw new CliExitError(1)
       }
 
       // Query pending candidates
@@ -465,13 +466,13 @@ export const daemon = (pos: string[], flags: Flags) =>
       const candidateIdStr = pos[1]
       if (!candidateIdStr) {
         console.error("Usage: tx daemon promote <candidate-id>")
-        process.exit(1)
+        throw new CliExitError(1)
       }
 
       const candidateId = parseInt(candidateIdStr, 10)
       if (isNaN(candidateId)) {
         console.error(`Invalid candidate ID: ${candidateIdStr}`)
-        process.exit(1)
+        throw new CliExitError(1)
       }
 
       const promotionService = yield* PromotionService
@@ -492,7 +493,7 @@ export const daemon = (pos: string[], flags: Flags) =>
             console.error(`Database error: ${error.message}`)
           }
         }
-        process.exit(1)
+        throw new CliExitError(1)
       }
 
       const { candidate, learning } = result.right
@@ -509,20 +510,20 @@ export const daemon = (pos: string[], flags: Flags) =>
       const candidateIdStr = pos[1]
       if (!candidateIdStr) {
         console.error("Usage: tx daemon reject <candidate-id> --reason <reason>")
-        process.exit(1)
+        throw new CliExitError(1)
       }
 
       const candidateId = parseInt(candidateIdStr, 10)
       if (isNaN(candidateId)) {
         console.error(`Invalid candidate ID: ${candidateIdStr}`)
-        process.exit(1)
+        throw new CliExitError(1)
       }
 
       const reason = opt(flags, "reason", "r")
       if (!reason) {
         console.error("Usage: tx daemon reject <candidate-id> --reason <reason>")
         console.error("The --reason flag is required")
-        process.exit(1)
+        throw new CliExitError(1)
       }
 
       const promotionService = yield* PromotionService
@@ -549,7 +550,7 @@ export const daemon = (pos: string[], flags: Flags) =>
             console.error(`Database error: ${error.message}`)
           }
         }
-        process.exit(1)
+        throw new CliExitError(1)
       }
 
       const candidate = result.right
@@ -567,7 +568,7 @@ export const daemon = (pos: string[], flags: Flags) =>
       const projectPath = pos[1]
       if (!projectPath) {
         console.error("Usage: tx daemon track <project-path> [--source claude|cursor|windsurf|other]")
-        process.exit(1)
+        throw new CliExitError(1)
       }
 
       const repo = yield* TrackedProjectRepository
@@ -580,7 +581,7 @@ export const daemon = (pos: string[], flags: Flags) =>
         if (!SOURCE_TYPES.includes(sourceOpt as SourceType)) {
           console.error(`Invalid source type: ${sourceOpt}`)
           console.error(`Valid types: ${SOURCE_TYPES.join(", ")}`)
-          process.exit(1)
+          throw new CliExitError(1)
         }
         sourceType = sourceOpt as SourceType
       }
@@ -593,7 +594,7 @@ export const daemon = (pos: string[], flags: Flags) =>
         } else {
           console.error(`Project already tracked: ${absolutePath}`)
         }
-        process.exit(1)
+        throw new CliExitError(1)
       }
 
       const tracked = yield* repo.insert({
@@ -612,7 +613,7 @@ export const daemon = (pos: string[], flags: Flags) =>
       const projectPath = pos[1]
       if (!projectPath) {
         console.error("Usage: tx daemon untrack <project-path>")
-        process.exit(1)
+        throw new CliExitError(1)
       }
 
       const repo = yield* TrackedProjectRepository
@@ -626,7 +627,7 @@ export const daemon = (pos: string[], flags: Flags) =>
         } else {
           console.error(`Project not tracked: ${absolutePath}`)
         }
-        process.exit(1)
+        throw new CliExitError(1)
       }
 
       const deleted = yield* repo.delete(existing.id)
@@ -642,7 +643,7 @@ export const daemon = (pos: string[], flags: Flags) =>
         } else {
           console.error(`Failed to untrack project: ${absolutePath}`)
         }
-        process.exit(1)
+        throw new CliExitError(1)
       }
     } else if (subcommand === "list") {
       const repo = yield* TrackedProjectRepository
@@ -665,6 +666,6 @@ export const daemon = (pos: string[], flags: Flags) =>
     } else {
       console.error(`Unknown daemon subcommand: ${subcommand}`)
       console.error(`Run 'tx daemon --help' for usage information`)
-      process.exit(1)
+      throw new CliExitError(1)
     }
   })

@@ -1,3 +1,4 @@
+import { CliExitError } from "../cli-exit.js"
 /**
  * Outbox commands: send, inbox, ack, ack all, outbox pending, outbox gc
  *
@@ -24,7 +25,7 @@ export const send = (pos: string[], flags: Flags) =>
 
     if (!channel || !content) {
       console.error("Usage: tx msg send <channel> <content> [--sender <s>] [--task <id>] [--ttl <sec>] [--correlation <id>] [--metadata '{}'] [--json]")
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const sender = opt(flags, "sender", "s") ?? "cli"
@@ -38,7 +39,7 @@ export const send = (pos: string[], flags: Flags) =>
         metadata = JSON.parse(metadataRaw) as Record<string, unknown>
       } catch {
         console.error("Error: --metadata must be valid JSON")
-        process.exit(1)
+        throw new CliExitError(1)
       }
     }
 
@@ -76,7 +77,7 @@ export const inbox = (pos: string[], flags: Flags) =>
 
     if (!channel) {
       console.error("Usage: tx msg inbox <channel> [--after <id>] [--limit <n>] [--sender <s>] [--correlation <id>] [--include-acked] [--json]")
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const afterId = parseIntOpt(flags, "after", "after")
@@ -132,13 +133,13 @@ const ackDirect = (pos: string[], flags: Flags) =>
 
     if (!rawId) {
       console.error("Usage: tx msg ack <message-id> [--json]")
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const id = parseInt(rawId, 10)
     if (isNaN(id)) {
       console.error(`Error: invalid message ID "${rawId}"`)
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const svc = yield* MessageService
@@ -162,7 +163,7 @@ export const ackAll = (pos: string[], flags: Flags) =>
 
     if (!channel) {
       console.error("Usage: tx msg ack all <channel> [--json]")
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const svc = yield* MessageService
@@ -186,7 +187,7 @@ export const outboxPending = (pos: string[], flags: Flags) =>
 
     if (!channel) {
       console.error("Usage: tx msg pending <channel> [--json]")
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const svc = yield* MessageService

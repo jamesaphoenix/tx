@@ -1,3 +1,4 @@
+import { CliExitError } from "../cli-exit.js"
 /**
  * Hierarchy commands: children, tree
  */
@@ -17,7 +18,7 @@ export const children = (pos: string[], flags: Flags) =>
     const raw = pos[0]
     if (!raw) {
       console.error("Usage: tx dep children <id> [--json]")
-      process.exit(1)
+      throw new CliExitError(1)
     }
     const id = parseTaskId(raw)
 
@@ -44,7 +45,7 @@ export const tree = (pos: string[], flags: Flags) =>
     const raw = pos[0]
     if (!raw) {
       console.error("Usage: tx dep tree <id> [--json]")
-      process.exit(1)
+      throw new CliExitError(1)
     }
     const id = parseTaskId(raw)
 

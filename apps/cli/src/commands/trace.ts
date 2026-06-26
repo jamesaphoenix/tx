@@ -1,3 +1,4 @@
+import { CliExitError } from "../cli-exit.js"
 /**
  * Trace commands: list, show, transcript, stderr, errors
  *
@@ -274,7 +275,7 @@ export const traceTranscript = (pos: string[], _flags: Flags) =>
     if (!runId) {
       console.error("Error: run-id is required")
       console.error("Usage: tx trace transcript <run-id>")
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const runRepo = yield* RunRepository
@@ -283,13 +284,13 @@ export const traceTranscript = (pos: string[], _flags: Flags) =>
     const run = yield* runRepo.findById(runId as RunId)
     if (!run) {
       console.error(`Error: Run not found: ${runId}`)
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     // Check if transcript path exists
     if (!run.transcriptPath) {
       console.error(`Error: No transcript recorded for run: ${runId}`)
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     // Resolve transcript path relative to .tx directory
@@ -300,7 +301,7 @@ export const traceTranscript = (pos: string[], _flags: Flags) =>
 
     if (!existsSync(fullPath)) {
       console.error(`Error: Transcript file not found: ${fullPath}`)
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     // Read and output raw content
@@ -310,7 +311,7 @@ export const traceTranscript = (pos: string[], _flags: Flags) =>
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       console.error(`Error: Failed to read transcript file: ${message}`)
-      process.exit(1)
+      throw new CliExitError(1)
     }
   }) as Effect.Effect<void, DatabaseError, RunRepository>
 
@@ -326,7 +327,7 @@ export const traceStderr = (pos: string[], _flags: Flags) =>
     if (!runId) {
       console.error("Error: run-id is required")
       console.error("Usage: tx trace stderr <run-id>")
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const runRepo = yield* RunRepository
@@ -335,13 +336,13 @@ export const traceStderr = (pos: string[], _flags: Flags) =>
     const run = yield* runRepo.findById(runId as RunId)
     if (!run) {
       console.error(`Error: Run not found: ${runId}`)
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     // Check if stderr path exists
     if (!run.stderrPath) {
       console.error(`Error: No stderr recorded for run: ${runId}`)
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     // Resolve stderr path relative to .tx directory
@@ -352,7 +353,7 @@ export const traceStderr = (pos: string[], _flags: Flags) =>
 
     if (!existsSync(fullPath)) {
       console.error(`Error: Stderr file not found: ${fullPath}`)
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     // Read and output raw content
@@ -362,7 +363,7 @@ export const traceStderr = (pos: string[], _flags: Flags) =>
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       console.error(`Error: Failed to read stderr file: ${message}`)
-      process.exit(1)
+      throw new CliExitError(1)
     }
   }) as Effect.Effect<void, DatabaseError, RunRepository>
 
@@ -375,7 +376,7 @@ export const traceShow = (pos: string[], flags: Flags) =>
     if (!runId) {
       console.error("Error: run-id is required")
       console.error("Usage: tx trace show <run-id> [--full] [--json]")
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const runRepo = yield* RunRepository
@@ -385,7 +386,7 @@ export const traceShow = (pos: string[], flags: Flags) =>
     const run = yield* runRepo.findById(runId as RunId)
     if (!run) {
       console.error(`Error: Run not found: ${runId}`)
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     // Get events for this run
@@ -598,7 +599,7 @@ interface FailedRunRow {
 const parseRunId = (raw: string): RunId => {
   if (!/^run-.+$/.test(raw)) {
     console.error(`Invalid run ID: "${raw}". Expected format: run-<id>`)
-    process.exit(1)
+    throw new CliExitError(1)
   }
   return raw as RunId
 }
@@ -614,7 +615,7 @@ export const traceHeartbeat = (pos: string[], flags: Flags) =>
     if (!raw) {
       console.error("Error: run-id is required")
       console.error("Usage: tx trace heartbeat <run-id> [--stdout-bytes <n>] [--stderr-bytes <n>] [--transcript-bytes <n>] [--delta-bytes <n>] [--check-at <iso>] [--activity-at <iso>]")
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const runId = parseRunId(raw)
@@ -631,7 +632,7 @@ export const traceHeartbeat = (pos: string[], flags: Flags) =>
       const parsed = new Date(rawValue)
       if (Number.isNaN(parsed.getTime())) {
         console.error(`Invalid value for --${name}: "${rawValue}" is not a valid ISO timestamp`)
-        process.exit(1)
+        throw new CliExitError(1)
       }
       return parsed
     }
@@ -925,6 +926,6 @@ Options:
     } else {
       console.error(`Unknown trace subcommand: ${subcommand}`)
       console.error(`Run 'tx trace --help' for usage information`)
-      process.exit(1)
+      throw new CliExitError(1)
     }
   }) as Effect.Effect<void, DatabaseError, RunRepository | RunHeartbeatService | SqliteClient>

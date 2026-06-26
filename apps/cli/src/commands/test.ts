@@ -1,3 +1,4 @@
+import { CliExitError } from "../cli-exit.js"
 /**
  * Test commands: cache-stats, clear-cache
  *
@@ -84,7 +85,7 @@ export const testClearCache = (_pos: string[], flags: Flags) =>
       if (ms === null) {
         console.error(`Invalid duration format: ${olderThan}`)
         console.error(`Use format like: 30d (30 days), 2h (2 hours), 60m (60 minutes)`)
-        process.exit(1)
+        throw new CliExitError(1)
       }
       options.olderThan = new Date(Date.now() - ms)
     }
@@ -105,7 +106,7 @@ export const testClearCache = (_pos: string[], flags: Flags) =>
     if (!options.all && !options.olderThan && !options.model && options.version === undefined) {
       console.error("Error: Must specify at least one option: --all, --older-than, --model, or --version")
       console.error("Run 'tx test:clear-cache --help' for usage information")
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const deleted = yield* Effect.promise(() => clearCache(options))

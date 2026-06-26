@@ -1,3 +1,4 @@
+import { CliExitError } from "../cli-exit.js"
 /**
  * md-export command: Materialize tasks to a markdown file for file-based agent loops
  */
@@ -26,13 +27,13 @@ export const mdExport = (_pos: string[], flags: Flags) =>
     // Validate filter
     if (filter !== "ready" && filter !== "open" && filter !== "all" && !isValidTaskStatus(filter)) {
       console.error(`Invalid --filter value: "${filter}". Must be "ready", "open", "all", or a valid task status.`)
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     // Validate interval
     if (watch && interval < 1) {
       console.error(`Invalid --interval value: ${interval}. Must be >= 1.`)
-      process.exit(1)
+      throw new CliExitError(1)
     }
 
     const readySvc = yield* ReadyService
