@@ -11,7 +11,7 @@ import type {
   TaskDependency,
   DependencyRow
 } from "../types/index.js"
-import { assertTaskId, TASK_STATUSES } from "../types/index.js"
+import { assertTaskId, TASK_STATUSES, VALID_TRANSITIONS } from "../types/index.js"
 import { InvalidStatusError } from "../errors.js"
 import { parseDate } from "./parse-date.js"
 
@@ -125,16 +125,5 @@ export const isValidStatus = (s: string): s is TaskStatus => {
 /**
  * Check if a status transition is valid.
  */
-export const isValidTransition = (from: TaskStatus, to: TaskStatus): boolean => {
-  const transitions: Record<TaskStatus, readonly TaskStatus[]> = {
-    backlog: ["ready", "planning", "active", "blocked", "done"],
-    ready: ["planning", "active", "blocked", "done"],
-    planning: ["ready", "active", "blocked", "done"],
-    active: ["blocked", "review", "needs_review", "done"],
-    blocked: ["backlog", "ready", "planning", "active"],
-    review: ["active", "needs_review", "done"],
-    needs_review: ["active", "review", "done"],
-    done: ["backlog"]
-  }
-  return transitions[from]?.includes(to) ?? false
-}
+export const isValidTransition = (from: TaskStatus, to: TaskStatus): boolean =>
+  VALID_TRANSITIONS[from]?.includes(to) ?? false
