@@ -349,7 +349,8 @@ function writeManifestFile(
     if (readFileSync(manifestPath, "utf-8") === manifestContent) {
       return { copied: [], skipped: [relPath] }
     }
-    return { copied: [], skipped: [relPath] }
+    writeFileSync(manifestPath, manifestContent, "utf-8")
+    return { copied: [relPath], skipped: [] }
   }
 
   mkdirSync(destRoot, { recursive: true })
