@@ -105,12 +105,13 @@ export const stats = (_pos: string[], flags: Flags) =>
     }
 
     // 5. Claim stats
+    const nowIso = new Date().toISOString()
     const activeClaimsRow = db.prepare<{ count: number }>(
-      "SELECT COUNT(*) as count FROM task_claims WHERE status = 'active' AND datetime(lease_expires_at) >= datetime('now')"
-    ).get()
+      "SELECT COUNT(*) as count FROM task_claims WHERE status = 'active' AND lease_expires_at >= ?"
+    ).get(nowIso)
     const expiredClaimsRow = db.prepare<{ count: number }>(
-      "SELECT COUNT(*) as count FROM task_claims WHERE status = 'active' AND datetime(lease_expires_at) < datetime('now')"
-    ).get()
+      "SELECT COUNT(*) as count FROM task_claims WHERE status = 'active' AND lease_expires_at < ?"
+    ).get(nowIso)
 
     const result: QueueStats = {
       total,

@@ -159,18 +159,19 @@ export const doctor = (_pos: string[], flags: Flags) =>
 
     // 5. Check for stale claims/workers
     try {
+      const now = new Date().toISOString()
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString()
+
       const staleClaims = db.prepare<{ count: number }>(
         `SELECT COUNT(*) as count FROM task_claims
-         WHERE status = 'active'
-         AND datetime(lease_expires_at) < datetime('now')`
-      ).get()
+         WHERE status = 'active' AND lease_expires_at < ?`
+      ).get(now)
       const staleClaimCount = staleClaims?.count ?? 0
 
       const deadWorkers = db.prepare<{ count: number }>(
         `SELECT COUNT(*) as count FROM workers
-         WHERE status NOT IN ('dead', 'stopping')
-         AND datetime(last_heartbeat_at, '+5 minutes') < datetime('now')`
-      ).get()
+         WHERE status NOT IN ('dead', 'stopping') AND last_heartbeat_at < ?`
+      ).get(fiveMinutesAgo)
       const deadWorkerCount = deadWorkers?.count ?? 0
 
       if (staleClaimCount > 0 || deadWorkerCount > 0) {
