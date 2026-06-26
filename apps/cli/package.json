@@ -83,7 +83,7 @@
     "!dist/**/*.test.*"
   ],
   "scripts": {
-    "build": "tsc -b",
+    "build": "tsc -b && cp -r src/templates dist/templates",
     "build:binary": "bun build ./src/cli.ts --compile --outfile dist/tx --minify --external @anthropic-ai/sdk --external @anthropic-ai/claude-agent-sdk --external openai --external node-llama-cpp --external @node-llama-cpp/*",
     "build:darwin-arm64": "bun build ./src/cli.ts --compile --outfile dist/tx-darwin-arm64 --target bun-darwin-arm64 --minify --external @anthropic-ai/sdk --external @anthropic-ai/claude-agent-sdk --external openai --external node-llama-cpp --external @node-llama-cpp/*",
     "build:darwin-x64": "bun build ./src/cli.ts --compile --outfile dist/tx-darwin-x64 --target bun-darwin-x64 --minify --external @anthropic-ai/sdk --external @anthropic-ai/claude-agent-sdk --external openai --external node-llama-cpp --external @node-llama-cpp/*",

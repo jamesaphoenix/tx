@@ -6,6 +6,18 @@
       "inputs": ["src/**/*.ts", "src/**/*.tsx", "tsconfig.json", "package.json"],
       "outputs": ["dist/**"]
     },
+    "@jamesaphoenix/tx-cli#build": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "src/**/*.ts",
+        "src/**/*.tsx",
+        "src/**/*.md",
+        "src/**/*.sh",
+        "tsconfig.json",
+        "package.json"
+      ],
+      "outputs": ["dist/**"]
+    },
     "@jamesaphoenix/tx-core#build": {
       "dependsOn": ["^build"],
       "inputs": [
