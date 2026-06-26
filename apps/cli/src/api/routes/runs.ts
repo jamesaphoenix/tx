@@ -89,7 +89,7 @@ export const RunsLive = HttpApiBuilder.group(TxApi, "runs", (handlers) =>
           filtered = filtered.filter(r => r.agent === urlParams.agent)
         }
 
-        if (urlParams.status && urlParams.status.split(",").length > 1) {
+        if (urlParams.status) {
           const statusFilter = urlParams.status.split(",").filter(Boolean) as RunStatus[]
           filtered = filtered.filter(r => statusFilter.includes(r.status))
         }
@@ -203,8 +203,8 @@ export const RunsLive = HttpApiBuilder.group(TxApi, "runs", (handlers) =>
             : process.cwd()
           const discovered = yield* Effect.tryPromise({
             try: () => findMatchingTranscript(projectRoot, found.startedAt, found.endedAt),
-            catch: () => null,
-          })
+            catch: () => new Error("transcript discovery failed"),
+          }).pipe(Effect.catchAll(() => Effect.succeed(null)))
           resolvedTranscriptPath = discovered
         }
 
