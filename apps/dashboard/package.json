@@ -33,7 +33,7 @@
     "@playwright/test": "^1.58.2",
     "@tailwindcss/typography": "0.5.20",
     "@tailwindcss/vite": "^4.0.0",
-    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/jest-dom": "^7.0.0",
     "@testing-library/react": "^16.2.0",
     "@testing-library/user-event": "^14.6.1",
     "@types/bun": "^1.2.0",
