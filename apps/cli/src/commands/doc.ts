@@ -85,7 +85,7 @@ const resolveDocRefFromList = (
   if (normalizedKinds.length > 1) {
     return {
       doc: null,
-      reason: `Doc reference '${ref}' is ambiguous across kinds (${normalizedKinds.join(", ")}). Use doc_id instead.`,
+      reason: `Doc reference '${ref}' is ambiguous across kinds (${normalizedKinds.join(", ")}). Use kind/name or doc_id instead.`,
     }
   }
 

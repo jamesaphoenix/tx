@@ -16,10 +16,19 @@ Drive invariants from uncovered (BUILD phase) to fully verified (HARDEN phase) b
 
 `tx spec discover` scans files in two passes:
 
-1. **Test files** (matched by `test_patterns` in `.tx/config.toml`) — scanned for both `[INV-*]` bracket tags in test names AND `// @spec INV-*` comments
-2. **Source files** (all programming languages) — scanned ONLY for `// @spec INV-*` comments (structural annotations)
+1. **Test files** (matched by `test_patterns` in `.tx/config.toml`) - scanned for both `[INV-*]` bracket tags in test names AND `// @spec INV-*` comments
+2. **Source files** (all programming languages) - scanned ONLY for `// @spec INV-*` comments (structural annotations)
 
 This means `@spec` comments work in ANY file (test or source), but `[INV-*]` bracket tags are only picked up from test files.
+
+### Critical: Worktree And Pruning Safety
+
+`tx spec discover` reads files from the current checkout and reconciles the shared spec database. Auto-discovered tag, comment, and manifest mappings that are absent from the scan are pruned; manual mappings are preserved.
+
+- If a worktree symlinks `.tx/tasks.db` to the primary checkout, its task and spec state is shared even though its files are branch-local.
+- When verifying one doc, always use `tx spec discover --doc <doc-ref>` from the checkout containing that doc and its tests.
+- Run unscoped `tx spec discover` only when the current checkout is intentionally the source of truth for every registered invariant.
+- Review discovery output and the resulting spec status before recording test runs.
 
 ### Annotation Formats
 
@@ -81,13 +90,13 @@ START
 │                                                      │
 │ For each uncovered invariant, decide:                │
 │                                                      │
-│ A) TESTABLE — can be verified by an integration      │
+│ A) TESTABLE - can be verified by an integration      │
 │    test or unit test exercising the behavior.        │
 │    Examples: API returns 401, cascade deletes,       │
 │    filter returns correct results.                   │
 │    → Annotate in test file with [INV-*] tag          │
 │                                                      │
-│ B) STRUCTURAL — enforced by code structure, lint,    │
+│ B) STRUCTURAL - enforced by code structure, lint,    │
 │    or DB constraint. Cannot be meaningfully tested   │
 │    in isolation but IS enforced in source.           │
 │    Examples: "tag names unique per org" enforced     │
@@ -95,7 +104,7 @@ START
 │    absence from retentionTableNames literal.         │
 │    → Annotate in source code with // @spec INV-*     │
 │                                                      │
-│ C) PGTAP — enforced by database constraints.         │
+│ C) PGTAP - enforced by database constraints.         │
 │    → Annotate in pgTAP test with -- @spec INV-*      │
 │                                                      │
 │ Prefer A over B. Use B only when A is genuinely      │
@@ -187,7 +196,7 @@ START
 DONE
 ```
 
-## Step 1 — Load Gaps
+## Step 1 - Load Gaps
 
 **If a doc name was provided:**
 ```bash
@@ -207,31 +216,31 @@ tx doc show <doc-name> --md
 ```
 
 Read each design doc markdown to understand each invariant's:
-- **id** — the invariant ID (e.g. `INV-TAG-001`) — must match annotation exactly
-- **statement** — what must be true
-- **severity** — critical/high/medium/low (prioritize critical first)
-- **verified_by** — hint about which test file should cover it
-- **traces_to** — which PRD requirement it maps to
+- **id** - the invariant ID (e.g. `INV-TAG-001`) - must match annotation exactly
+- **statement** - what must be true
+- **severity** - critical/high/medium/low (prioritize critical first)
+- **verified_by** - hint about which test file should cover it
+- **traces_to** - which PRD requirement it maps to
 
 If FCI is already 100%, report success and stop.
 
-## Step 2 — Classify Each Uncovered Invariant
+## Step 2 - Classify Each Uncovered Invariant
 
 For each gap from `tx spec gaps`, decide the verification strategy:
 
 | Category | When to use | Annotation style | Where |
 |----------|------------|-----------------|-------|
 | **TESTABLE** | Behavior can be exercised via API call, function call, or DB query | `[INV-*]` in test name or `// @spec INV-*` near test | Test file (`.test.ts`, `.integration.test.ts`, `.pgtap.sql`) |
-| **STRUCTURAL** | Enforced by schema, lint rule, type system, or code structure — no meaningful test possible | `// @spec INV-*` comment | Source file where enforcement lives (schema.ts, literals.ts, service file) |
+| **STRUCTURAL** | Enforced by schema, lint rule, type system, or code structure - no meaningful test possible | `// @spec INV-*` comment | Source file where enforcement lives (schema.ts, literals.ts, service file) |
 | **PGTAP** | Database constraint, trigger, or index behavior | `-- @spec INV-*` SQL comment | `.pgtap.sql` test file |
 
-**Prefer TESTABLE.** Most invariants should be verifiable by a test. Only use STRUCTURAL when the invariant is genuinely about code structure (e.g., "table X is NOT in retentionTableNames" — verified by inspecting the literal array, not by running a test).
+**Prefer TESTABLE.** Most invariants should be verifiable by a test. Only use STRUCTURAL when the invariant is genuinely about code structure (e.g., "table X is NOT in retentionTableNames" - verified by inspecting the literal array, not by running a test).
 
-## Step 3 — Implement and Annotate
+## Step 3 - Implement and Annotate
 
 ### Integration test annotation (preferred)
 
-The `[INV-*]` bracket tag in the test name is the cleanest approach — `tx spec discover` extracts both the invariant ID and the test name from the same line:
+The `[INV-*]` bracket tag in the test name is the cleanest approach - `tx spec discover` extracts both the invariant ID and the test name from the same line:
 
 ```typescript
 it('creates tag with name and color [INV-TAG-001]', async () => {
@@ -244,7 +253,7 @@ it('creates tag with name and color [INV-TAG-001]', async () => {
 })
 ```
 
-The comment form also works — place it on the line immediately before or up to 2 lines above the `it()`:
+The comment form also works - place it on the line immediately before or up to 2 lines above the `it()`:
 
 ```typescript
 // @spec INV-TAG-100
@@ -300,7 +309,7 @@ SELECT ok(
 - Critical severity invariants should be covered first
 - Integration tests are preferred over unit tests (hard requirement from design doc skill)
 
-## Step 4 — Discover
+## Step 4 - Discover
 
 ```bash
 # For a specific doc
@@ -323,7 +332,7 @@ By source: tag=12, comment=2, manifest=0
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | `Scanned 0 file(s)` | Test patterns in `.tx/config.toml` don't match your test files | Add patterns like `"**/*.test.{ts,js}"` or `"**/*.integration.test.{ts,js}"` |
-| Scanned files but 0 links | Annotation format wrong | Must be `[INV-TAG-001]` (with brackets) or `// @spec INV-TAG-001` — no other formats work |
+| Scanned files but 0 links | Annotation format wrong | Must be `[INV-TAG-001]` (with brackets) or `// @spec INV-TAG-001` - no other formats work |
 | Links found but wrong count | ID mismatch | IDs are case-sensitive. `INV-TAG-001` is not `inv-tag-001` or `INV-Tag-001` |
 | Source `@spec` not found | Source file excluded | Check file isn't in `node_modules`, `dist`, `.git`, or other skip dirs |
 
@@ -331,9 +340,9 @@ By source: tag=12, comment=2, manifest=0
 
 `tx spec discover` builds test IDs as `{relative-file-path}::{test-name}`. For example:
 - `apps/api/src/routes/team-tags.test.ts::creates tag with name and color [INV-TAG-001]`
-- `packages/infra/db/src/schema.ts::spec@line-264` (structural — no test name, uses line number)
+- `packages/infra/db/src/schema.ts::spec@line-264` (structural - no test name, uses line number)
 
-## Step 5 — Run Tests and Record Results
+## Step 5 - Run Tests and Record Results
 
 ### Vitest (primary path)
 
@@ -375,7 +384,7 @@ pnpm test:db:pgtap
 tx spec run "packages/infra/db/pgtap/003_team_tags.pgtap.sql::cascade delete" --passed
 ```
 
-## Step 6 — Check Progress and Iterate
+## Step 6 - Check Progress and Iterate
 
 ```bash
 tx spec fci --doc $ARGUMENTS
@@ -386,19 +395,19 @@ tx spec gaps --doc $ARGUMENTS
 
 | FCI | Phase | Meaning |
 |-----|-------|---------|
-| 0% | BUILD | No invariants verified — just starting |
+| 0% | BUILD | No invariants verified - just starting |
 | 1-99% | BUILD | Some invariants verified, gaps remain |
-| 100% | HARDEN | All invariants linked + passing — ready for sign-off |
+| 100% | HARDEN | All invariants linked + passing - ready for sign-off |
 | 100% + sign-off | COMPLETE | Human confirmed feature is done |
 
 ### What "untested" Means
 
 `tx spec fci` distinguishes between:
-- **covered** — invariant has a linked test/annotation (via discover)
-- **passing** — linked test has a recorded PASS run (via batch or manual)
-- **untested** — covered but no run recorded yet
+- **covered** - invariant has a linked test/annotation (via discover)
+- **passing** - linked test has a recorded PASS run (via batch or manual)
+- **untested** - covered but no run recorded yet
 
-A common state is `covered=14, passing=12, untested=2` — meaning 2 invariants are linked (discovered) but you haven't yet run `tx spec run --passed` for them. This typically happens with structural annotations.
+A common state is `covered=14, passing=12, untested=2` - meaning 2 invariants are linked (discovered) but you haven't yet run `tx spec run --passed` for them. This typically happens with structural annotations.
 
 ### Iteration Loop
 
@@ -409,7 +418,7 @@ If gaps remain:
 4. Run tests + record results
 5. Check FCI again
 
-## Step 7 — Report
+## Step 7 - Report
 
 ```bash
 tx spec matrix --doc $ARGUMENTS

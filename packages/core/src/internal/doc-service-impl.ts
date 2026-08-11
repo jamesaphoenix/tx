@@ -670,7 +670,7 @@ export const DocServiceLive = Layer.effect(
         if (kinds.length > 1) {
           return yield* Effect.fail(
             new ValidationError({
-              reason: `Doc reference '${ref}' is ambiguous across kinds (${kinds.join(", ")}). Use doc_id instead.`,
+              reason: `Doc reference '${ref}' is ambiguous across kinds (${kinds.join(", ")}). Use kind/name or doc_id instead.`,
             })
           )
         }

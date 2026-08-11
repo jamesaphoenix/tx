@@ -297,7 +297,7 @@ describe("tx doc lifecycle coverage", () => {
     }
     expect(ambiguousError.ok).toBe(false)
     expect(ambiguousError.error.message).toContain("ambiguous across kinds")
-    expect(ambiguousError.error.message).toContain("Use doc_id instead")
+    expect(ambiguousError.error.message).toContain("Use kind/name or doc_id instead")
 
     const prdShow = runTx(["doc", "show", "prd/shared-slug", "--json"], tmpProjectDir)
     const designShow = runTx(["doc", "show", "design/shared-slug", "--json"], tmpProjectDir)

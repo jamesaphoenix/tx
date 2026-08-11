@@ -334,7 +334,7 @@ Examples:
 
 Usage: tx msg inbox <channel> [options]
 
-Pure read — no side effects, no status changes.
+Pure read - no side effects, no status changes.
 
 Options:
   --after <id>        Cursor: only messages after this ID
@@ -2247,9 +2247,9 @@ Examples:
   tx doc rm auth-flow
   tx doc rm auth-flow --json`,
 
-  "doc remove": `tx doc rm - Remove latest mutable doc version
+  "doc remove": `tx doc remove - Alias for tx doc rm
 
-Usage: tx doc rm <name> [--json]
+Usage: tx doc remove <name> [--json]
 
 Alias: 'tx doc remove <name>'
 
@@ -2264,7 +2264,6 @@ Options:
   --help    Show this help
 
 Examples:
-  tx doc rm auth-flow
   tx doc remove auth-flow --json`,
 
   "doc lock": `tx doc lock - Lock a doc version

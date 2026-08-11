@@ -42,7 +42,7 @@ tx decompose <design-doc-ref> --parent <task-id>
   produce as many tasks as the design doc warrants.
 - **Be patient.** `tx decompose` makes LLM calls and can take 60–120 seconds.
   If you launched it, wait for it to finish. Never re-run it because output
-  appears empty — that wastes API credits and risks duplicate subtasks. If it
+  appears empty - that wastes API credits and risks duplicate subtasks. If it
   was launched in the background, poll the output file at long intervals (30s+).
 - After materialization, tx remains canonical. Refine the graph with:
 
@@ -64,7 +64,7 @@ tx update <task-id> --status blocked
 - Use `tx show <task-id>` on the generated root task to inspect linked-doc and
   blocker state after decomposition.
 - If the result has too many tasks, refine by merging or removing tasks after
-  the fact — do not pre-cap with `--max-tasks`.
+  the fact - do not pre-cap with `--max-tasks`.
 
 ## Equivalent Surfaces
 

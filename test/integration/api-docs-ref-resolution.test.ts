@@ -178,7 +178,7 @@ describe("API docs ref resolution", () => {
     expect(ambiguousRes.status).toBe(400)
     const ambiguousPayload = await ambiguousRes.json() as { message: string }
     expect(ambiguousPayload.message).toContain("ambiguous across kinds")
-    expect(ambiguousPayload.message).toContain("Use doc_id instead")
+    expect(ambiguousPayload.message).toContain("Use kind/name or doc_id instead")
 
     const scopedRes = await fetchWithTimeout(`${baseUrl}/api/docs/${encodeURIComponent("prd/shared-api-doc")}`, 5000)
     expect(scopedRes.status).toBe(200)

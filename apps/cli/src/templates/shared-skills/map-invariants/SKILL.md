@@ -8,7 +8,7 @@ argument-hint: <doc-name> [--with-tests] (doc name required; --with-tests to als
 
 Automatically match uncovered invariants to existing tests and source code, then annotate them with `[INV-*]` tags. Unlike `/verify-invariants` (which writes new tests from scratch), this skill starts by mapping what already exists.
 
-**Use when:** A module has a spec (design doc + PRD) with many invariants and an existing test suite that already covers most behaviors — you just need to connect the dots.
+**Use when:** A module has a spec (design doc + PRD) with many invariants and an existing test suite that already covers most behaviors - you just need to connect the dots.
 
 ## Options
 
@@ -27,10 +27,19 @@ If the user says yes, proceed as if `--with-tests` was given (continue to Step 8
 
 `tx spec discover` scans files in two passes:
 
-1. **Test files** (matched by `test_patterns` in `.tx/config.toml`) — scanned for both `[INV-*]` bracket tags in test names AND `// @spec INV-*` comments
-2. **Source files** (all programming languages) — scanned ONLY for `// @spec INV-*` comments (structural annotations)
+1. **Test files** (matched by `test_patterns` in `.tx/config.toml`) - scanned for both `[INV-*]` bracket tags in test names AND `// @spec INV-*` comments
+2. **Source files** (all programming languages) - scanned ONLY for `// @spec INV-*` comments (structural annotations)
 
 This means `@spec` comments work in ANY file (test or source), but `[INV-*]` bracket tags are only picked up from test files.
+
+### Critical: Worktree And Pruning Safety
+
+`tx spec discover` reads files from the current checkout and reconciles the shared spec database. Auto-discovered tag, comment, and manifest mappings that are absent from the scan are pruned; manual mappings are preserved.
+
+- If a worktree symlinks `.tx/tasks.db` to the primary checkout, its task and spec state is shared even though its files are branch-local.
+- Always run `tx spec discover --doc <doc-ref>` from the checkout containing the target doc and annotations.
+- Do not substitute an unscoped discovery run for the required doc-scoped command.
+- Review discovery output and the resulting spec status before recording test runs.
 
 ### Annotation Formats
 
@@ -103,7 +112,7 @@ Step 9: RE-DISCOVER + RE-RUN + FINAL REPORT
 DONE
 ```
 
-## Step 1 — Load All Gaps (Show the Full Picture)
+## Step 1 - Load All Gaps (Show the Full Picture)
 
 Get every uncovered invariant and understand what each one means.
 
@@ -123,7 +132,7 @@ For **each** gap, extract from the spec:
 | Field | What to capture | Example |
 |-------|----------------|---------|
 | **id** | The invariant ID (case-sensitive, UPPERCASE) | `INV-AUTH-001` or `INV-REQ-AUTH-001` |
-| **statement** | What must be true — read this carefully | "Sign-up creates a verified user and returns a session token" |
+| **statement** | What must be true - read this carefully | "Sign-up creates a verified user and returns a session token" |
 | **severity** | `critical` / `high` / `medium` / `low` | `critical` |
 | **verified_by** | Suggested test file + test name from the spec | `apps/api/src/api.integration.test.ts::sign-up flow` |
 | **traces_to** | Which `REQ-*` it maps to (for `INV-REQ-*` derived invariants) | `REQ-AUTH-001` |
@@ -137,9 +146,9 @@ If FCI is already 100%, report success and stop.
 Design docs produce explicit invariants: `INV-AUTH-001`, `INV-AUTH-002`, etc.
 PRDs produce derived invariants from EARS requirements: `INV-REQ-AUTH-001`, `INV-REQ-AUTH-002`, etc.
 
-Both types appear in `tx spec gaps`. **Every invariant gets a marker** — do not skip derived invariants.
+Both types appear in `tx spec gaps`. **Every invariant gets a marker** - do not skip derived invariants.
 
-## Step 2 — Read the Test Files
+## Step 2 - Read the Test Files
 
 Build a complete map of what every test actually verifies.
 
@@ -158,7 +167,7 @@ Search for test files matching patterns like:
 ### Read and analyze each test file
 
 For each test file:
-1. **Read the entire file** — not just test names
+1. **Read the entire file** - not just test names
 2. **Extract all `it()` / `test()` blocks** with their line numbers
 3. **Read each test body** to understand what it actually asserts:
    - What endpoint/function does it call?
@@ -170,12 +179,12 @@ For each test file:
 ### Also read source files for structural invariants
 
 Some invariants are enforced by code structure, not tests. Read:
-- Schema files — unique indexes, constraints, cascade rules
-- Permission/contract files — permission definitions, schema validations
-- Domain logic files — domain rules, literals
+- Schema files - unique indexes, constraints, cascade rules
+- Permission/contract files - permission definitions, schema validations
+- Domain logic files - domain rules, literals
 - Middleware files, auth config, etc.
 
-## Step 3 — Match Invariants to Code
+## Step 3 - Match Invariants to Code
 
 For **each** uncovered invariant, find the code that covers it.
 
@@ -205,7 +214,7 @@ Classify each invariant into exactly one category:
 - **Prefer TESTABLE-MATCHED over STRUCTURAL-MATCHED.** Use structural only when no test exercises the behavior and the enforcement is genuinely structural (DB constraint, type system, lint rule).
 - **Be precise about matching.** Don't force-match an invariant to a vaguely related test. If the test doesn't actually assert the specific behavior, classify as MISSING.
 
-## Step 4 — Annotate
+## Step 4 - Annotate
 
 ### For TESTABLE-MATCHED: Edit test names
 
@@ -215,10 +224,10 @@ Append `[INV-*]` tag(s) to the `it()` description string:
 // Before
 it('rejects sign-in with invalid credentials', async () => {
 
-// After — single invariant
+// After - single invariant
 it('rejects sign-in with invalid credentials [INV-AUTH-011]', async () => {
 
-// After — multiple invariants covered by one test
+// After - multiple invariants covered by one test
 it('rejects sign-in with invalid credentials [INV-AUTH-011] [INV-REQ-AUTH-022]', async () => {
 ```
 
@@ -263,7 +272,7 @@ Skeleton:
   })
 ```
 
-## Step 5 — Discover + Validate
+## Step 5 - Discover + Validate
 
 Run discovery to pick up the new annotations:
 
@@ -273,7 +282,7 @@ tx spec discover --doc $ARGUMENTS
 
 Verify the output:
 - `Discovered links: N` should match the number of annotations you added
-- Check `By source: tag=X, comment=Y` — tag count = test annotations, comment count = structural annotations
+- Check `By source: tag=X, comment=Y` - tag count = test annotations, comment count = structural annotations
 
 If links are lower than expected:
 - Check annotation format (must be `[INV-*]` in test names or `// @spec INV-*` in source)
@@ -298,9 +307,9 @@ tx spec gaps --doc $ARGUMENTS
 
 `tx spec discover` builds test IDs as `{relative-file-path}::{test-name}`. For example:
 - `apps/api/src/routes/auth.test.ts::rejects sign-in with invalid credentials [INV-AUTH-011]`
-- `packages/infra/db/src/schema.ts::spec@line-264` (structural — no test name, uses line number)
+- `packages/infra/db/src/schema.ts::spec@line-264` (structural - no test name, uses line number)
 
-## Step 6 — Run Tests + Record
+## Step 6 - Run Tests + Record
 
 ### For test annotations (vitest)
 
@@ -329,7 +338,7 @@ pnpm test:db:pgtap
 tx spec run "<pgtap-file>::<test>" --passed
 ```
 
-## Step 7 — Report
+## Step 7 - Report
 
 ```bash
 tx spec fci --doc $ARGUMENTS
@@ -365,16 +374,16 @@ Print a summary table:
 
 If yes → Step 8. If no → done.
 
-## Step 8 — Create Missing Tests (optional)
+## Step 8 - Create Missing Tests (optional)
 
 For each MISSING invariant from Step 3, write a full integration test. Follow the same conventions as `/verify-invariants` Step 3:
 
 ### Writing tests
 
-1. **Choose the correct test file** — use the suggested file from the MISSING report, or the file where related tests already live.
+1. **Choose the correct test file** - use the suggested file from the MISSING report, or the file where related tests already live.
 2. **Write the test inside the existing `describe()` block** if one exists for the domain.
 3. **Include the `[INV-*]` tag** in the test name from the start.
-4. **Follow existing test patterns** — use the same helpers, fixtures, and assertion style as neighboring tests in the file.
+4. **Follow existing test patterns** - use the same helpers, fixtures, and assertion style as neighboring tests in the file.
 
 ```typescript
 it('locks account after 5 failed sign-in attempts [INV-AUTH-042]', async () => {
@@ -402,7 +411,7 @@ it('locks account after 5 failed sign-in attempts [INV-AUTH-042]', async () => {
 - Critical severity invariants first.
 - One test can cover multiple invariants if the assertions naturally overlap.
 
-## Step 9 — Re-Discover + Re-Run + Final Report
+## Step 9 - Re-Discover + Re-Run + Final Report
 
 After creating the missing tests, re-run the full discovery and test pipeline:
 
@@ -445,8 +454,8 @@ If FCI = 100%, the doc is in HARDEN phase.
 | Aspect | /map-invariants | /verify-invariants |
 |--------|----------------|-------------------|
 | **Primary action** | Map existing tests first, optionally create missing | Write new tests from scratch |
-| **Reads test bodies** | Yes — deeply analyzes assertions | No — writes from scratch |
-| **Handles 60+ invariants** | Yes — batch processes all gaps | Yes — but iterates one-by-one |
+| **Reads test bodies** | Yes - deeply analyzes assertions | No - writes from scratch |
+| **Handles 60+ invariants** | Yes - batch processes all gaps | Yes - but iterates one-by-one |
 | **Output for gaps** | Reports skeletons, asks before writing | Full test implementations immediately |
 | **Best for** | Mature modules with existing tests | New modules needing test coverage |
-| **`--with-tests` flag** | Creates missing tests after mapping | N/A — always creates tests |
+| **`--with-tests` flag** | Creates missing tests after mapping | N/A - always creates tests |
