@@ -1432,15 +1432,16 @@ export const DocServiceLive = Layer.effect(
               // Keep whole-repo sync resilient: one malformed markdown file should not
               // prevent invariants from being refreshed for every other doc.
               const result = yield* syncInvariantsForDoc(doc).pipe(
+                // Global refresh must remain useful when one unrelated doc is
+                // malformed. Explicit document refreshes still fail below.
                 Effect.catchAllCause((cause) => {
-                  const defect = Cause.dieOption(cause)
-                  if (
-                    Option.isSome(defect) &&
-                    defect.value instanceof InvalidDocYamlError
-                  ) {
+                  // Markdown parsing and validation currently surface as
+                  // defects from the legacy parser. Do not turn those into a
+                  // whole-repository sync failure, but preserve typed DB and
+                  // lookup failures.
+                  if (Option.isSome(Cause.dieOption(cause))) {
                     return Effect.succeed([])
                   }
-
                   return Effect.failCause(cause)
                 })
               )

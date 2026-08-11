@@ -7,8 +7,11 @@ export const buildInvariantFilterSql = (
   const clauses: string[] = ["i.status = 'active'"]
 
   if (filter?.doc) {
-    clauses.push("d.name = ?")
-    params.push(filter.doc)
+    // `--doc` accepts both the human-readable name and the stable lineage ID.
+    // Names can be ambiguous across kinds; stable IDs must still scope exactly
+    // to the requested document lineage.
+    clauses.push("(d.name = ? OR d.doc_id = ?)")
+    params.push(filter.doc, filter.doc)
   }
 
   if (filter?.subsystem) {

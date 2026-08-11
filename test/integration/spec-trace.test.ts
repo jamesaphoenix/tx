@@ -224,6 +224,90 @@ describe("SpecTraceService Integration", () => {
     expect(result.manifestTests[0]!.testId).toBe("test/spec/manifest.test.ts::manifest mapping")
   })
 
+  it("scopes discovery by stable document ID and tolerates an unrelated malformed doc during global sync", async () => {
+    const result = await run(
+      Effect.gen(function* () {
+        const docService = yield* DocService
+        const valid = yield* docService.create({
+          kind: "prd",
+          name: "stable-id-discovery-doc",
+          title: "stable-id-discovery-doc",
+          content: [
+            "---",
+            "kind: spec",
+            "spec_type: prd",
+            "name: stable-id-discovery-doc",
+            "title: stable-id-discovery-doc",
+            "status: draft",
+            "version: 1",
+            "owners: [test]",
+            'summary: ""',
+            'domain: ""',
+            "tags: []",
+            "depends_on: []",
+            "supersedes: []",
+            "implements: null",
+            "last_reviewed_at: 2026-03-15",
+            "---",
+            "",
+            "# stable-id-discovery-doc",
+            "",
+            "## Summary",
+            "",
+            "Summary.",
+            "",
+            "## Problem",
+            "",
+            "Problem.",
+            "",
+            "## Scope",
+            "",
+            "Scope.",
+            "",
+            "## Requirements",
+            "",
+            "Requirements.",
+            "",
+            "## Acceptance Criteria",
+            "",
+            "Acceptance.",
+            "",
+            "## Invariants",
+            "",
+            "```yaml",
+            "invariants:",
+            "  - id: INV-STABLE-DOC-001",
+            "    statement: Stable IDs scope discovery.",
+            "    severity: high",
+            "    verified_by:",
+            "      - test/integration/spec-trace.test.ts",
+            "```",
+          ].join("\n"),
+        })
+
+        writeRelative(tempDir, "test/stable-id.test.ts", [
+          "import { it } from \"vitest\"",
+          "it(\"[INV-STABLE-DOC-001] stable ID mapping\", () => {})",
+        ].join("\n"))
+
+        const spec = yield* SpecTraceService
+        const discovered = yield* spec.discover({
+          rootDir: tempDir,
+          patterns: ["test/**/*.test.ts"],
+          doc: valid.docId,
+        })
+
+        writeRelative(tempDir, valid.filePath, "---\nkind: [broken\n")
+        const globallySynced = yield* docService.syncInvariants()
+
+        return { discovered, globallySynced }
+      })
+    )
+
+    expect(result.discovered.discoveredLinks).toBe(1)
+    expect(result.globallySynced).toBeDefined()
+  })
+
   it("prunes stale auto-discovered links while preserving manual links", async () => {
     const result = await run(
       Effect.gen(function* () {

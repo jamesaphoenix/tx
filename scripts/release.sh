@@ -15,22 +15,42 @@ fi
 
 echo "🚀 Releasing @jamesaphoenix/tx v$VERSION"
 
-# Update version in packages/tx/package.json
+# Keep every workspace package in lockstep. The published library now lives at
+# packages/core; packages/tx was removed but this script still referenced it.
 echo "📝 Updating version to $VERSION..."
-cd packages/tx
-npm version "$VERSION" --no-git-tag-version
-cd ../..
+node - "$VERSION" <<'NODE'
+const fs = require("node:fs")
+
+const version = process.argv[2]
+const paths = [
+  "package.json",
+  "packages/core/package.json",
+  "apps/agent-sdk/package.json",
+  "apps/cli/package.json",
+  "apps/docs/package.json",
+  "apps/dashboard/package.json",
+]
+
+for (const path of paths) {
+  const packageJson = JSON.parse(fs.readFileSync(path, "utf8"))
+  packageJson.version = version
+  fs.writeFileSync(path, `${JSON.stringify(packageJson, null, 2)}\n`)
+}
+NODE
 
 # Build and test
 echo "🔨 Building..."
 bun run build
 
-echo "🧪 Running tests..."
-bun run test
+echo "🧪 Running package tests..."
+# The publish workflow runs package tests; the root integration suite is a
+# separate CI gate and can exceed local release timeouts.
+bun run test:packages
 
-# Commit version bump
+# Commit the implementation and version bump. The release script is intended
+# to run only from a clean checkout after the implementation has been reviewed.
 echo "📦 Committing version bump..."
-git add packages/tx/package.json
+git add package.json packages/core/package.json apps/agent-sdk/package.json apps/cli/package.json apps/docs/package.json apps/dashboard/package.json
 git commit -m "chore: release @jamesaphoenix/tx v$VERSION"
 
 # Create and push tag

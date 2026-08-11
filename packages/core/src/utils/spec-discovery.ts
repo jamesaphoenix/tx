@@ -27,7 +27,7 @@ export type DiscoveryScanResult = {
 
 const TAG_PATTERN = /\[(INV-[A-Z0-9-]+)\]/g
 const UNDERSCORE_TAG_PATTERN = /_INV_([A-Z0-9_]+)/g
-const COMMENT_SPEC_PATTERN = /(?:\/\/|#|--|\/\*|\*)\s*@spec\s+(INV-[A-Z0-9-]+(?:\s*,\s*INV-[A-Z0-9-]+)*)/g
+const COMMENT_SPEC_PATTERN = /(?:\/\/|#|--|\/\*|\*)\s*@spec\s+(INV-[A-Z0-9-]+(?:(?:\s*,\s*|\s+)INV-[A-Z0-9-]+)*)/g
 
 const SKIP_DIRS = new Set([
   ".git",
@@ -224,7 +224,7 @@ const parseFileAnnotations = (testFile: string, content: string): {
     while ((commentMatch = COMMENT_SPEC_PATTERN.exec(line)) !== null) {
       const chunk = commentMatch[1] ?? ""
       const invariants = chunk
-        .split(",")
+        .split(/\s*,\s*|\s+/)
         .map((s) => s.trim())
         .filter((s) => s.length > 0)
       const testName = findNearestTestName(lines, i)

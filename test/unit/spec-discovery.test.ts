@@ -83,6 +83,24 @@ describe("spec-discovery", () => {
     expect(result.discovered.find((row) => row.invariantId === "INV-DISC-005")?.framework).toBe("go")
   })
 
+  it("discovers whitespace-separated invariant IDs in @spec comments", async () => {
+    const root = makeTempProject()
+
+    writeRelative(root, "test/whitespace.test.ts", [
+      "import { it } from \"vitest\"",
+      "// @spec INV-DISC-007 INV-DISC-008",
+      "it(\"both invariants\", () => {})",
+    ].join("\n"))
+
+    const result = await discoverSpecTests(root, ["test/**/*.test.ts"])
+
+    expect(result.commentLinks).toBe(2)
+    expect(result.discovered.map((row) => row.invariantId)).toEqual([
+      "INV-DISC-007",
+      "INV-DISC-008",
+    ])
+  })
+
   it("respects glob patterns and ignores non-matching files", async () => {
     const root = makeTempProject()
 
