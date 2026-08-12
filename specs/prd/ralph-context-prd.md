@@ -1,7 +1,7 @@
 ---
 kind: spec
 spec_type: prd
-doc_id: doc-bb0f2ae91a1a
+doc_id: doc-b66c8d85b878
 name: ralph-context-prd
 title: "Ralph Context PRD"
 status: draft

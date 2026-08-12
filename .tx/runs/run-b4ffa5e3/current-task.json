@@ -1,12 +1,12 @@
 {
-  "id": "tx-9b61c0e5cba2",
+  "id": "tx-cc658ed4e06d",
   "title": "Implement Ralph bundle",
   "description": "Primary task for Ralph context bundle coverage",
   "status": "active",
   "parentId": null,
   "score": 0,
-  "createdAt": "2026-08-12T13:11:58.800Z",
-  "updatedAt": "2026-08-12T13:12:06.848Z",
+  "createdAt": "2026-08-12T13:12:21.541Z",
+  "updatedAt": "2026-08-12T13:12:27.759Z",
   "completedAt": null,
   "assigneeType": null,
   "assigneeId": null,
@@ -22,11 +22,11 @@
   "effectiveGroupContextSourceTaskId": null,
   "orchestrationStatus": "running",
   "claimedBy": "ralph-main",
-  "claimExpiresAt": "2026-08-12T13:42:06.473Z",
+  "claimExpiresAt": "2026-08-12T13:42:27.113Z",
   "failedAttempts": 0,
   "linkedDocs": [
     {
-      "docId": "doc-bb0f2ae91a1a",
+      "docId": "doc-b66c8d85b878",
       "name": "ralph-context-prd",
       "title": "Ralph Context PRD",
       "kind": "prd",
@@ -36,7 +36,7 @@
       "linkType": "implements"
     },
     {
-      "docId": "doc-fe6990bab078",
+      "docId": "doc-bcc18846bc0e",
       "name": "ralph-context-design",
       "title": "Ralph Context Design",
       "kind": "design",

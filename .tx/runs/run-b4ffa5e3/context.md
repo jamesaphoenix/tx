@@ -1,18 +1,26 @@
+Read .codex/agents/tx-implementer.md for your instructions.
+
+Your assigned task: tx-cc658ed4e06d
+Task title: Implement Ralph bundle
+Task scope: design-doc:ralph-context-design
+
+You are given direct working context below. Read it before changing code:
+
 ===== BEGIN RALPH TASK SCOPE =====
-all-tasks
+design-doc:ralph-context-design
 
 ===== END RALPH TASK SCOPE =====
 
 ===== BEGIN CURRENT TASK PAYLOAD (JSON) =====
 {
-  "id": "tx-9b61c0e5cba2",
+  "id": "tx-cc658ed4e06d",
   "title": "Implement Ralph bundle",
   "description": "Primary task for Ralph context bundle coverage",
   "status": "active",
   "parentId": null,
   "score": 0,
-  "createdAt": "2026-08-12T13:11:58.800Z",
-  "updatedAt": "2026-08-12T13:12:06.848Z",
+  "createdAt": "2026-08-12T13:12:21.541Z",
+  "updatedAt": "2026-08-12T13:12:27.759Z",
   "completedAt": null,
   "assigneeType": null,
   "assigneeId": null,
@@ -28,11 +36,11 @@ all-tasks
   "effectiveGroupContextSourceTaskId": null,
   "orchestrationStatus": "running",
   "claimedBy": "ralph-main",
-  "claimExpiresAt": "2026-08-12T13:42:06.473Z",
+  "claimExpiresAt": "2026-08-12T13:42:27.113Z",
   "failedAttempts": 0,
   "linkedDocs": [
     {
-      "docId": "doc-bb0f2ae91a1a",
+      "docId": "doc-b66c8d85b878",
       "name": "ralph-context-prd",
       "title": "Ralph Context PRD",
       "kind": "prd",
@@ -42,7 +50,7 @@ all-tasks
       "linkType": "implements"
     },
     {
-      "docId": "doc-fe6990bab078",
+      "docId": "doc-bcc18846bc0e",
       "name": "ralph-context-design",
       "title": "Ralph Context Design",
       "kind": "design",
@@ -63,7 +71,7 @@ all-tasks
 ---
 kind: spec
 spec_type: design
-doc_id: doc-fe6990bab078
+doc_id: doc-bcc18846bc0e
 name: ralph-context-design
 title: "Ralph Context Design"
 status: draft
@@ -132,14 +140,14 @@ Design doc sentinel for Ralph bundle e2e.
 ===== BEGIN ALL TASKS (JSON) =====
 [
   {
-    "id": "tx-8df425f13fff",
+    "id": "tx-2bf43dd99a75",
     "title": "Document follow-up task",
     "description": "Sibling task that should appear in the injected queue snapshot",
     "status": "blocked",
     "parentId": null,
     "score": 0,
-    "createdAt": "2026-08-12T13:11:59.422Z",
-    "updatedAt": "2026-08-12T13:12:01.230Z",
+    "createdAt": "2026-08-12T13:12:22.089Z",
+    "updatedAt": "2026-08-12T13:12:23.568Z",
     "completedAt": null,
     "assigneeType": null,
     "assigneeId": null,
@@ -159,7 +167,7 @@ Design doc sentinel for Ralph bundle e2e.
     "failedAttempts": 0,
     "linkedDocs": [
       {
-        "docId": "doc-fe6990bab078",
+        "docId": "doc-bcc18846bc0e",
         "name": "ralph-context-design",
         "title": "Ralph Context Design",
         "kind": "design",
@@ -171,14 +179,14 @@ Design doc sentinel for Ralph bundle e2e.
     ]
   },
   {
-    "id": "tx-9b61c0e5cba2",
+    "id": "tx-cc658ed4e06d",
     "title": "Implement Ralph bundle",
     "description": "Primary task for Ralph context bundle coverage",
     "status": "active",
     "parentId": null,
     "score": 0,
-    "createdAt": "2026-08-12T13:11:58.800Z",
-    "updatedAt": "2026-08-12T13:12:06.848Z",
+    "createdAt": "2026-08-12T13:12:21.541Z",
+    "updatedAt": "2026-08-12T13:12:27.759Z",
     "completedAt": null,
     "assigneeType": null,
     "assigneeId": null,
@@ -194,11 +202,11 @@ Design doc sentinel for Ralph bundle e2e.
     "effectiveGroupContextSourceTaskId": null,
     "orchestrationStatus": "running",
     "claimedBy": "ralph-main",
-    "claimExpiresAt": "2026-08-12T13:42:06.473Z",
+    "claimExpiresAt": "2026-08-12T13:42:27.113Z",
     "failedAttempts": 0,
     "linkedDocs": [
       {
-        "docId": "doc-bb0f2ae91a1a",
+        "docId": "doc-b66c8d85b878",
         "name": "ralph-context-prd",
         "title": "Ralph Context PRD",
         "kind": "prd",
@@ -208,7 +216,7 @@ Design doc sentinel for Ralph bundle e2e.
         "linkType": "implements"
       },
       {
-        "docId": "doc-fe6990bab078",
+        "docId": "doc-bcc18846bc0e",
         "name": "ralph-context-design",
         "title": "Ralph Context Design",
         "kind": "design",
@@ -218,35 +226,23 @@ Design doc sentinel for Ralph bundle e2e.
         "linkType": "references"
       }
     ]
-  },
-  {
-    "id": "tx-e4a4635bf816",
-    "title": "Unrelated queue task",
-    "description": "Task outside the design-doc scope that should only appear in global queue mode",
-    "status": "blocked",
-    "parentId": null,
-    "score": 0,
-    "createdAt": "2026-08-12T13:11:59.991Z",
-    "updatedAt": "2026-08-12T13:12:01.808Z",
-    "completedAt": null,
-    "assigneeType": null,
-    "assigneeId": null,
-    "assignedAt": null,
-    "assignedBy": null,
-    "metadata": {},
-    "blockedBy": [],
-    "blocks": [],
-    "children": [],
-    "isReady": false,
-    "groupContext": null,
-    "effectiveGroupContext": null,
-    "effectiveGroupContextSourceTaskId": null,
-    "orchestrationStatus": "unclaimed",
-    "claimedBy": null,
-    "claimExpiresAt": null,
-    "failedAttempts": 0,
-    "linkedDocs": []
   }
 ]
 
 ===== END ALL TASKS (JSON) =====
+
+Follow the profile instructions first.
+Helpful commands if needed:
+- `tx show tx-cc658ed4e06d` for full task details, including any linked docs/specs
+- `tx memory context tx-cc658ed4e06d` for related learnings
+
+When complete, run `tx done tx-cc658ed4e06d`.
+If you discover new work, create follow-up tasks with `tx add` and subtasks with `tx add ... --parent tx-cc658ed4e06d`.
+If dependencies need to change, use `tx dep block` and `tx dep unblock`.
+If the queue needs reordering, update scores with `tx update <id> --score <n>` or `tx bulk score <n> <id...>`.
+If a non-trivial task needs specs, prefer a paired PRD/design doc: attach the PRD with `tx doc attach tx-cc658ed4e06d <prd-doc> --type implements` and the design doc with `tx doc attach tx-cc658ed4e06d <design-doc> --type references`.
+If one half of the PRD/design pair is missing, create follow-up docs work or block the task before large implementation proceeds.
+If blocked, run `tx update tx-cc658ed4e06d --status blocked`.
+Optionally record useful insights:
+- File-specific: `tx memory learn "<file-path>" "<gotcha or convention>"`
+- Broader: `tx memory add "<title>" -c "<detail>" -t learnings -d docs/learnings`

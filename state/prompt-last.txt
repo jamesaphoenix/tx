@@ -1,5 +1,5 @@
-You are a learnings extractor for task tx-9b61c0e5cba2 (Implement Ralph bundle).
-Read the transcript at /var/folders/_y/20jl658s4jl0zvy5c0x0c5140000gn/T/tx-ralph-context-e2e-2xFtQK/.tx/runs/run-c01a6dde/stdout.log. Be fast — skim for surprises, skip boilerplate.
+You are a learnings extractor for task tx-cc658ed4e06d (Implement Ralph bundle).
+Read the transcript at /var/folders/_y/20jl658s4jl0zvy5c0x0c5140000gn/T/tx-ralph-context-e2e-Le7vyl/.tx/runs/run-b4ffa5e3/stdout.log. Be fast — skim for surprises, skip boilerplate.
 
 Record ONLY non-obvious, project-specific insights using THREE methods:
 
@@ -10,7 +10,7 @@ Record ONLY non-obvious, project-specific insights using THREE methods:
    bun apps/cli/src/cli.ts memory add "<concise title>" -c "<1-2 sentence explanation>" -t learnings -d docs/learnings
 
 3. Episodic task log (one per task — what was tried, what worked, key decisions):
-   bun apps/cli/src/cli.ts memory add "Episode: Implement Ralph bundle" -c "## Task tx-9b61c0e5cba2
+   bun apps/cli/src/cli.ts memory add "Episode: Implement Ralph bundle" -c "## Task tx-cc658ed4e06d
 Approach: <what the agent did>
 Outcome: <success/failure and why>
 Decisions: <key choices made>

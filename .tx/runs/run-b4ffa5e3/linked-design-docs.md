@@ -3,7 +3,7 @@
 ---
 kind: spec
 spec_type: design
-doc_id: doc-fe6990bab078
+doc_id: doc-bcc18846bc0e
 name: ralph-context-design
 title: "Ralph Context Design"
 status: draft
