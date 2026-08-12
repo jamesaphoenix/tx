@@ -20,7 +20,7 @@ Use when the user is debugging tx behavior, stalled runs, or dashboard/API statu
 - `tx dashboard`: Start API server + dashboard and open in browser
 - `tx diag`: Diagnostics
 - `tx diag dashboard`: Start API server + dashboard UI
-- `tx diag doctor`: Run system health checks
+- `tx diag doctor`: Run system and worktree health checks
 - `tx diag stats`: Show queue metrics and health overview
 - `tx doctor`: System health checks
 - `tx stats`: Show queue metrics and health overview

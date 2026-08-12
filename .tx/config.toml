@@ -1,0 +1,206 @@
+# tx configuration
+# Full documentation: https://txdocs.dev/docs
+#
+# This file is created by `tx init` and lives at .tx/config.toml.
+# Edit any value below to override the default. Commented-out lines
+# show optional settings — uncomment them to enable.
+
+# ─── Docs ───────────────────────────────────────────────────────────
+# Structured documentation primitives for PRDs, design docs, and specs.
+# Commands: tx doc add, tx doc show, tx doc list, tx doc validate
+# Docs: https://txdocs.dev/docs/primitives/docs
+[docs]
+
+# Where tx stores YAML doc files on disk.
+# Relative to the project root.
+path = "specs"
+
+# EARS (Easy Approach to Requirements Syntax) is mandatory for all PRDs.
+# PRDs with legacy 'requirements' must also define 'ears_requirements'.
+
+# ─── Spec Traceability ─────────────────────────────────────────────
+# Invariant-to-test mapping discovery and completion scoring.
+# Commands: tx spec discover, tx spec fci, tx spec matrix
+[spec]
+
+# Test file patterns scanned by tx spec discover.
+# Add/remove patterns to match your project's languages and conventions.
+test_patterns = [
+  "test/**/*.test.{ts,js,tsx,jsx}",
+  "tests/**/*.py",
+  "**/*_test.go",
+  "**/*_test.rs",
+  "**/test_*.py",
+  "**/*.spec.{ts,js,tsx,jsx}",
+  "**/Test*.java",
+  "**/*Test.java",
+  "**/*_spec.rb",
+  "**/*.test.{c,cpp,cc}",
+  "**/*_test.{c,cpp,cc}",
+]
+
+# Controls tx spec lint warnings for design docs that have no linked tasks.
+# "always" = current/default behavior.
+# "locked_only" = warn only after the design doc has been locked.
+# "never" = suppress this warning entirely.
+design_doc_missing_task_links = "always"
+
+# ─── Memory ─────────────────────────────────────────────────────────
+# Filesystem-backed markdown search over your project's documentation.
+# Index directories with `tx memory source add <dir>`, then search
+# with `tx memory search <query>` (BM25) or `--semantic` (vector).
+# Docs: https://txdocs.dev/docs/primitives/memory
+[memory]
+
+# Default directory used by `tx memory add` when no source is registered.
+# If this directory isn't already a registered source, tx auto-registers
+# it so new documents survive future `tx memory index` runs.
+# Relative to the project root.
+default_dir = "specs"
+
+# ─── Cycles ─────────────────────────────────────────────────────────
+# Sub-agent swarm for automated issue discovery.
+# Run `tx cycle` to dispatch parallel scan agents that find issues,
+# then review results in the dashboard or via `tx list`.
+# Docs: https://txdocs.dev/docs/headful/docs-runs-cycles
+[cycles]
+
+# Optional prompt appended to each scan agent's system prompt.
+# Use this to focus scans on specific areas (e.g. security, performance).
+# scan_prompt = "Focus on security issues"
+
+# Number of parallel scan agents to dispatch per cycle run.
+# Higher values = faster scans but more API usage.
+agents = 3
+
+# LLM model used by cycle scan agents.
+# Must be a valid Anthropic model ID.
+model = "claude-opus-4-6"
+
+# ─── Dashboard ──────────────────────────────────────────────────────
+# Settings for the tx dashboard web UI (`tx diag dashboard`).
+# The dashboard provides a visual interface for task management,
+# doc browsing, run inspection, and cycle results.
+# Docs: https://txdocs.dev/docs/headful/filters-and-settings
+[dashboard]
+
+# Default assignee type when creating new tasks from the dashboard.
+# "human" = tasks are assigned to humans by default.
+# "agent" = tasks are assigned to agents by default.
+# Can be toggled per-task with Cmd+K in the dashboard.
+default_task_assigment_type = "human"
+
+# Default task view when opening the Tasks tab in the dashboard.
+# "list" = table/list layout.
+# "kanban" = status-column board layout.
+default_task_view = "list"
+
+# Weekly cycle planning settings used by dashboard cycle APIs.
+[dashboard.cycles]
+
+# Cycle duration in days.
+cycle_length_days = 7
+
+# Day of week that anchors cycle windows.
+cycle_start_day = "monday"
+
+# Non-done statuses carried into the next cycle when a cycle is completed.
+carry_statuses = ["planning", "active", "blocked", "review", "needs_review"]
+
+# ─── Pins ───────────────────────────────────────────────────────────
+# Context pins — persistent named content blocks that are injected
+# into agent context files as <tx-pin id="...">...</tx-pin> XML sections.
+# This enables programmatic CRUD of agent memory across sessions.
+# Commands: tx pin set, tx pin get, tx pin rm, tx pin list, tx pin sync
+# Docs: https://txdocs.dev/docs/primitives/pin
+[pins]
+
+# Comma-separated list of files that `tx pin sync` writes pins into.
+# Paths are relative to the project root.
+# Both Claude Code (CLAUDE.md) and Codex (AGENTS.md) are synced by default
+# so all agents share the same persistent context.
+target_files = "CLAUDE.md, AGENTS.md"
+
+# When true, agent-driven task completion is blocked for any task linked
+# from a gate pin via `taskId`. Humans can still complete the task.
+block_agent_done_when_task_id_present = true
+
+# ─── Guard ─────────────────────────────────────────────────────────
+# Task creation guards — lightweight limits checked at `tx add` time.
+# Prevents unbounded task proliferation in agent loops.
+# Commands: tx auto guard set, tx auto guard show, tx auto guard clear
+[guard]
+
+# Guard mode: "advisory" (default) or "enforce"
+# Advisory: tasks are created with warning metadata, stderr warning printed
+# Enforce: tx add fails with GuardExceededError when limits are hit
+mode = "advisory"
+
+# Default limits (can be overridden per-scope via tx auto guard set)
+# max_pending = 50
+# max_children = 10
+# max_depth = 4
+
+# ─── Verify ────────────────────────────────────────────────────────
+# Machine-checkable done criteria attached to tasks.
+# Attach a shell command to a task; `tx auto verify run <id>` executes it.
+# Exit 0 = pass, non-zero = fail.
+# Commands: tx auto verify set, tx auto verify show, tx auto verify run, tx auto verify clear
+[verify]
+
+# Default timeout in seconds for verification commands.
+timeout = 300
+
+# Default JSON schema for structured verification output.
+# Leave commented for exit-code-only mode (default).
+# default_schema = "verify-schema.json"
+
+# ─── Reflect ───────────────────────────────────────────────────────
+# Macro-level session retrospective — look at recent sessions,
+# assess what is working, and surface machine-readable signals.
+# Commands: tx auto reflect
+[reflect]
+
+# LLM provider for `tx auto reflect --analyze`
+# "auto" = auto-detect from available env vars (default)
+# "claude" = uses ANTHROPIC_API_KEY
+# "codex" = uses OPENAI_API_KEY
+provider = "auto"
+
+# Model for analysis tier
+# model = "claude-opus-4-6"
+
+# Default number of sessions to analyze
+default_sessions = 10
+
+# Whether to include transcript parsing by default
+include_transcripts = false
+
+# ─── Reviews ──────────────────────────────────────────────────────
+# Config-gated design-doc review triggers.
+# When all linked tasks for a design doc are completed, Ralph can
+# trigger an automated review via a configured runtime (e.g. Pi).
+# See DD-039 for specification.
+[reviews.design_docs]
+
+# Whether design-doc reviews are enabled.
+enabled = false
+
+# Review runtime: "pi" or "custom".
+runtime = "pi"
+
+# Transport for review execution: "rpc" (preferred) or "sdk".
+transport = "rpc"
+
+# Prompt template name for the review (e.g. "double-check").
+template = "double-check"
+
+# Whether a failing review blocks the design doc from being verified.
+blocking = false
+
+# Whether to create follow-up tasks when a review fails.
+create_followup_tasks = true
+
+# Whether to re-trigger a review when linked tasks are reopened
+# after a previous review passed.
+retrigger_on_task_reopen = true

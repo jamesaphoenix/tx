@@ -11,9 +11,18 @@ Use when the user is working in PRDs, DDs, invariants, decision tracking, or mar
 
 ## Quick Start
 
-- `tx doc add prd <name> --title "Title"`
-- `tx spec discover`
-- `tx spec status`
+- `tx doc add prd <feature>-prd --title "Title"`
+- `tx doc sync <doc-ref>`
+- `tx spec discover --doc <doc-ref>`
+- `tx spec lint`
+
+## Operational Safety
+
+- Treat `<doc-ref>` as a globally unique name, a kind-scoped reference such as `design/auth-flow`, or a stable `doc_id`. Prefer distinct companion names such as `<feature>-prd` and `<feature>-design`; use `tx doc list --json` to recover IDs for legacy duplicate slugs.
+- `tx doc sync <doc-ref>` refreshes the stored document record, document-derived invariants, and generated index in one transaction.
+- `tx spec discover` reports every stale tag, comment, and manifest mapping by identity. It retains them by default; use `--dry-run` to preview all writes and `--prune` to delete stale auto-discovered mappings explicitly. Manual mappings are always preserved.
+- Task state can remain shared while derived spec projections are scoped to the content checkout. Use `--state-root <main-repo>` with `--content-root <worktree>` when the roots differ, and confirm both with `tx diag doctor`.
+- Clear drift with `tx doc sync <doc-ref>`. Never remove and recreate a document merely to update its hash.
 
 ## Included Commands
 
@@ -27,10 +36,10 @@ Use when the user is working in PRDs, DDs, invariants, decision tracking, or mar
 - `tx doc list`: List all docs
 - `tx doc lock`: Lock a doc version
 - `tx doc patch`: Create a design patch doc
-- `tx doc rm`: Remove latest mutable doc version
+- `tx doc remove`: Alias for tx doc rm
 - `tx doc rm`: Remove latest mutable doc version
 - `tx doc show`: Show doc details
-- `tx doc sync`: Re-read docs from disk and update DB hashes
+- `tx doc sync`: Atomically refresh docs, invariants, and index
 - `tx doc validate`: Validate doc/task coverage and index search metadata
 - `tx doc version`: Create new version from locked doc
 - `tx invariant is deprecated. Use 'tx spec' instead.`

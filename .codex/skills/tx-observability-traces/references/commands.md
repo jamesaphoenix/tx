@@ -66,16 +66,20 @@ Examples:
 ## tx diag doctor
 
 ```text
-tx diag doctor - Run system health checks
+tx diag doctor - Run system and worktree health checks
 
 Usage: tx diag doctor [options]
 
 Runs database validation, schema version checks, WAL mode, service wiring,
-stale claims, task counts, and API key detection.
+stale claims, task counts, API key detection, and worktree spec-state checks.
+Reports the database path, state root, content root, branch, commit, missing
+registered spec files, and every mapping a future discovery prune would remove.
 
 Options:
   --verbose, -v  Show details for each check
   --fix          Attempt to auto-fix issues
+  --state-root <dir>    Root containing shared .tx task state
+  --content-root <dir>  Checkout containing specs and source files
   --json         Output as JSON
   --help         Show this help
 
@@ -122,17 +126,22 @@ Database validation (formerly 'tx validate'):
   - Orphaned dependency detection
   - Invalid status values scan
 
-System diagnostics:
+System and worktree diagnostics:
   - Database file readable, WAL mode enabled
   - Schema version matches expected
   - Effect services wired correctly
   - Stale claims and workers
   - Task and learning counts
   - ANTHROPIC_API_KEY availability
+  - Resolved database, state root, content root, branch, and commit
+  - Missing registered spec files in the selected checkout
+  - Prospective spec-discovery prune count and mapping identities
 
 Options:
   --fix          Auto-fix fixable DB issues (orphaned deps, invalid statuses)
   --verbose, -v  Include detailed output for each check
+  --state-root <dir>    Root containing shared .tx task state
+  --content-root <dir>  Checkout containing specs and source files
   --json         Output as JSON
   --help         Show this help
 

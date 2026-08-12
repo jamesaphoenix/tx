@@ -1,0 +1,50 @@
+{
+  "id": "tx-9b61c0e5cba2",
+  "title": "Implement Ralph bundle",
+  "description": "Primary task for Ralph context bundle coverage",
+  "status": "active",
+  "parentId": null,
+  "score": 0,
+  "createdAt": "2026-08-12T13:11:58.800Z",
+  "updatedAt": "2026-08-12T13:12:06.848Z",
+  "completedAt": null,
+  "assigneeType": null,
+  "assigneeId": null,
+  "assignedAt": null,
+  "assignedBy": null,
+  "metadata": {},
+  "blockedBy": [],
+  "blocks": [],
+  "children": [],
+  "isReady": true,
+  "groupContext": null,
+  "effectiveGroupContext": null,
+  "effectiveGroupContextSourceTaskId": null,
+  "orchestrationStatus": "running",
+  "claimedBy": "ralph-main",
+  "claimExpiresAt": "2026-08-12T13:42:06.473Z",
+  "failedAttempts": 0,
+  "linkedDocs": [
+    {
+      "docId": "doc-bb0f2ae91a1a",
+      "name": "ralph-context-prd",
+      "title": "Ralph Context PRD",
+      "kind": "prd",
+      "version": 1,
+      "status": "changing",
+      "filePath": "prd/ralph-context-prd.md",
+      "linkType": "implements"
+    },
+    {
+      "docId": "doc-fe6990bab078",
+      "name": "ralph-context-design",
+      "title": "Ralph Context Design",
+      "kind": "design",
+      "version": 1,
+      "status": "changing",
+      "filePath": "design/ralph-context-design.md",
+      "linkType": "references"
+    }
+  ],
+  "attempts": []
+}

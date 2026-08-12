@@ -1,6 +1,6 @@
 {
   "generator": "tx skills generate",
-  "version": "0.12.0",
+  "version": "0.17.0",
   "target": "codex",
   "installRoot": ".codex/skills",
   "skillCount": 19,
@@ -10,7 +10,7 @@
       "id": "tx-core-loop",
       "title": "tx Core Loop",
       "installPath": ".codex/skills/tx-core-loop",
-      "checksum": "48fef66c7667283038c63b577a0ceb9fbd739eb8fed46ede18ab4667cdd71875",
+      "checksum": "c1596af3282ac4e3a7f273852cb984e3b38f4601f21462d8fccce2ca97a0217d",
       "commandKeys": [
         "add",
         "bulk",
@@ -121,7 +121,7 @@
       "id": "tx-messaging-pins",
       "title": "tx Messaging And Pins",
       "installPath": ".codex/skills/tx-messaging-pins",
-      "checksum": "2be0f1904391c3f278e109cd88d1a555b29d10030636f09dd8f6d892f5bebf28",
+      "checksum": "7efb791fa38298184d6f3f1c2ebb6accf123fc7e4442aace689fbf450ffba206",
       "commandKeys": [
         "ack",
         "ack all",
@@ -150,7 +150,7 @@
       "id": "tx-docs-specs",
       "title": "tx Docs And Specs",
       "installPath": ".codex/skills/tx-docs-specs",
-      "checksum": "1073d22719543579355df7d55cb7f323e4dce6d7d3c360955132beacd1d3cccc",
+      "checksum": "f4b2b912cbb63b2327061d1230a110315f71379b330457d4e631c3d7c767f824",
       "commandKeys": [
         "decision",
         "decompose",
@@ -217,7 +217,7 @@
       "id": "tx-observability-traces",
       "title": "tx Observability And Traces",
       "installPath": ".codex/skills/tx-observability-traces",
-      "checksum": "dae760b80b68265785bb5ac21190d545f30c5259dab43766c4eec364986c43cb",
+      "checksum": "ec97cbb09861b8ee08e02e601ef2ed3765ef59424d495478e47b78d94942f762",
       "commandKeys": [
         "dashboard",
         "diag",
@@ -300,7 +300,7 @@
       "id": "decompose-spec",
       "title": "Decompose Spec",
       "installPath": ".codex/skills/decompose-spec",
-      "checksum": "4435137b954659646aa95826f814ec5abff4d3fdf24f665c7e63f2b75b6e0551",
+      "checksum": "7a26757e65c8efedc2040d28cd7fbf6d78aa29121ea85c9903932da92e6f4aae",
       "commandKeys": [],
       "source": "bundled"
     },
@@ -308,7 +308,7 @@
       "id": "design-doc",
       "title": "Design Doc",
       "installPath": ".codex/skills/design-doc",
-      "checksum": "2de9d6731734dbdc7ed0d1516edfb41916bcf113622b339eaa4668d56e00a362",
+      "checksum": "0459cab576261764d1886fce838d68f4fac9003c90cc5479f29b3b7cdcec47c6",
       "commandKeys": [],
       "source": "bundled"
     },
@@ -316,7 +316,7 @@
       "id": "map-invariants",
       "title": "Map Invariants",
       "installPath": ".codex/skills/map-invariants",
-      "checksum": "3dd0cfd8de6e31372cf6a762b49d857b5f994351b36e02f60471e6e94cc6e316",
+      "checksum": "15d71f00abb80954c4282d25d43e64cd14f607b8595fcccf2ae874a257b7770e",
       "commandKeys": [],
       "source": "bundled"
     },
@@ -324,7 +324,7 @@
       "id": "overview-spec",
       "title": "Overview Spec",
       "installPath": ".codex/skills/overview-spec",
-      "checksum": "ad016eaa0df88ee2e69a2b8317ff1d517256833ce8019bca0dedc3c3e3df052b",
+      "checksum": "4676b55515b8d53bdc628c7f3aa822dd51aa6c4579c8e3046dcadfa062357f96",
       "commandKeys": [],
       "source": "bundled"
     },
@@ -332,7 +332,7 @@
       "id": "prd",
       "title": "Product Requirements Document",
       "installPath": ".codex/skills/prd",
-      "checksum": "4d9becc267e3278e616f6c5b7cb01183e33951397ad805611138ea9ce8dacded",
+      "checksum": "01c6c951ccdf6dda415dc6df04194371c5a66c10213f5ca55c47bc64ab503966",
       "commandKeys": [],
       "source": "bundled"
     },
@@ -340,7 +340,7 @@
       "id": "ralph-loop",
       "title": "Ralph Loop",
       "installPath": ".codex/skills/ralph-loop",
-      "checksum": "5296d4d160ccf29b81e15a33bd180743ec23e0808f96b69a8437f46f3d244272",
+      "checksum": "2bf45b5497c1e9a5ef6d36af715d3e4063581088ff4abd1506c135034ac90593",
       "commandKeys": [],
       "source": "bundled"
     },
@@ -348,7 +348,7 @@
       "id": "skills-sync",
       "title": "Skills Sync",
       "installPath": ".codex/skills/skills-sync",
-      "checksum": "fe502a37db8e8a19ff06cd5aab6aca343e0c8d9e623027caff480a089e25103e",
+      "checksum": "9c2227a05617e6b8efb529e3bc011753de1628ea7f7599a7685f43f98f0c33c9",
       "commandKeys": [],
       "source": "bundled"
     },
@@ -364,7 +364,7 @@
       "id": "verify-invariants",
       "title": "Verify Invariants",
       "installPath": ".codex/skills/verify-invariants",
-      "checksum": "3af04cf655d18c38d073e19b83a7bef002c52ef5b33289769a7245ea4c53f523",
+      "checksum": "d02bf0fb029b56d3c51d8a6aa5e28e24407c32c3622fb7fdb4d7c0c893655ccb",
       "commandKeys": [],
       "source": "bundled"
     }

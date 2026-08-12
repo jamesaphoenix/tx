@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+STATE_DIR="${RALPH_E2E_STATE_DIR:?}"
+PROMPT="${!#}"
+mkdir -p "$STATE_DIR"
+printf '%s\n' "$*" > "$STATE_DIR/codex-argv.log"
+printf '%s' "$PROMPT" > "$STATE_DIR/prompt-last.txt"
+if [ ! -f "$STATE_DIR/prompt-initial.txt" ]; then
+  printf '%s' "$PROMPT" > "$STATE_DIR/prompt-initial.txt"
+fi
+TASK_ID="$(printf '%s\n' "$PROMPT" | sed -n 's/^Your assigned task: \([^[:space:]]*\).*$/\1/p' | head -n 1)"
+if [ -n "$TASK_ID" ]; then
+  bun apps/cli/src/cli.ts done "$TASK_ID" >/dev/null 2>&1 || true
+fi
+exit 0

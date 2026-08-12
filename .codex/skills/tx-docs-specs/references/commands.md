@@ -64,7 +64,7 @@ Options:
 
 Examples:
   tx decompose auth-flow-design
-  tx decompose auth-flow-design --runtime claude --max-tasks 10
+  tx decompose auth-flow-design --runtime claude
   tx decompose auth-flow-design --parent tx-abc123 --runtime codex
   tx decompose auth-flow-design --dry-run --json
 ```
@@ -267,12 +267,12 @@ Examples:
   tx doc patch auth-impl auth-impl-v2 --title "Auth v2 Migration"
 ```
 
-## tx doc rm
+## tx doc remove
 
 ```text
-tx doc rm - Remove latest mutable doc version
+tx doc remove - Alias for tx doc rm
 
-Usage: tx doc rm <name> [--json]
+Usage: tx doc remove <name> [--json]
 
 Alias: 'tx doc remove <name>'
 
@@ -287,7 +287,6 @@ Options:
   --help    Show this help
 
 Examples:
-  tx doc rm auth-flow
   tx doc remove auth-flow --json
 ```
 
@@ -339,12 +338,14 @@ Examples:
 ## tx doc sync
 
 ```text
-tx doc sync - Re-read docs from disk and update DB hashes
+tx doc sync - Atomically refresh docs, invariants, and index
 
 Usage: tx doc sync [name] [--json]
 
-Re-syncs doc hashes in the database from the current file content on disk.
-Use this after editing spec files directly to clear drift warnings.
+Validates all selected markdown first, then refreshes document hashes,
+checkout-scoped document-derived invariants, and specs/index.md as one unit.
+If any selected document or index write fails, database and generated-file
+changes are rolled back. Use this after editing specs directly.
 
 Arguments:
   [name]  Optional. Sync a single doc by name. Omit to sync all docs.
@@ -523,7 +524,7 @@ Options:
 ```text
 tx spec discover - Refresh doc-derived invariants and upsert test mappings
 
-Usage: tx spec discover [--doc <name>] [--patterns <glob1,glob2,...>] [--json]
+Usage: tx spec discover [--doc <name>] [--patterns <glob1,glob2,...>] [--dry-run] [--prune] [--json]
 
 Refreshes derived invariants from docs first, then scans configured test
 patterns for [INV-*], _INV_*, and @spec annotations. Also imports
@@ -532,13 +533,21 @@ patterns for [INV-*], _INV_*, and @spec annotations. Also imports
 Without `--doc`, refreshes all docs before scanning. With `--doc`,
 refreshes and discovers for that doc scope.
 
+Stale auto-discovered mappings are always reported by identity. They are only
+deleted when `--prune` is supplied. `--dry-run` performs no invariant or
+mapping writes.
+
 Options:
   --doc <name>                 Sync/discover with doc focus
   --patterns, -p <csv>         Override pattern list for this run
+  --dry-run                    Preview mappings and prospective pruning only
+  --prune                      Delete stale auto-discovered mappings explicitly
+  --no-prune                   Explicitly retain stale mappings (the default)
   --json                       Output as JSON
 
 Examples:
-  tx spec discover
+  tx spec discover --dry-run
+  tx spec discover --prune
   tx spec discover --doc auth-flow
   tx spec discover --patterns "test/**/*.test.ts,spec/**/*.py" --json
 ```

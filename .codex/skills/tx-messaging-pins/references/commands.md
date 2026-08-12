@@ -118,7 +118,7 @@ tx msg inbox - Read messages from a channel
 
 Usage: tx msg inbox <channel> [options]
 
-Pure read — no side effects, no status changes.
+Pure read - no side effects, no status changes.
 
 Options:
   --after <id>        Cursor: only messages after this ID
