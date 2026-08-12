@@ -32,7 +32,7 @@ Skills:         tx skills <generate|sync>
 Diagnostics:    tx diag <stats|doctor|dashboard>
 Other:          tx cycle, tx decompose, tx decision, tx utils, tx md-export, tx group-context
 
-Options: --json, --db <path>, --help, --version
+Options: --json, --db <path>, --state-root <dir>, --content-root <dir>, --help, --version
 Run 'tx help <command>' for details.
 Run 'tx help --json' or 'tx schema <command>' for machine-readable command discovery.
 
@@ -334,7 +334,7 @@ Examples:
 
 Usage: tx msg inbox <channel> [options]
 
-Pure read — no side effects, no status changes.
+Pure read - no side effects, no status changes.
 
 Options:
   --after <id>        Cursor: only messages after this ID
@@ -418,16 +418,20 @@ Examples:
   tx diag stats
   tx diag stats --json`,
 
-  "diag doctor": `tx diag doctor - Run system health checks
+  "diag doctor": `tx diag doctor - Run system and worktree health checks
 
 Usage: tx diag doctor [options]
 
 Runs database validation, schema version checks, WAL mode, service wiring,
-stale claims, task counts, and API key detection.
+stale claims, task counts, API key detection, and worktree spec-state checks.
+Reports the database path, state root, content root, branch, commit, missing
+registered spec files, and every mapping a future discovery prune would remove.
 
 Options:
   --verbose, -v  Show details for each check
   --fix          Attempt to auto-fix issues
+  --state-root <dir>    Root containing shared .tx task state
+  --content-root <dir>  Checkout containing specs and source files
   --json         Output as JSON
   --help         Show this help
 
@@ -1999,17 +2003,22 @@ Database validation (formerly 'tx validate'):
   - Orphaned dependency detection
   - Invalid status values scan
 
-System diagnostics:
+System and worktree diagnostics:
   - Database file readable, WAL mode enabled
   - Schema version matches expected
   - Effect services wired correctly
   - Stale claims and workers
   - Task and learning counts
   - ANTHROPIC_API_KEY availability
+  - Resolved database, state root, content root, branch, and commit
+  - Missing registered spec files in the selected checkout
+  - Prospective spec-discovery prune count and mapping identities
 
 Options:
   --fix          Auto-fix fixable DB issues (orphaned deps, invalid statuses)
   --verbose, -v  Include detailed output for each check
+  --state-root <dir>    Root containing shared .tx task state
+  --content-root <dir>  Checkout containing specs and source files
   --json         Output as JSON
   --help         Show this help
 
@@ -2247,9 +2256,9 @@ Examples:
   tx doc rm auth-flow
   tx doc rm auth-flow --json`,
 
-  "doc remove": `tx doc rm - Remove latest mutable doc version
+  "doc remove": `tx doc remove - Alias for tx doc rm
 
-Usage: tx doc rm <name> [--json]
+Usage: tx doc remove <name> [--json]
 
 Alias: 'tx doc remove <name>'
 
@@ -2264,7 +2273,6 @@ Options:
   --help    Show this help
 
 Examples:
-  tx doc rm auth-flow
   tx doc remove auth-flow --json`,
 
   "doc lock": `tx doc lock - Lock a doc version
@@ -2378,12 +2386,14 @@ Examples:
   tx doc validate
   tx doc validate --json`,
 
-  "doc sync": `tx doc sync - Re-read docs from disk and update DB hashes
+  "doc sync": `tx doc sync - Atomically refresh docs, invariants, and index
 
 Usage: tx doc sync [name] [--json]
 
-Re-syncs doc hashes in the database from the current file content on disk.
-Use this after editing spec files directly to clear drift warnings.
+Validates all selected markdown first, then refreshes document hashes,
+checkout-scoped document-derived invariants, and specs/index.md as one unit.
+If any selected document or index write fails, database and generated-file
+changes are rolled back. Use this after editing specs directly.
 
 Arguments:
   [name]  Optional. Sync a single doc by name. Omit to sync all docs.
@@ -2436,7 +2446,7 @@ Examples:
 
   "spec discover": `tx spec discover - Refresh doc-derived invariants and upsert test mappings
 
-Usage: tx spec discover [--doc <name>] [--patterns <glob1,glob2,...>] [--json]
+Usage: tx spec discover [--doc <name>] [--patterns <glob1,glob2,...>] [--dry-run] [--prune] [--json]
 
 Refreshes derived invariants from docs first, then scans configured test
 patterns for [INV-*], _INV_*, and @spec annotations. Also imports
@@ -2445,13 +2455,21 @@ patterns for [INV-*], _INV_*, and @spec annotations. Also imports
 Without \`--doc\`, refreshes all docs before scanning. With \`--doc\`,
 refreshes and discovers for that doc scope.
 
+Stale auto-discovered mappings are always reported by identity. They are only
+deleted when \`--prune\` is supplied. \`--dry-run\` performs no invariant or
+mapping writes.
+
 Options:
   --doc <name>                 Sync/discover with doc focus
   --patterns, -p <csv>         Override pattern list for this run
+  --dry-run                    Preview mappings and prospective pruning only
+  --prune                      Delete stale auto-discovered mappings explicitly
+  --no-prune                   Explicitly retain stale mappings (the default)
   --json                       Output as JSON
 
 Examples:
-  tx spec discover
+  tx spec discover --dry-run
+  tx spec discover --prune
   tx spec discover --doc auth-flow
   tx spec discover --patterns "test/**/*.test.ts,spec/**/*.py" --json`,
 

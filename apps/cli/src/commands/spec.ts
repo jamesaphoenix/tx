@@ -111,9 +111,18 @@ const specDiscover = (_pos: string[], flags: Flags) =>
     const patterns = patternsRaw
       ? patternsRaw.split(",").map((x) => x.trim()).filter(Boolean)
       : undefined
+    const dryRun = flag(flags, "dry-run")
+    const prune = flag(flags, "prune")
+    if (prune && flag(flags, "no-prune")) {
+      console.error("Use either --prune or --no-prune, not both")
+      throw new CliExitError(1)
+    }
+    const rootDir = typeof flags["content-root"] === "string"
+      ? flags["content-root"]
+      : process.cwd()
 
     const svc = yield* SpecTraceService
-    const result = yield* svc.discover({ doc, patterns })
+    const result = yield* svc.discover({ doc, patterns, rootDir, dryRun, prune })
 
     if (flag(flags, "json")) {
       console.log(toJson(result))
@@ -121,6 +130,17 @@ const specDiscover = (_pos: string[], flags: Flags) =>
       console.log(`Scanned ${result.scannedFiles} file(s)`)
       console.log(`Discovered links: ${result.discoveredLinks}`)
       console.log(`Upserted links: ${result.upserted}`)
+      console.log(`Prospective prunes: ${result.prospectivePruneCount}`)
+      for (const mapping of result.prospectivePrunes) {
+        console.log(`  - ${mapping.invariantId} -> ${mapping.testId} [${mapping.discovery}]`)
+      }
+      if (result.dryRun) {
+        console.log("Dry run: no mappings were changed")
+      } else if (result.pruneEnabled) {
+        console.log(`Pruned links: ${result.pruned}`)
+      } else if (result.prospectivePruneCount > 0) {
+        console.log("Pruning disabled. Re-run with --prune to remove these mappings.")
+      }
       console.log(`By source: tag=${result.tagLinks}, comment=${result.commentLinks}, manifest=${result.manifestLinks}`)
     }
   })
@@ -417,7 +437,11 @@ const specLint = (_pos: string[], flags: Flags) =>
     const jsonMode = flag(flags, "json")
     const docSvc = yield* DocService
     const specTraceSvc = yield* SpecTraceService
-    const config = readTxConfig()
+    const root = typeof flags["content-root"] === "string"
+      ? flags["content-root"]
+      : process.cwd()
+    const config = readTxConfig(root)
+    const docsPath = resolve(root, config.docs.path)
 
     let hasErrors = false
     type LintIssue = { section: string; severity: "error" | "warn"; message: string; hint?: string }
@@ -432,9 +456,22 @@ const specLint = (_pos: string[], flags: Flags) =>
     const docs = yield* docSvc.list()
     let driftCount = 0
     for (const doc of docs) {
-      const driftWarnings = yield* docSvc.detectDrift(doc.name).pipe(
-        Effect.catchAll(() => Effect.succeed([] as string[]))
+      const driftResult = yield* docSvc.detectDrift(doc.docId).pipe(
+        Effect.map((warnings) => ({ warnings, error: null as unknown | null })),
+        Effect.catchAll((error) => Effect.succeed({ warnings: [] as string[], error }))
       )
+      if (driftResult.error !== null) {
+        const detail = driftResult.error instanceof Error
+          ? driftResult.error.message
+          : String(driftResult.error)
+        addIssue(
+          "drift",
+          "error",
+          `${doc.name} (${doc.docId}): drift resolution failed: ${detail}`
+        )
+        continue
+      }
+      const driftWarnings = driftResult.warnings
       const reportedDriftWarnings = driftWarnings.filter((warning) =>
         shouldReportDriftWarning(doc, warning, config)
       )
@@ -461,7 +498,7 @@ const specLint = (_pos: string[], flags: Flags) =>
     // --- 4. EARS lint (validate PRD requirements) ---
     const prdDocs = docs.filter(d => d.kind === "prd")
     for (const doc of prdDocs) {
-      const absPath = resolve(config.docs.path, doc.filePath)
+      const absPath = resolve(docsPath, doc.filePath)
       if (!existsSync(absPath)) {
         addIssue("ears", "error", `${doc.name}: file not found at ${doc.filePath}`)
         continue

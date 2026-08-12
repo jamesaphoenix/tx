@@ -141,6 +141,8 @@ export class SpecTraceService extends Context.Tag("SpecTraceService")<
       rootDir?: string
       patterns?: readonly string[]
       doc?: string
+      dryRun?: boolean
+      prune?: boolean
     }) => Effect.Effect<DiscoverResult, DatabaseError | ValidationError>
 
     readonly link: (invariantId: string, testFile: string, testName?: string, framework?: string | null) => Effect.Effect<SpecTest, DatabaseError | ValidationError>
@@ -173,7 +175,9 @@ export class SpecTraceService extends Context.Tag("SpecTraceService")<
   }
 >() {}
 
-export const SpecTraceServiceLive = Layer.effect(
+export const makeSpecTraceServiceLive = (
+  contentRoot?: string
+) => Layer.effect(
   SpecTraceService,
   Effect.gen(function* () {
     const repo = yield* SpecTraceRepository
@@ -237,9 +241,15 @@ export const SpecTraceServiceLive = Layer.effect(
       })
 
     return {
-      discover: (options) =>
+      discover: (options?: {
+        rootDir?: string
+        patterns?: readonly string[]
+        doc?: string
+        dryRun?: boolean
+        prune?: boolean
+      }) =>
         Effect.gen(function* () {
-          const rootDir = resolve(options?.rootDir ?? process.cwd())
+          const rootDir = resolve(options?.rootDir ?? contentRoot ?? process.cwd())
           const config = readTxConfig(rootDir)
           const patterns = options?.patterns ?? config.spec.testPatterns ?? defaultSpecTestPatterns()
 
@@ -249,13 +259,18 @@ export const SpecTraceServiceLive = Layer.effect(
             }))
           }
 
-          yield* docService.syncInvariants(options?.doc).pipe(
-            Effect.catchTag("DocNotFoundError", (error) =>
-              Effect.fail(new ValidationError({
-                reason: `Document '${error.name}' not found while syncing invariants`,
-              }))
+          const dryRun = options?.dryRun ?? false
+          const prune = options?.prune ?? false
+
+          if (!dryRun) {
+            yield* docService.syncInvariants(options?.doc).pipe(
+              Effect.catchTag("DocNotFoundError", (error) =>
+                Effect.fail(new ValidationError({
+                  reason: `Document '${error.name}' not found while syncing invariants`,
+                }))
+              )
             )
-          )
+          }
 
           const discovered = yield* Effect.tryPromise({
             try: () => discoverSpecTests(rootDir, patterns),
@@ -268,10 +283,17 @@ export const SpecTraceServiceLive = Layer.effect(
 
           const validRows = discovered.discovered.filter((row) => activeSet.has(row.invariantId))
 
-          const persisted = yield* repo.syncDiscoveredSpecTests({
+          const prospectivePrunes = yield* repo.previewDiscoveredSpecTestPrune({
             rows: validRows,
             invariantIds: activeInvariantIds,
           })
+          const persisted = dryRun
+            ? { upserted: 0, pruned: 0, prunedMappings: [] as const }
+            : yield* repo.syncDiscoveredSpecTests({
+              rows: validRows,
+              invariantIds: activeInvariantIds,
+              prune,
+            })
 
           let tagLinks = 0
           let commentLinks = 0
@@ -286,15 +308,21 @@ export const SpecTraceServiceLive = Layer.effect(
             scannedFiles: discovered.scannedFiles,
             discoveredLinks: validRows.length,
             upserted: persisted.upserted,
+            dryRun,
+            pruneEnabled: prune,
+            prospectivePruneCount: prospectivePrunes.length,
+            prospectivePrunes,
+            pruned: persisted.pruned,
+            prunedMappings: persisted.prunedMappings,
             tagLinks,
             commentLinks,
             manifestLinks,
-          }
+          } satisfies DiscoverResult
         }),
 
       link: (invariantId, testFile, testName, framework) =>
         Effect.gen(function* () {
-          const rootDir = resolve(process.cwd())
+          const rootDir = resolve(contentRoot ?? process.cwd())
           const normalizedFile = toNormalizedRelativePath(rootDir, testFile)
           const normalizedName = testName && testName.trim().length > 0 ? testName.trim() : null
           const testId = toCanonicalTestId(normalizedFile, normalizedName)
@@ -514,6 +542,8 @@ export const SpecTraceServiceLive = Layer.effect(
     }
   })
 )
+
+export const SpecTraceServiceLive = makeSpecTraceServiceLive()
 
 const parseGenericBatch = (value: unknown): BatchRunInput[] => {
   if (!Array.isArray(value)) {

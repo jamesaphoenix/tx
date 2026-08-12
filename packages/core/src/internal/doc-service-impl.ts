@@ -517,6 +517,13 @@ export class DocService extends Context.Tag("DocService")<
     syncInvariants: (
       docName?: string
     ) => Effect.Effect<Invariant[], DocNotFoundError | ValidationError | DatabaseError>
+    syncFromDisk: (
+      docName?: string
+    ) => Effect.Effect<{
+      synced: readonly Doc[]
+      missing: readonly Doc[]
+      invariants: readonly Invariant[]
+    }, DocNotFoundError | DocLockedError | InvalidDocYamlError | ValidationError | DatabaseError>
     listInvariants: (filter?: {
       subsystem?: string
       enforcement?: string
@@ -531,14 +538,31 @@ export class DocService extends Context.Tag("DocService")<
   }
 >() {}
 
-export const DocServiceLive = Layer.effect(
+export const makeDocServiceLive = (
+  contentRoot?: string
+) => Layer.effect(
   DocService,
   Effect.gen(function* () {
     const docRepo = yield* DocRepository
 
+    const getContentRoot = (): string => contentRoot ?? process.cwd()
+
     const getDocsPath = (): string => {
-      const config = readTxConfig()
-      return resolve(config.docs.path)
+      const root = getContentRoot()
+      const config = readTxConfig(root)
+      return resolve(root, config.docs.path)
+    }
+
+    const resolveRegisteredDocPath = (docsPath: string, doc: Doc): string => {
+      const docPath = resolvePathWithin(docsPath, doc.filePath, {
+        useRealpath: true,
+      })
+      if (!docPath) {
+        throw new ValidationError({
+          reason: `Registered file path '${doc.filePath}' for '${doc.name}' escapes the docs root.`,
+        })
+      }
+      return docPath
     }
 
     const ensureDir = (filePath: string): void => {
@@ -582,7 +606,7 @@ export const DocServiceLive = Layer.effect(
       })
 
     const ensureDocIdInFile = (doc: Doc, docsPath: string): string => {
-      const docPath = resolveDocPath(docsPath, doc.kind, doc.name)
+      const docPath = resolveRegisteredDocPath(docsPath, doc)
       if (!existsSync(docPath)) {
         throw new DocNotFoundError({ name: doc.name })
       }
@@ -670,12 +694,67 @@ export const DocServiceLive = Layer.effect(
         if (kinds.length > 1) {
           return yield* Effect.fail(
             new ValidationError({
-              reason: `Doc reference '${ref}' is ambiguous across kinds (${kinds.join(", ")}). Use doc_id instead.`,
+              reason: `Doc reference '${ref}' is ambiguous across kinds (${kinds.join(", ")}). Use kind/name or doc_id instead.`,
             })
           )
         }
         return yield* ensurePersistedDocId(matches[0]!)
       })
+
+    const prepareDocContent = (doc: Doc, content: string) => {
+      if (doc.status === "locked") {
+        throw new DocLockedError({ name: doc.name, version: doc.version })
+      }
+
+      const rawDocIds = collectFrontmatterDocIdValues(content)
+      const uniqueRawDocIds = [...new Set(rawDocIds)]
+      if (uniqueRawDocIds.length > 1) {
+        throw new InvalidDocYamlError({
+          name: doc.name,
+          reason: `Frontmatter contains conflicting doc_id values (${uniqueRawDocIds.join(", ")}). Keep exactly one doc_id entry matching doc_id '${doc.docId}'.`,
+        })
+      }
+      if (uniqueRawDocIds[0] && uniqueRawDocIds[0] !== doc.docId) {
+        throw new InvalidDocYamlError({
+          name: doc.name,
+          reason: `Frontmatter doc_id '${uniqueRawDocIds[0]}' does not match doc_id '${doc.docId}'. Use exactly: doc_id: ${doc.docId}`,
+        })
+      }
+
+      const normalizedContent = upsertDocIdInMarkdown(content, doc.docId)
+      const parsed = parseMarkdownSpecDocContent(doc.name, normalizedContent)
+      const parsedKind = parseSpecTypeAsDocKind(doc.name, parsed.frontmatter.spec_type)
+
+      if (parsed.frontmatter.name !== doc.name) {
+        throw new InvalidDocYamlError({
+          name: doc.name,
+          reason: `Frontmatter name '${parsed.frontmatter.name}' does not match doc '${doc.name}'.`,
+        })
+      }
+      if (parsedKind !== doc.kind) {
+        throw new InvalidDocYamlError({
+          name: doc.name,
+          reason: `Frontmatter spec_type '${parsed.frontmatter.spec_type}' does not match existing kind '${doc.kind}'.`,
+        })
+      }
+      if (parsed.frontmatter.doc_id && parsed.frontmatter.doc_id !== doc.docId) {
+        throw new InvalidDocYamlError({
+          name: doc.name,
+          reason: `Frontmatter doc_id '${parsed.frontmatter.doc_id}' does not match doc_id '${doc.docId}'.`,
+        })
+      }
+
+      const docsPath = getDocsPath()
+      return {
+        doc,
+        parsed,
+        normalizedContent,
+        originalContent: content,
+        hash: computeDocHash(normalizedContent),
+        title: parsed.frontmatter.title,
+        filePath: resolveRegisteredDocPath(docsPath, doc),
+      }
+    }
 
     /** Validate a single markdown doc and return its canonical file path. */
     const validateDocFile = (doc: Doc, docsPath: string): string => {
@@ -848,15 +927,10 @@ export const DocServiceLive = Layer.effect(
       })
     }
 
-    /** Sync invariants from a single markdown doc into DB. */
-    function syncInvariantsForDoc(doc: Doc) {
-      return Effect.gen(function* () {
-        const docsPath = getDocsPath()
-        const persistedDoc = yield* ensurePersistedDocId(doc)
-        const docPath = ensureDocIdInFile(persistedDoc, docsPath)
-        const content = readFileSync(docPath, "utf8")
-        const parsed = parseMarkdownSpecDocContent(persistedDoc.name, content)
-
+    const syncInvariantCandidates = (
+      persistedDoc: Doc,
+      parsed: ReturnType<typeof parseMarkdownSpecDocContent>
+    ) => Effect.gen(function* () {
         const explicit = deriveEmbeddedInvariantCandidates(
           persistedDoc,
           parsed.blocks.invariants
@@ -912,7 +986,94 @@ export const DocServiceLive = Layer.effect(
         yield* docRepo.deprecateInvariantsNotIn(persistedDoc.id, activeIds)
         return synced
       })
+
+    /** Sync invariants from a single markdown doc into DB. */
+    function syncInvariantsForDoc(doc: Doc) {
+      return Effect.gen(function* () {
+        const docsPath = getDocsPath()
+        const persistedDoc = yield* ensurePersistedDocId(doc)
+        const docPath = ensureDocIdInFile(persistedDoc, docsPath)
+        const content = readFileSync(docPath, "utf8")
+        const parsed = parseMarkdownSpecDocContent(persistedDoc.name, content)
+        return yield* syncInvariantCandidates(persistedDoc, parsed)
+      })
     }
+
+    const syncPreparedDocs = (
+      preparedDocs: readonly ReturnType<typeof prepareDocContent>[]
+    ) => Effect.gen(function* () {
+      const docsPath = getDocsPath()
+      const indexMdPath = resolve(docsPath, "index.md")
+      const legacyIndexPath = resolve(docsPath, "index.yml")
+      const pathsToRestore = new Set([
+        indexMdPath,
+        legacyIndexPath,
+        ...preparedDocs.map((prepared) => prepared.filePath),
+      ])
+      const backups = new Map<string, { existed: boolean; content: string | null }>()
+      for (const path of pathsToRestore) {
+        backups.set(path, {
+          existed: existsSync(path),
+          content: existsSync(path) ? readFileSync(path, "utf8") : null,
+        })
+      }
+
+      const restoreFiles = Effect.sync(() => {
+        for (const [path, backup] of backups) {
+          try {
+            if (backup.existed) {
+              ensureDir(path)
+              writeFileSync(path, backup.content ?? "", "utf8")
+            } else if (existsSync(path)) {
+              unlinkSync(path)
+            }
+          } catch {
+            // Preserve the original transaction failure.
+          }
+        }
+      })
+
+      yield* docRepo.beginImmediate()
+      return yield* Effect.gen(function* () {
+        const syncedDocs: Doc[] = []
+        const syncedInvariants: Invariant[] = []
+
+        for (const prepared of preparedDocs) {
+          ensureDir(prepared.filePath)
+          writeFileSync(prepared.filePath, prepared.normalizedContent, "utf8")
+          yield* docRepo.update(prepared.doc.id, {
+            docId: prepared.doc.docId,
+            hash: prepared.hash,
+            title: prepared.title,
+          })
+          yield* docRepo.upsertProjectionSnapshot({
+            docId: prepared.doc.id,
+            contentHash: prepared.hash,
+            title: prepared.title,
+            filePath: prepared.doc.filePath,
+          })
+
+          const updated = yield* docRepo.findById(prepared.doc.id)
+          if (!updated) {
+            return yield* Effect.fail(new DocNotFoundError({ name: prepared.doc.docId }))
+          }
+          const invariants = yield* syncInvariantCandidates(updated, prepared.parsed)
+          syncedDocs.push(updated)
+          syncedInvariants.push(...invariants)
+        }
+
+        yield* generateIndexEffect(docsPath)
+        yield* docRepo.commit()
+        return { docs: syncedDocs, invariants: syncedInvariants }
+      }).pipe(
+        Effect.onError(() =>
+          docRepo.rollback().pipe(
+            Effect.catchAll(() => Effect.void),
+            Effect.zipRight(restoreFiles)
+          )
+        )
+      )
+    })
 
     return {
       create: (input) =>
@@ -1089,71 +1250,15 @@ export const DocServiceLive = Layer.effect(
               new DocLockedError({ name, version: doc.version })
             )
           }
-          const rawDocIds = collectFrontmatterDocIdValues(content)
-          const uniqueRawDocIds = [...new Set(rawDocIds)]
-          if (uniqueRawDocIds.length > 1) {
-            return yield* Effect.fail(
-              new InvalidDocYamlError({
-                name,
-                reason: `Frontmatter contains conflicting doc_id values (${uniqueRawDocIds.join(", ")}). Keep exactly one doc_id entry matching doc_id '${doc.docId}'.`,
-              })
-            )
-          }
-          if (uniqueRawDocIds[0] && uniqueRawDocIds[0] !== doc.docId) {
-            return yield* Effect.fail(
-              new InvalidDocYamlError({
-                name,
-                reason: `Frontmatter doc_id '${uniqueRawDocIds[0]}' does not match doc_id '${doc.docId}'. Use exactly: doc_id: ${doc.docId}`,
-              })
-            )
-          }
-          const normalizedContent = upsertDocIdInMarkdown(content, doc.docId)
-          const parsedDoc = parseMarkdownSpecDocContent(name, normalizedContent)
-          const frontmatter = parsedDoc.frontmatter
-          const parsedKind = parseSpecTypeAsDocKind(name, frontmatter.spec_type)
-
-          if (frontmatter.name !== doc.name) {
-            return yield* Effect.fail(
-              new InvalidDocYamlError({
-                name,
-                reason: `Frontmatter name '${frontmatter.name}' does not match doc '${doc.name}'.`,
-              })
-            )
-          }
-
-          if (parsedKind !== doc.kind) {
-            return yield* Effect.fail(
-              new InvalidDocYamlError({
-                name,
-                reason: `Frontmatter spec_type '${frontmatter.spec_type}' does not match existing kind '${doc.kind}'.`,
-              })
-            )
-          }
-
-          if (frontmatter.doc_id && frontmatter.doc_id !== doc.docId) {
-            return yield* Effect.fail(
-              new InvalidDocYamlError({
-                name,
-                reason: `Frontmatter doc_id '${frontmatter.doc_id}' does not match doc_id '${doc.docId}'.`,
-              })
-            )
-          }
-
-          const hash = computeDocHash(normalizedContent)
-          const docsPath = getDocsPath()
-          const filePath = resolveDocPath(docsPath, doc.kind, doc.name)
-          ensureDir(filePath)
-          writeFileSync(filePath, normalizedContent, "utf8")
-
-          const title = frontmatter.title
-          yield* docRepo.update(doc.id, { docId: doc.docId, hash, title })
-
-          const updated = yield* docRepo.findById(doc.id)
-          if (!updated) {
-            return yield* Effect.fail(new DocNotFoundError({ name }))
-          }
-
-          yield* generateIndexEffect(docsPath)
+          const prepared = yield* Effect.try({
+            try: () => prepareDocContent(doc, content),
+            catch: (cause) => cause instanceof InvalidDocYamlError
+              ? cause
+              : new ValidationError({ reason: String(cause) }),
+          })
+          const synced = yield* syncPreparedDocs([prepared])
+          const updated = synced.docs[0]
+          if (!updated) return yield* Effect.fail(new DocNotFoundError({ name }))
           return updated
         }),
 
@@ -1193,7 +1298,7 @@ export const DocServiceLive = Layer.effect(
             (candidate) => candidate.filePath === doc.filePath
           )
           if (!stillReferenced) {
-            const docPath = resolveDocPath(docsPath, doc.kind, doc.name)
+            const docPath = resolveRegisteredDocPath(docsPath, doc)
             try {
               if (existsSync(docPath)) unlinkSync(docPath)
             } catch {
@@ -1401,9 +1506,11 @@ export const DocServiceLive = Layer.effect(
           if (existsSync(docPath)) {
             const content = readFileSync(docPath, "utf8")
             const currentHash = computeDocHash(content)
-            if (currentHash !== doc.hash) {
+            const snapshot = yield* docRepo.findProjectionSnapshot(doc.id)
+            const expectedHash = snapshot?.contentHash ?? doc.hash
+            if (currentHash !== expectedHash) {
               warnings.push(
-                `Content hash mismatch: DB has ${doc.hash.slice(0, 8)}..., file has ${currentHash.slice(0, 8)}...`
+                `Content hash mismatch: projection has ${expectedHash.slice(0, 8)}..., file has ${currentHash.slice(0, 8)}...`
               )
             }
           } else {
@@ -1449,6 +1556,41 @@ export const DocServiceLive = Layer.effect(
             }
           }
           return synced
+        }),
+
+      syncFromDisk: (docName?) =>
+        Effect.gen(function* () {
+          const docs = docName
+            ? [yield* resolveDocReference(docName)]
+            : yield* docRepo.findAll()
+          const missing: Doc[] = []
+          const prepared: Array<ReturnType<typeof prepareDocContent>> = []
+
+          for (const doc of docs) {
+            const filePath = resolveRegisteredDocPath(getDocsPath(), doc)
+            if (!existsSync(filePath)) {
+              missing.push(doc)
+              continue
+            }
+            const content = readFileSync(filePath, "utf8")
+            const item = yield* Effect.try({
+              try: () => prepareDocContent(doc, content),
+              catch: (cause) => {
+                if (cause instanceof InvalidDocYamlError || cause instanceof DocLockedError) {
+                  return cause
+                }
+                return new ValidationError({ reason: String(cause) })
+              },
+            })
+            prepared.push(item)
+          }
+
+          const result = yield* syncPreparedDocs(prepared)
+          return {
+            synced: result.docs,
+            missing,
+            invariants: result.invariants,
+          }
         }),
 
       listInvariants: (filter?) => docRepo.findInvariants(filter),
@@ -1521,3 +1663,5 @@ export const DocServiceLive = Layer.effect(
     }
   })
 )
+
+export const DocServiceLive = makeDocServiceLive()

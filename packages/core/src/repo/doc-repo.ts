@@ -7,6 +7,9 @@
 import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
 import { DatabaseError, EntityFetchError } from "../errors.js"
+import { legacySpecProjectionContext, type SpecProjectionContext } from "../workspace-context.js"
+import { ensureSpecProjection } from "./spec-projection.js"
+import { coerceDbResult } from "../utils/db-result.js"
 import {
   rowToDoc,
   rowToDocLink,
@@ -42,10 +45,13 @@ export class DocRepository extends Context.Tag("DocRepository")<
   DocRepositoryService
 >() {}
 
-export const DocRepositoryLive = Layer.effect(
+export const makeDocRepositoryLive = (
+  projection: SpecProjectionContext = legacySpecProjectionContext()
+) => Layer.effect(
   DocRepository,
   Effect.gen(function* () {
     const db = yield* SqliteClient
+    const projectionKey = projection.projectionKey
     const getDocsForManyTasksImpl = (taskIds: readonly string[]) =>
       Effect.try({
         try: () => {
@@ -114,6 +120,24 @@ export const DocRepositoryLive = Layer.effect(
       })
 
     return {
+      beginImmediate: () =>
+        Effect.try({
+          try: () => db.exec("BEGIN IMMEDIATE"),
+          catch: (cause) => new DatabaseError({ cause }),
+        }),
+
+      commit: () =>
+        Effect.try({
+          try: () => db.exec("COMMIT"),
+          catch: (cause) => new DatabaseError({ cause }),
+        }),
+
+      rollback: () =>
+        Effect.try({
+          try: () => db.exec("ROLLBACK"),
+          catch: (cause) => new DatabaseError({ cause }),
+        }),
+
       insert: (input: DocInsertInput) =>
         Effect.try({
           try: () => {
@@ -471,11 +495,12 @@ export const DocRepositoryLive = Layer.effect(
       upsertInvariant: (input: InvariantUpsertInput) =>
         Effect.try({
           try: () => {
+            ensureSpecProjection(db, projection)
             const now = new Date().toISOString()
             db.prepare(
-              `INSERT INTO invariants (id, rule, enforcement, doc_id, subsystem, test_ref, lint_rule, prompt_ref, status, created_at, metadata, source, source_ref, pattern, trigger_text, state_text, condition_text, feature, system_name, response, rationale, test_hint)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, '{}', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-               ON CONFLICT(id) DO UPDATE SET
+              `INSERT INTO invariants (projection_key, id, rule, enforcement, doc_id, subsystem, test_ref, lint_rule, prompt_ref, status, created_at, metadata, source, source_ref, pattern, trigger_text, state_text, condition_text, feature, system_name, response, rationale, test_hint)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, '{}', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(projection_key, id) DO UPDATE SET
                  rule = excluded.rule,
                  enforcement = excluded.enforcement,
                  doc_id = excluded.doc_id,
@@ -496,6 +521,7 @@ export const DocRepositoryLive = Layer.effect(
                  rationale = excluded.rationale,
                  test_hint = excluded.test_hint`
             ).run(
+              projectionKey,
               input.id,
               input.rule,
               input.enforcement,
@@ -518,8 +544,8 @@ export const DocRepositoryLive = Layer.effect(
               input.testHint ?? null
             )
             const row = db
-              .prepare<InvariantRow>("SELECT * FROM invariants WHERE id = ?")
-              .get(input.id)
+              .prepare<InvariantRow>("SELECT * FROM invariants WHERE projection_key = ? AND id = ?")
+              .get(projectionKey, input.id)
             if (!row) {
               throw new EntityFetchError({
                 entity: "invariant",
@@ -535,8 +561,8 @@ export const DocRepositoryLive = Layer.effect(
         Effect.try({
           try: () => {
             const row = db
-              .prepare<InvariantRow>("SELECT * FROM invariants WHERE id = ?")
-              .get(id)
+              .prepare<InvariantRow>("SELECT * FROM invariants WHERE projection_key = ? AND id = ?")
+              .get(projectionKey, id)
             return row ? rowToInvariant(row) : null
           },
           catch: (cause) => new DatabaseError({ cause }),
@@ -545,8 +571,8 @@ export const DocRepositoryLive = Layer.effect(
         Effect.try({
           try: () => {
             let sql = "SELECT * FROM invariants"
-            const params: unknown[] = []
-            const conditions: string[] = []
+            const params: unknown[] = [projectionKey]
+            const conditions: string[] = ["projection_key = ?"]
             if (filter?.docId !== undefined) {
               conditions.push("doc_id = ?")
               params.push(filter.docId)
@@ -574,15 +600,15 @@ export const DocRepositoryLive = Layer.effect(
           try: () => {
             if (activeIds.length === 0) {
               db.prepare(
-                "UPDATE invariants SET status = 'deprecated' WHERE doc_id = ? AND status = 'active'"
-              ).run(docId)
+                "UPDATE invariants SET status = 'deprecated' WHERE projection_key = ? AND doc_id = ? AND status = 'active'"
+              ).run(projectionKey, docId)
               return
             }
             const placeholders = activeIds.map(() => "?").join(", ")
             db.prepare(
               `UPDATE invariants SET status = 'deprecated'
-               WHERE doc_id = ? AND status = 'active' AND id NOT IN (${placeholders})`
-            ).run(docId, ...activeIds)
+               WHERE projection_key = ? AND doc_id = ? AND status = 'active' AND id NOT IN (${placeholders})`
+            ).run(projectionKey, docId, ...activeIds)
           },
           catch: (cause) => new DatabaseError({ cause }),
         }),
@@ -594,12 +620,13 @@ export const DocRepositoryLive = Layer.effect(
       ) =>
         Effect.try({
           try: () => {
+            ensureSpecProjection(db, projection)
             const now = new Date().toISOString()
             const result = db
               .prepare(
-                "INSERT INTO invariant_checks (invariant_id, passed, details, checked_at, duration_ms) VALUES (?, ?, ?, ?, ?)"
+                "INSERT INTO invariant_checks (projection_key, invariant_id, passed, details, checked_at, duration_ms) VALUES (?, ?, ?, ?, ?, ?)"
               )
-              .run(invariantId, passed ? 1 : 0, details, now, durationMs)
+              .run(projectionKey, invariantId, passed ? 1 : 0, details, now, durationMs)
             const row = db
               .prepare<InvariantCheckRow>("SELECT * FROM invariant_checks WHERE id = ?")
               .get(result.lastInsertRowid)
@@ -620,9 +647,9 @@ export const DocRepositoryLive = Layer.effect(
           try: () => {
             const rows = db
               .prepare<InvariantCheckRow>(
-                "SELECT * FROM invariant_checks WHERE invariant_id = ? ORDER BY checked_at DESC LIMIT ?"
+                "SELECT * FROM invariant_checks WHERE projection_key = ? AND invariant_id = ? ORDER BY checked_at DESC LIMIT ?"
               )
-              .all(invariantId, limit)
+              .all(projectionKey, invariantId, limit)
             return rows.map(rowToInvariantCheck)
           },
           catch: (cause) => new DatabaseError({ cause }),
@@ -633,14 +660,70 @@ export const DocRepositoryLive = Layer.effect(
           try: () => {
             const result = db
               .prepare<{ cnt: number }>(
-                "SELECT COUNT(*) as cnt FROM invariants WHERE doc_id = ? AND status = 'active'"
+                "SELECT COUNT(*) as cnt FROM invariants WHERE projection_key = ? AND doc_id = ? AND status = 'active'"
               )
-              .get(docId)
+              .get(projectionKey, docId)
             if (!result) return 0
             return result.cnt
+          },
+          catch: (cause) => new DatabaseError({ cause }),
+        }),
+
+      upsertProjectionSnapshot: (input) =>
+        Effect.try({
+          try: () => {
+            ensureSpecProjection(db, projection)
+            db.prepare(
+              `INSERT INTO doc_projection_snapshots (
+                 projection_key, doc_id, content_hash, title, file_path, head_sha
+               ) VALUES (?, ?, ?, ?, ?, ?)
+               ON CONFLICT(projection_key, doc_id) DO UPDATE SET
+                 content_hash = excluded.content_hash,
+                 title = excluded.title,
+                 file_path = excluded.file_path,
+                 head_sha = excluded.head_sha,
+                 synced_at = datetime('now')`
+            ).run(
+              projectionKey,
+              input.docId,
+              input.contentHash,
+              input.title,
+              input.filePath,
+              input.headSha ?? projection.commit
+            )
+          },
+          catch: (cause) => new DatabaseError({ cause }),
+        }),
+
+      findProjectionSnapshot: (docId) =>
+        Effect.try({
+          try: () => {
+            const row = db.prepare<{
+              doc_id: number
+              content_hash: string
+              title: string
+              file_path: string
+              head_sha: string | null
+              synced_at: string
+            }>(
+              `SELECT doc_id, content_hash, title, file_path, head_sha, synced_at
+               FROM doc_projection_snapshots
+               WHERE projection_key = ? AND doc_id = ?`
+            ).get(projectionKey, docId)
+            if (!row) return null
+            return {
+              docId: coerceDbResult<DocId>(row.doc_id),
+              contentHash: row.content_hash,
+              title: row.title,
+              filePath: row.file_path,
+              headSha: row.head_sha,
+              syncedAt: new Date(row.synced_at),
+            }
           },
           catch: (cause) => new DatabaseError({ cause }),
         }),
     }
   })
 )
+
+export const DocRepositoryLive = makeDocRepositoryLive()

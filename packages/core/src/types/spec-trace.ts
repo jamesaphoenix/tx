@@ -71,10 +71,24 @@ export const SpecScopeFilterSchema = Schema.Struct({
 })
 export type SpecScopeFilter = typeof SpecScopeFilterSchema.Type
 
+export const SpecPruneCandidateSchema = Schema.Struct({
+  invariantId: Schema.String,
+  testId: SpecTestIdSchema,
+  testFile: Schema.String,
+  discovery: Schema.Literal("tag", "comment", "manifest"),
+})
+export type SpecPruneCandidate = typeof SpecPruneCandidateSchema.Type
+
 export const DiscoverResultSchema = Schema.Struct({
   scannedFiles: Schema.Number.pipe(Schema.int()),
   discoveredLinks: Schema.Number.pipe(Schema.int()),
   upserted: Schema.Number.pipe(Schema.int()),
+  dryRun: Schema.Boolean,
+  pruneEnabled: Schema.Boolean,
+  prospectivePruneCount: Schema.Number.pipe(Schema.int()),
+  prospectivePrunes: Schema.Array(SpecPruneCandidateSchema),
+  pruned: Schema.Number.pipe(Schema.int()),
+  prunedMappings: Schema.Array(SpecPruneCandidateSchema),
   tagLinks: Schema.Number.pipe(Schema.int()),
   commentLinks: Schema.Number.pipe(Schema.int()),
   manifestLinks: Schema.Number.pipe(Schema.int()),

@@ -155,6 +155,8 @@ export const SpecTraceLive = HttpApiBuilder.group(TxApi, "spec", (handlers) =>
         return yield* svc.discover({
           doc: doc || undefined,
           patterns: patterns && patterns.length > 0 ? patterns : undefined,
+          dryRun: payload.dryRun,
+          prune: payload.prune,
         })
       }).pipe(Effect.mapError(mapCoreError))
     )

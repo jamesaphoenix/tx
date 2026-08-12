@@ -116,6 +116,10 @@ describe("tx skills generate", () => {
         expect(() => parseFrontmatter(skillContent)).not.toThrow()
       }
 
+      for (const [filePath, content] of Object.entries(snapshotFiles(target.outputDir))) {
+        expect(content, `${filePath} must not contain em dashes`).not.toContain("—")
+      }
+
       for (const skillId of BUNDLED_SHARED_SKILLS) {
         const bundledSkill = manifest.skills.find((skill) => skill.id === skillId)
         expect(bundledSkill?.source).toBe("bundled")
@@ -125,6 +129,18 @@ describe("tx skills generate", () => {
       const syncSkill = manifest.skills.find((skill) => skill.id === "skills-sync")
       const syncSkillContent = readFileSync(join(target.outputDir, syncSkill!.installPath, "SKILL.md"), "utf-8")
       expect(syncSkillContent).toContain("tx skills sync")
+      expect(syncSkillContent).toContain("bun apps/cli/src/cli.ts skills sync")
+
+      const docsSkill = manifest.skills.find((skill) => skill.id === "tx-docs-specs")
+      const docsSkillContent = readFileSync(join(target.outputDir, docsSkill!.installPath, "SKILL.md"), "utf-8")
+      expect(docsSkillContent).toContain("tx spec discover --doc <doc-ref>")
+      expect(docsSkillContent).toContain("document-derived invariants, and generated index")
+      expect(docsSkillContent).toContain("It retains them by default")
+      expect(docsSkillContent).toContain("--state-root <main-repo>")
+
+      const docsReference = readFileSync(join(target.outputDir, docsSkill!.installPath, "references", "commands.md"), "utf-8")
+      expect(docsReference).toContain("## tx doc remove")
+      expect(docsReference.match(/## tx doc rm/g)).toHaveLength(1)
 
       const ralphSkill = manifest.skills.find((skill) => skill.id === "ralph-loop")
       const ralphSkillContent = readFileSync(join(target.outputDir, ralphSkill!.installPath, "SKILL.md"), "utf-8")
@@ -133,6 +149,16 @@ describe("tx skills generate", () => {
 
       const designDocSkill = manifest.skills.find((skill) => skill.id === "design-doc")
       const designDocContent = readFileSync(join(target.outputDir, designDocSkill!.installPath, "SKILL.md"), "utf-8")
+      expect(designDocContent).toContain("tx doc sync design/<name>")
+      expect(designDocContent).toContain("tx spec discover --doc design/<name>")
+      expect(designDocContent.indexOf("tx doc sync design/<name>")).toBeLessThan(designDocContent.indexOf("tx spec lint"))
+
+      const verifySkill = manifest.skills.find((skill) => skill.id === "verify-invariants")
+      const verifyContent = readFileSync(join(target.outputDir, verifySkill!.installPath, "SKILL.md"), "utf-8")
+      expect(verifyContent).toContain("Critical: Worktree And Pruning Safety")
+      expect(verifyContent).toContain("retains them by default")
+      expect(verifyContent).toContain("only deletes them with `--prune`")
+
       if (target.target === "codex") {
         expect(designDocContent).toContain("~/.codex/plans/")
         expect(designDocContent).not.toContain("~/.claude/plans/")

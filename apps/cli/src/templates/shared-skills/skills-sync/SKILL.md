@@ -38,5 +38,11 @@ tx skills sync --project-dir /absolute/path/to/project --json
 - Use `--project-dir` when you want to sync another repo without changing the
   current working directory.
 - Use `--target codex` or `--target claude` when only one host needs an update.
+- When changing canonical tx source, invoke that checkout's source CLI (for
+  example `bun apps/cli/src/cli.ts skills sync ...`). A globally installed
+  `tx` only contains its published templates and cannot see unbuilt local edits.
+- Sync into a clean target checkout or worktree. The command updates every
+  tx-managed file for the selected target, so review the complete diff before
+  committing it.
 - Re-run the command after upgrading tx or after changing shared skill templates
   in the canonical tx repo.

@@ -25,6 +25,7 @@ interface SkillGroupDefinition {
   shortDescription: string
   whenToUse: string
   quickStart: string[]
+  operationalNotes?: string[]
 }
 
 interface GeneratedSkill {
@@ -134,9 +135,17 @@ const SKILL_GROUPS: readonly SkillGroupDefinition[] = [
     shortDescription: "Create, patch, lint, discover, trace, and complete docs-first specs.",
     whenToUse: "Use when the user is working in PRDs, DDs, invariants, decision tracking, or markdown export flows.",
     quickStart: [
-      "tx doc add prd <name> --title \"Title\"",
-      "tx spec discover",
-      "tx spec status",
+      "tx doc add prd <feature>-prd --title \"Title\"",
+      "tx doc sync <doc-ref>",
+      "tx spec discover --doc <doc-ref>",
+      "tx spec lint",
+    ],
+    operationalNotes: [
+      "Treat `<doc-ref>` as a globally unique name, a kind-scoped reference such as `design/auth-flow`, or a stable `doc_id`. Prefer distinct companion names such as `<feature>-prd` and `<feature>-design`; use `tx doc list --json` to recover IDs for legacy duplicate slugs.",
+      "`tx doc sync <doc-ref>` refreshes the stored document record, document-derived invariants, and generated index in one transaction.",
+      "`tx spec discover` reports every stale tag, comment, and manifest mapping by identity. It retains them by default; use `--dry-run` to preview all writes and `--prune` to delete stale auto-discovered mappings explicitly. Manual mappings are always preserved.",
+      "Task state can remain shared while derived spec projections are scoped to the content checkout. Use `--state-root <main-repo>` with `--content-root <worktree>` when the roots differ, and confirm both with `tx diag doctor`.",
+      "Clear drift with `tx doc sync <doc-ref>`. Never remove and recreate a document merely to update its hash.",
     ],
   },
   {
@@ -406,6 +415,14 @@ function renderSkillMarkdown(target: SkillTarget, group: SkillGroupDefinition, c
   }).join("\n")
 
   const quickStart = group.quickStart.map((command) => `- \`${command}\``).join("\n")
+  const operationalNotes = group.operationalNotes?.length
+    ? [
+        "## Operational Safety",
+        "",
+        group.operationalNotes.map((note) => `- ${note}`).join("\n"),
+        "",
+      ]
+    : []
 
   return [
     "---",
@@ -423,6 +440,7 @@ function renderSkillMarkdown(target: SkillTarget, group: SkillGroupDefinition, c
     "",
     quickStart,
     "",
+    ...operationalNotes,
     "## Included Commands",
     "",
     commandList,

@@ -297,7 +297,7 @@ describe("tx doc lifecycle coverage", () => {
     }
     expect(ambiguousError.ok).toBe(false)
     expect(ambiguousError.error.message).toContain("ambiguous across kinds")
-    expect(ambiguousError.error.message).toContain("Use doc_id instead")
+    expect(ambiguousError.error.message).toContain("Use kind/name or doc_id instead")
 
     const prdShow = runTx(["doc", "show", "prd/shared-slug", "--json"], tmpProjectDir)
     const designShow = runTx(["doc", "show", "design/shared-slug", "--json"], tmpProjectDir)
@@ -1185,5 +1185,171 @@ describe("tx doc sync", () => {
     expect(sync.status).toBe(0)
     expect(sync.stdout).toContain("Synced 1 doc(s)")
     expect(sync.stdout).toContain("sync-single")
+  })
+
+  it("atomically refreshes document-derived invariants and the generated index", () => {
+    const add = runTx(
+      ["doc", "add", "prd", "atomic-sync", "--title", "Atomic Sync"],
+      tmpProjectDir,
+    )
+    expect(add.status).toBe(0)
+
+    const filePath = join(tmpProjectDir, "specs", "prd", "atomic-sync.md")
+    writeFileSync(
+      filePath,
+      buildMdDoc({
+        specType: "prd",
+        name: "atomic-sync",
+        title: "Atomic Sync",
+        sections: prdSections({
+          invariants: [
+            { id: "INV-ATOMIC-SYNC-001", statement: "First atomic invariant" },
+            { id: "INV-ATOMIC-SYNC-002", statement: "Second atomic invariant" },
+          ],
+        }),
+      }),
+      "utf-8",
+    )
+
+    const sync = runTx(["doc", "sync", "atomic-sync", "--json"], tmpProjectDir)
+    expect(sync.status).toBe(0)
+    expect(JSON.parse(sync.stdout)).toMatchObject({
+      synced: 1,
+      skipped: 0,
+      invariants: 2,
+      index_refreshed: true,
+    })
+
+    const invariants = runTx(["invariant", "list", "--json"], tmpProjectDir)
+    expect(invariants.status).toBe(0)
+    expect((JSON.parse(invariants.stdout) as Array<{ id: string }>).map((inv) => inv.id)).toEqual([
+      "INV-ATOMIC-SYNC-001",
+      "INV-ATOMIC-SYNC-002",
+    ])
+
+    const index = readFileSync(join(tmpProjectDir, "specs", "index.md"), "utf-8")
+    expect(index).toContain("## Invariant Summary")
+    expect(index).toContain("**Total invariants**: 2")
+  })
+
+  it("leaves hashes, invariants, and index unchanged when an all-doc sync cannot validate every doc", { timeout: 30_000 }, () => {
+    expect(runTx(
+      ["doc", "add", "prd", "atomic-good", "--title", "Atomic Good"],
+      tmpProjectDir,
+    ).status).toBe(0)
+    expect(runTx(
+      ["doc", "add", "prd", "atomic-bad", "--title", "Atomic Bad"],
+      tmpProjectDir,
+    ).status).toBe(0)
+
+    const goodPath = join(tmpProjectDir, "specs", "prd", "atomic-good.md")
+    const badPath = join(tmpProjectDir, "specs", "prd", "atomic-bad.md")
+    writeFileSync(
+      goodPath,
+      buildMdDoc({
+        specType: "prd",
+        name: "atomic-good",
+        title: "Atomic Good",
+        sections: prdSections({
+          invariants: [
+            { id: "INV-ATOMIC-BASELINE-001", statement: "Baseline invariant" },
+          ],
+        }),
+      }),
+      "utf-8",
+    )
+    writeFileSync(
+      badPath,
+      buildMdDoc({
+        specType: "prd",
+        name: "atomic-bad",
+        title: "Atomic Bad",
+        sections: prdSections(),
+      }),
+      "utf-8",
+    )
+
+    expect(runTx(["doc", "sync"], tmpProjectDir).status).toBe(0)
+    const beforeDoc = JSON.parse(
+      runTx(["doc", "show", "atomic-good", "--json"], tmpProjectDir).stdout,
+    ) as { hash: string }
+    const beforeIndex = readFileSync(join(tmpProjectDir, "specs", "index.md"), "utf-8")
+
+    writeFileSync(
+      goodPath,
+      buildMdDoc({
+        specType: "prd",
+        name: "atomic-good",
+        title: "Atomic Good Changed",
+        sections: prdSections({
+          invariants: [
+            { id: "INV-ATOMIC-CHANGED-001", statement: "Must not be partially synced" },
+          ],
+        }),
+      }),
+      "utf-8",
+    )
+    writeFileSync(badPath, "---\nkind: [broken\n", "utf-8")
+
+    const failed = runTx(["doc", "sync"], tmpProjectDir)
+    expect(failed.status).not.toBe(0)
+
+    const afterDoc = JSON.parse(
+      runTx(["doc", "show", "atomic-good", "--json"], tmpProjectDir).stdout,
+    ) as { hash: string }
+    expect(afterDoc.hash).toBe(beforeDoc.hash)
+    expect(readFileSync(join(tmpProjectDir, "specs", "index.md"), "utf-8")).toBe(beforeIndex)
+
+    const invariants = JSON.parse(
+      runTx(["invariant", "list", "--json"], tmpProjectDir).stdout,
+    ) as Array<{ id: string }>
+    expect(invariants.map((inv) => inv.id)).toContain("INV-ATOMIC-BASELINE-001")
+    expect(invariants.map((inv) => inv.id)).not.toContain("INV-ATOMIC-CHANGED-001")
+  })
+
+  it("syncs a registered custom document path without creating a standard-path duplicate", () => {
+    const customDir = join(tmpProjectDir, "specs", "custom")
+    const customPath = join(customDir, "custom-sync.md")
+    const { mkdirSync } = require("node:fs")
+    mkdirSync(customDir, { recursive: true })
+    writeFileSync(
+      customPath,
+      buildMdDoc({
+        specType: "prd",
+        name: "custom-sync",
+        title: "Custom Sync",
+        sections: prdSections(),
+      }),
+      "utf-8",
+    )
+
+    const add = runTx([
+      "doc", "add", "prd", "custom-sync", "--title", "Custom Sync",
+      "--path", "custom/custom-sync.md",
+    ], tmpProjectDir)
+    expect(add.status).toBe(0)
+
+    writeFileSync(
+      customPath,
+      buildMdDoc({
+        specType: "prd",
+        name: "custom-sync",
+        title: "Custom Sync",
+        sections: prdSections({
+          invariants: [
+            { id: "INV-CUSTOM-SYNC-001", statement: "Custom paths stay authoritative" },
+          ],
+        }),
+      }),
+      "utf-8",
+    )
+
+    expect(runTx(["doc", "sync", "custom-sync"], tmpProjectDir).status).toBe(0)
+    expect(existsSync(join(tmpProjectDir, "specs", "prd", "custom-sync.md"))).toBe(false)
+
+    const invariants = JSON.parse(
+      runTx(["invariant", "list", "--json"], tmpProjectDir).stdout,
+    ) as Array<{ id: string }>
+    expect(invariants.map((inv) => inv.id)).toEqual(["INV-CUSTOM-SYNC-001"])
   })
 })

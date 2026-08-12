@@ -6,10 +6,19 @@ import { CliExitError } from "../cli-exit.js"
  */
 
 import { Effect } from "effect"
-import { SqliteClient, MigrationService, ValidationService } from "@jamesaphoenix/tx"
+import {
+  DocService,
+  SqliteClient,
+  MigrationService,
+  SpecTraceService,
+  ValidationService,
+  readTxConfig,
+  resolveWorkspaceContext,
+} from "@jamesaphoenix/tx"
 import type { ValidationResult } from "@jamesaphoenix/tx"
 import { toJson } from "../output.js"
-import { statSync } from "node:fs"
+import { existsSync, statSync } from "node:fs"
+import { resolve } from "node:path"
 
 type Flags = Record<string, string | boolean>
 
@@ -27,6 +36,29 @@ interface DoctorCheck {
 interface DoctorResult {
   readonly healthy: boolean
   readonly checks: readonly DoctorCheck[]
+  readonly workspace: {
+    readonly databasePath: string
+    readonly resolvedDatabasePath: string
+    readonly stateRoot: string
+    readonly contentRoot: string
+    readonly projectionKey: string
+    readonly gitCommonDir: string | null
+    readonly branch: string | null
+    readonly commit: string | null
+    readonly dirty: boolean | null
+    readonly missingRegisteredFiles: readonly {
+      readonly docId: string
+      readonly name: string
+      readonly filePath: string
+    }[]
+    readonly prospectivePruneCount: number | null
+    readonly prospectivePrunes: readonly {
+      readonly invariantId: string
+      readonly testId: string
+      readonly testFile: string
+      readonly discovery: string
+    }[]
+  }
   readonly validation?: ValidationResult
 }
 
@@ -68,9 +100,81 @@ export const doctor = (_pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const db = yield* SqliteClient
     const migrationSvc = yield* MigrationService
+    const docSvc = yield* DocService
+    const specTraceSvc = yield* SpecTraceService
     const verbose = flag(flags, "verbose", "v")
     const fix = flag(flags, "fix")
     const checks: DoctorCheck[] = []
+    const workspaceContext = resolveWorkspaceContext({
+      cwd: process.cwd(),
+      stateRoot: typeof flags["state-root"] === "string" ? flags["state-root"] : undefined,
+      contentRoot: typeof flags["content-root"] === "string" ? flags["content-root"] : undefined,
+      dbPath: typeof flags.db === "string" ? flags.db : undefined,
+    })
+    const config = readTxConfig(workspaceContext.contentRoot)
+    const docsPath = resolve(workspaceContext.contentRoot, config.docs.path)
+    const registeredDocs = yield* docSvc.list()
+    const missingRegisteredFiles = registeredDocs
+      .filter((doc) => !existsSync(resolve(docsPath, doc.filePath)))
+      .map((doc) => ({
+        docId: doc.docId,
+        name: doc.name,
+        filePath: doc.filePath,
+      }))
+
+    const prunePreview = yield* specTraceSvc.discover({
+      rootDir: workspaceContext.contentRoot,
+      dryRun: true,
+      prune: false,
+    }).pipe(
+      Effect.map((result) => ({ result, error: null as unknown | null })),
+      Effect.catchAll((error) => Effect.succeed({ result: null, error }))
+    )
+
+    checks.push({
+      name: "workspace_roots",
+      status: "pass",
+      message: `Roots: state=${workspaceContext.stateRoot}, content=${workspaceContext.contentRoot}`,
+      details: `Database: ${workspaceContext.resolvedDbPath}; projection: ${workspaceContext.projectionKey}`,
+    })
+    checks.push({
+      name: "git_checkout",
+      status: workspaceContext.gitCommonDir ? "pass" : "warn",
+      message: workspaceContext.gitCommonDir
+        ? `Git: ${workspaceContext.branch ?? "detached"} @ ${workspaceContext.commit?.slice(0, 12) ?? "unknown"}${workspaceContext.dirty ? " (dirty)" : ""}`
+        : "Git: content root is not a checkout",
+      details: workspaceContext.gitCommonDir ?? undefined,
+    })
+    checks.push({
+      name: "registered_doc_files",
+      status: missingRegisteredFiles.length > 0 ? "warn" : "pass",
+      message: missingRegisteredFiles.length > 0
+        ? `Registered docs: ${missingRegisteredFiles.length} file(s) missing in this checkout`
+        : "Registered docs: all files present in this checkout",
+      details: missingRegisteredFiles.length > 0
+        ? missingRegisteredFiles.map((doc) => `${doc.docId} ${doc.filePath}`).join("; ")
+        : undefined,
+    })
+    if (prunePreview.result) {
+      checks.push({
+        name: "prospective_spec_prune",
+        status: prunePreview.result.prospectivePruneCount > 0 ? "warn" : "pass",
+        message: `Spec discovery: ${prunePreview.result.prospectivePruneCount} prospective prune(s)`,
+        details: prunePreview.result.prospectivePrunes
+          .map((mapping) => `${mapping.invariantId} -> ${mapping.testId}`)
+          .join("; ") || undefined,
+      })
+    } else {
+      const detail = prunePreview.error instanceof Error
+        ? prunePreview.error.message
+        : String(prunePreview.error)
+      checks.push({
+        name: "prospective_spec_prune",
+        status: "warn",
+        message: "Spec discovery: prune preview unavailable",
+        details: detail,
+      })
+    }
 
     // --- Database validation checks (formerly `tx validate`) ---
     const validationSvc = yield* ValidationService
@@ -238,7 +342,25 @@ export const doctor = (_pos: string[], flags: Flags) =>
     })
 
     const healthy = checks.every(c => c.status !== "fail") && validationResult.valid
-    const result: DoctorResult = { healthy, checks, validation: validationResult }
+    const result: DoctorResult = {
+      healthy,
+      checks,
+      workspace: {
+        databasePath: workspaceContext.dbPath,
+        resolvedDatabasePath: workspaceContext.resolvedDbPath,
+        stateRoot: workspaceContext.stateRoot,
+        contentRoot: workspaceContext.contentRoot,
+        projectionKey: workspaceContext.projectionKey,
+        gitCommonDir: workspaceContext.gitCommonDir,
+        branch: workspaceContext.branch,
+        commit: workspaceContext.commit,
+        dirty: workspaceContext.dirty,
+        missingRegisteredFiles,
+        prospectivePruneCount: prunePreview.result?.prospectivePruneCount ?? null,
+        prospectivePrunes: prunePreview.result?.prospectivePrunes ?? [],
+      },
+      validation: validationResult,
+    }
 
     if (flag(flags, "json")) {
       console.log(toJson(result))

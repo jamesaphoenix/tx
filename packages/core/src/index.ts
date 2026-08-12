@@ -91,6 +91,14 @@ export {
 // =============================================================================
 export { generateTaskId, generateDocStableId, deriveDocStableId, fixtureId } from "./id.js"
 export { generateUlid, isUlid } from "./utils/ulid.js"
+export {
+  LEGACY_SPEC_PROJECTION_KEY,
+  resolveWorkspaceContext,
+  legacySpecProjectionContext,
+  type WorkspaceContext,
+  type ResolveWorkspaceContextOptions,
+  type SpecProjectionContext,
+} from "./workspace-context.js"
 
 // =============================================================================
 // Layers
@@ -100,6 +108,7 @@ export {
   makeAppLayerFromInfra,
   makeMinimalLayer,
   makeMinimalLayerFromInfra,
+  type AppLayerOptions,
   // Re-exports for convenience
   SyncService,
   StreamService,

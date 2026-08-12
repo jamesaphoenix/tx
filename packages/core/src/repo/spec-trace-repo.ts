@@ -3,7 +3,9 @@ import { SqliteClient } from "../db.js"
 import { DatabaseError, EntityFetchError } from "../errors.js"
 import { rowToSpecSignoff, rowToSpecTest, rowToSpecTestRun } from "../mappers/spec-trace.js"
 import { buildInvariantFilterSql } from "./spec-trace-repo.filter.js"
-import type { SpecTraceRepositoryService } from "./spec-trace-repo.types.js"
+import type { SpecPruneCandidate, SpecTraceRepositoryService, SyncDiscoveredSpecTestInput } from "./spec-trace-repo.types.js"
+import { ensureSpecProjection } from "./spec-projection.js"
+import { legacySpecProjectionContext, type SpecProjectionContext } from "../workspace-context.js"
 import type {
   SpecTest,
   SpecTestRun,
@@ -19,10 +21,13 @@ export class SpecTraceRepository extends Context.Tag("SpecTraceRepository")<
   SpecTraceRepositoryService
 >() {}
 
-export const SpecTraceRepositoryLive = Layer.effect(
+export const makeSpecTraceRepositoryLive = (
+  projection: SpecProjectionContext = legacySpecProjectionContext()
+) => Layer.effect(
   SpecTraceRepository,
   Effect.gen(function* () {
     const db = yield* SqliteClient
+    const projectionKey = projection.projectionKey
     const runImmediateTransaction = <T>(body: () => T): { ok: true; value: T } | { ok: false; error: unknown } => {
       try {
         db.exec("BEGIN IMMEDIATE")
@@ -39,14 +44,46 @@ export const SpecTraceRepositoryLive = Layer.effect(
       }
     }
 
+    const listPrunable = (
+      rows: readonly SyncDiscoveredSpecTestInput[],
+      invariantIds: readonly string[]
+    ): SpecPruneCandidate[] => {
+      if (invariantIds.length === 0) return []
+      const keepKeys = new Set(rows.map((row) => `${row.invariantId}::${row.testId}`))
+      const placeholders = invariantIds.map(() => "?").join(", ")
+      const existing = db.prepare<{
+        invariant_id: string
+        test_id: string
+        test_file: string
+        discovery: "tag" | "comment" | "manifest"
+      }>(
+        `SELECT invariant_id, test_id, test_file, discovery
+         FROM spec_tests
+         WHERE projection_key = ?
+           AND invariant_id IN (${placeholders})
+           AND discovery IN ('tag', 'comment', 'manifest')
+         ORDER BY invariant_id, test_id`
+      ).all(projectionKey, ...invariantIds)
+
+      return existing
+        .filter((row) => !keepKeys.has(`${row.invariant_id}::${row.test_id}`))
+        .map((row) => ({
+          invariantId: row.invariant_id,
+          testId: row.test_id,
+          testFile: row.test_file,
+          discovery: row.discovery,
+        }))
+    }
+
     return {
       upsertSpecTest: (input) =>
         Effect.try({
           try: () => {
+            ensureSpecProjection(db, projection)
             db.prepare(
-              `INSERT INTO spec_tests (invariant_id, test_id, test_file, test_name, framework, discovery)
-               VALUES (?, ?, ?, ?, ?, ?)
-               ON CONFLICT(invariant_id, test_id) DO UPDATE SET
+              `INSERT INTO spec_tests (projection_key, invariant_id, test_id, test_file, test_name, framework, discovery)
+               VALUES (?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(projection_key, invariant_id, test_id) DO UPDATE SET
                  test_file = excluded.test_file,
                  test_name = excluded.test_name,
                  framework = excluded.framework,
@@ -57,6 +94,7 @@ export const SpecTraceRepositoryLive = Layer.effect(
                  discovery = CASE WHEN spec_tests.discovery = 'manual' THEN 'manual' ELSE excluded.discovery END,
                  updated_at = datetime('now')`
             ).run(
+              projectionKey,
               input.invariantId,
               input.testId,
               input.testFile,
@@ -66,8 +104,8 @@ export const SpecTraceRepositoryLive = Layer.effect(
             )
 
             const row = db.prepare<SpecTestRow>(
-              `SELECT * FROM spec_tests WHERE invariant_id = ? AND test_id = ?`
-            ).get(input.invariantId, input.testId)
+              `SELECT * FROM spec_tests WHERE projection_key = ? AND invariant_id = ? AND test_id = ?`
+            ).get(projectionKey, input.invariantId, input.testId)
 
             if (!row) {
               throw new EntityFetchError({
@@ -86,8 +124,8 @@ export const SpecTraceRepositoryLive = Layer.effect(
         Effect.try({
           try: () => {
             const result = db.prepare(
-              "DELETE FROM spec_tests WHERE invariant_id = ? AND test_id = ?"
-            ).run(invariantId, testId)
+              "DELETE FROM spec_tests WHERE projection_key = ? AND invariant_id = ? AND test_id = ?"
+            ).run(projectionKey, invariantId, testId)
             return result.changes > 0
           },
           catch: (cause) => new DatabaseError({ cause }),
@@ -97,8 +135,8 @@ export const SpecTraceRepositoryLive = Layer.effect(
         Effect.try({
           try: () => {
             const rows = db.prepare<SpecTestRow>(
-              "SELECT * FROM spec_tests WHERE invariant_id = ? ORDER BY test_id"
-            ).all(invariantId)
+              "SELECT * FROM spec_tests WHERE projection_key = ? AND invariant_id = ? ORDER BY test_id"
+            ).all(projectionKey, invariantId)
             return rows.map(rowToSpecTest)
           },
           catch: (cause) => new DatabaseError({ cause }),
@@ -110,8 +148,8 @@ export const SpecTraceRepositoryLive = Layer.effect(
             if (invariantIds.length === 0) return []
             const placeholders = invariantIds.map(() => "?").join(", ")
             const rows = db.prepare<SpecTestRow>(
-              `SELECT * FROM spec_tests WHERE invariant_id IN (${placeholders}) ORDER BY invariant_id, test_id`
-            ).all(...invariantIds)
+              `SELECT * FROM spec_tests WHERE projection_key = ? AND invariant_id IN (${placeholders}) ORDER BY invariant_id, test_id`
+            ).all(projectionKey, ...invariantIds)
             return rows.map(rowToSpecTest)
           },
           catch: (cause) => new DatabaseError({ cause }),
@@ -121,8 +159,8 @@ export const SpecTraceRepositoryLive = Layer.effect(
         Effect.try({
           try: () => {
             const rows = db.prepare<SpecTestRow>(
-              "SELECT * FROM spec_tests WHERE test_id = ? ORDER BY invariant_id"
-            ).all(testId)
+              "SELECT * FROM spec_tests WHERE projection_key = ? AND test_id = ? ORDER BY invariant_id"
+            ).all(projectionKey, testId)
             return rows.map(rowToSpecTest)
           },
           catch: (cause) => new DatabaseError({ cause }),
@@ -135,8 +173,8 @@ export const SpecTraceRepositoryLive = Layer.effect(
 
             const placeholders = testIds.map(() => "?").join(", ")
             const rows = db.prepare<SpecTestRow>(
-              `SELECT * FROM spec_tests WHERE test_id IN (${placeholders}) ORDER BY test_id, invariant_id`
-            ).all(...testIds)
+              `SELECT * FROM spec_tests WHERE projection_key = ? AND test_id IN (${placeholders}) ORDER BY test_id, invariant_id`
+            ).all(projectionKey, ...testIds)
 
             const result = new Map<string, SpecTest[]>()
             for (const row of rows) {
@@ -155,30 +193,34 @@ export const SpecTraceRepositoryLive = Layer.effect(
         Effect.try({
           try: () => {
             const rows = db.prepare<SpecTestRow>(
-              "SELECT * FROM spec_tests WHERE test_name = ? ORDER BY invariant_id"
-            ).all(testName)
+              "SELECT * FROM spec_tests WHERE projection_key = ? AND test_name = ? ORDER BY invariant_id"
+            ).all(projectionKey, testName)
             return rows.map(rowToSpecTest)
           },
           catch: (cause) => new DatabaseError({ cause }),
         }),
 
-      syncDiscoveredSpecTests: ({ rows, invariantIds }) =>
+      previewDiscoveredSpecTestPrune: ({ rows, invariantIds }) =>
+        Effect.try({
+          try: () => listPrunable(rows, invariantIds),
+          catch: (cause) => new DatabaseError({ cause }),
+        }),
+
+      syncDiscoveredSpecTests: ({ rows, invariantIds, prune }) =>
         Effect.gen(function* () {
           if (invariantIds.length === 0) {
-            return { upserted: 0, pruned: 0 }
+            return { upserted: 0, pruned: 0, prunedMappings: [] }
           }
 
           const runSync = yield* Effect.try({
             try: () => {
-              const keepKeys = new Set<string>()
-              for (const row of rows) {
-                keepKeys.add(`${row.invariantId}::${row.testId}`)
-            }
+              ensureSpecProjection(db, projection)
+              const prunable = listPrunable(rows, invariantIds)
 
-            const upsert = db.prepare(
-              `INSERT INTO spec_tests (invariant_id, test_id, test_file, test_name, framework, discovery)
-               VALUES (?, ?, ?, ?, ?, ?)
-               ON CONFLICT(invariant_id, test_id) DO UPDATE SET
+              const upsert = db.prepare(
+                `INSERT INTO spec_tests (projection_key, invariant_id, test_id, test_file, test_name, framework, discovery)
+               VALUES (?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(projection_key, invariant_id, test_id) DO UPDATE SET
                  test_file = excluded.test_file,
                  test_name = excluded.test_name,
                  framework = excluded.framework,
@@ -188,22 +230,15 @@ export const SpecTraceRepositoryLive = Layer.effect(
                  -- upsert still upgrades an existing auto link to 'manual'.
                  discovery = CASE WHEN spec_tests.discovery = 'manual' THEN 'manual' ELSE excluded.discovery END,
                  updated_at = datetime('now')`
-            )
-
-              const placeholder = invariantIds.map(() => "?").join(", ")
-              const selectAuto = db.prepare<{ invariant_id: string; test_id: string }>(
-                `SELECT invariant_id, test_id
-               FROM spec_tests
-               WHERE invariant_id IN (${placeholder})
-                 AND discovery IN ('tag', 'comment', 'manifest')`
               )
               const deleteByKey = db.prepare(
-                "DELETE FROM spec_tests WHERE invariant_id = ? AND test_id = ?"
+                "DELETE FROM spec_tests WHERE projection_key = ? AND invariant_id = ? AND test_id = ?"
               )
 
               const transaction = runImmediateTransaction(() => {
                 for (const row of rows) {
                   upsert.run(
+                    projectionKey,
                     row.invariantId,
                     row.testId,
                     row.testFile,
@@ -213,17 +248,21 @@ export const SpecTraceRepositoryLive = Layer.effect(
                   )
                 }
 
-                const existingAuto = selectAuto.all(...invariantIds)
-
                 let pruned = 0
-                for (const current of existingAuto) {
-                  const key = `${current.invariant_id}::${current.test_id}`
-                  if (keepKeys.has(key)) continue
-                  const result = deleteByKey.run(current.invariant_id, current.test_id)
-                  pruned += result.changes
+                const prunedMappings: SpecPruneCandidate[] = []
+                if (prune) {
+                  for (const current of prunable) {
+                    const result = deleteByKey.run(
+                      projectionKey,
+                      current.invariantId,
+                      current.testId
+                    )
+                    pruned += result.changes
+                    if (result.changes > 0) prunedMappings.push(current)
+                  }
                 }
 
-                return { upserted: rows.length, pruned }
+                return { upserted: rows.length, pruned, prunedMappings }
               })
 
               if (!transaction.ok) {
@@ -379,7 +418,7 @@ export const SpecTraceRepositoryLive = Layer.effect(
         Effect.try({
           try: () => {
             const params: unknown[] = []
-            const where = buildInvariantFilterSql(filter, params)
+            const where = buildInvariantFilterSql(filter, params, projectionKey)
             const rows = db.prepare<{
               id: string
               rule: string
@@ -407,7 +446,7 @@ export const SpecTraceRepositoryLive = Layer.effect(
         Effect.try({
           try: () => {
             const params: unknown[] = []
-            const where = buildInvariantFilterSql(filter, params)
+            const where = buildInvariantFilterSql(filter, params, projectionKey)
             const rows = db.prepare<{
               id: string
               rule: string
@@ -420,7 +459,8 @@ export const SpecTraceRepositoryLive = Layer.effect(
                ${where}
                  AND NOT EXISTS (
                    SELECT 1 FROM spec_tests st
-                   WHERE st.invariant_id = i.id
+                   WHERE st.projection_key = i.projection_key
+                     AND st.invariant_id = i.id
                  )
                ORDER BY i.id`
             ).all(...params)
@@ -438,31 +478,32 @@ export const SpecTraceRepositoryLive = Layer.effect(
       upsertSignoff: (scopeType, scopeValue, signedOffBy, notes) =>
         Effect.try({
           try: () => {
+            ensureSpecProjection(db, projection)
             if (scopeValue === null) {
               db.prepare(
-                `INSERT INTO spec_signoffs (scope_type, scope_value, signed_off_by, notes)
-                 VALUES (?, NULL, ?, ?)
-                 ON CONFLICT(scope_type) WHERE scope_value IS NULL DO UPDATE SET
+                `INSERT INTO spec_signoffs (projection_key, scope_type, scope_value, signed_off_by, notes)
+                 VALUES (?, ?, NULL, ?, ?)
+                 ON CONFLICT(projection_key, scope_type) WHERE scope_value IS NULL DO UPDATE SET
                    signed_off_by = excluded.signed_off_by,
                    notes = excluded.notes,
                    signed_off_at = datetime('now')`
-              ).run(scopeType, signedOffBy, notes)
+              ).run(projectionKey, scopeType, signedOffBy, notes)
             } else {
               db.prepare(
-                `INSERT INTO spec_signoffs (scope_type, scope_value, signed_off_by, notes)
-                 VALUES (?, ?, ?, ?)
-                 ON CONFLICT(scope_type, scope_value) WHERE scope_value IS NOT NULL DO UPDATE SET
+                `INSERT INTO spec_signoffs (projection_key, scope_type, scope_value, signed_off_by, notes)
+                 VALUES (?, ?, ?, ?, ?)
+                 ON CONFLICT(projection_key, scope_type, scope_value) WHERE scope_value IS NOT NULL DO UPDATE SET
                    signed_off_by = excluded.signed_off_by,
                    notes = excluded.notes,
                    signed_off_at = datetime('now')`
-              ).run(scopeType, scopeValue, signedOffBy, notes)
+              ).run(projectionKey, scopeType, scopeValue, signedOffBy, notes)
             }
 
             const row = db.prepare<SpecSignoffRow>(
-              `SELECT * FROM spec_signoffs WHERE scope_type = ? AND (
+              `SELECT * FROM spec_signoffs WHERE projection_key = ? AND scope_type = ? AND (
                  (scope_value IS NULL AND ? IS NULL) OR scope_value = ?
                )`
-            ).get(scopeType, scopeValue, scopeValue)
+            ).get(projectionKey, scopeType, scopeValue, scopeValue)
 
             if (!row) {
               throw new EntityFetchError({
@@ -481,10 +522,10 @@ export const SpecTraceRepositoryLive = Layer.effect(
         Effect.try({
           try: () => {
             const row = db.prepare<SpecSignoffRow>(
-              `SELECT * FROM spec_signoffs WHERE scope_type = ? AND (
+              `SELECT * FROM spec_signoffs WHERE projection_key = ? AND scope_type = ? AND (
                  (scope_value IS NULL AND ? IS NULL) OR scope_value = ?
                )`
-            ).get(scopeType, scopeValue, scopeValue)
+            ).get(projectionKey, scopeType, scopeValue, scopeValue)
 
             return row ? rowToSpecSignoff(row) : null
           },
@@ -493,3 +534,5 @@ export const SpecTraceRepositoryLive = Layer.effect(
     }
   })
 )
+
+export const SpecTraceRepositoryLive = makeSpecTraceRepositoryLive()

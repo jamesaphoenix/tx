@@ -8,7 +8,7 @@
 import { Effect, Cause, Option, Layer } from "effect"
 import { resolve } from "node:path"
 import { existsSync, mkdirSync, writeFileSync } from "node:fs"
-import { makeAppLayer, AgentServiceLive, CycleScanServiceLive, SqliteClient, findTxRoot, resolveTxDbPath } from "@jamesaphoenix/tx"
+import { makeAppLayer, AgentServiceLive, CycleScanServiceLive, SqliteClient, resolveWorkspaceContext } from "@jamesaphoenix/tx"
 import { HELP_TEXT, commandHelp } from "./help.js"
 import { CliExitError } from "./cli-exit.js"
 import { CliUserError, emitCliError, movedCommandError, unknownCommandError, usageError } from "./cli-errors.js"
@@ -121,7 +121,9 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
       const tables = db.prepare(
         "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '%_fts%' ORDER BY name"
       ).all() as Array<{ name: string }>
-      const projectDir = process.cwd()
+      const projectDir = typeof initFlags["content-root"] === "string"
+        ? initFlags["content-root"]
+        : process.cwd()
 
       p.intro("tx init")
       p.log.success(`Database ready (${tables.length} tables, SQLite WAL mode)`)
@@ -424,13 +426,25 @@ if (!handler) {
   process.exit(1)
 }
 
-const dbPath = typeof parsedFlags.db === "string"
-  ? resolve(parsedFlags.db)
-  : resolveTxDbPath()
+const workspace = resolveWorkspaceContext({
+  cwd: process.cwd(),
+  stateRoot: typeof parsedFlags["state-root"] === "string"
+    ? parsedFlags["state-root"]
+    : undefined,
+  contentRoot: typeof parsedFlags["content-root"] === "string"
+    ? parsedFlags["content-root"]
+    : undefined,
+  dbPath: typeof parsedFlags.db === "string" ? parsedFlags.db : undefined,
+})
+const dbPath = workspace.dbPath
+parsedFlags.db = workspace.dbPath
+parsedFlags["state-root"] = workspace.stateRoot
+parsedFlags["content-root"] = workspace.contentRoot
+parsedFlags["projection-key"] = workspace.projectionKey
 
 // For init, ensure directory exists
 if (command === "init") {
-  const dir = resolve(findTxRoot(), ".tx")
+  const dir = resolve(workspace.stateRoot, ".tx")
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true })
   }
@@ -440,10 +454,13 @@ if (command === "init") {
     writeFileSync(gitignorePath, "tasks.db\ntasks.db-wal\ntasks.db-shm\n")
   }
   // Scaffold default config.toml with annotated defaults (no-op if exists)
-  scaffoldConfigToml(findTxRoot())
+  scaffoldConfigToml(workspace.contentRoot)
 }
 
-const layer = makeAppLayer(dbPath)
+const layer = makeAppLayer(dbPath, {
+  contentRoot: workspace.contentRoot,
+  projection: workspace,
+})
 const program = handler(positional, parsedFlags)
 
 // Runtime-backed commands that are not part of the default app layer need overlays.

@@ -141,6 +141,86 @@ describe("Migration system", () => {
       expect(version).toBe(getLatestVersion())
     })
 
+    it("backfills legacy spec state and permits the same invariant identity in isolated checkout projections", () => {
+      const db = new Database(":memory:")
+      db.run("PRAGMA foreign_keys = ON")
+      applyMigrationsThroughVersion(db, 46)
+
+      db.prepare(
+        `INSERT INTO docs (doc_id, hash, kind, name, title, file_path)
+         VALUES ('doc-111111111111', 'legacy-hash', 'prd', 'legacy-prd', 'Legacy PRD', 'prd/legacy-prd.md')`
+      ).run()
+      const doc = db.prepare("SELECT id FROM docs WHERE doc_id = 'doc-111111111111'").get() as { id: number }
+      db.prepare(
+        `INSERT INTO invariants (id, rule, enforcement, doc_id)
+         VALUES ('INV-PROJECTION-001', 'legacy rule', 'integration_test', ?)`
+      ).run(doc.id)
+      db.prepare(
+        `INSERT INTO invariant_checks (invariant_id, passed)
+         VALUES ('INV-PROJECTION-001', 1)`
+      ).run()
+      const specTest = db.prepare(
+        `INSERT INTO spec_tests (invariant_id, test_id, test_file, test_name, discovery)
+         VALUES ('INV-PROJECTION-001', 'test/legacy.test.ts::legacy', 'test/legacy.test.ts', 'legacy', 'tag')`
+      ).run()
+      db.prepare(
+        `INSERT INTO spec_test_runs (spec_test_id, passed)
+         VALUES (?, 1)`
+      ).run(specTest.lastInsertRowid)
+      db.prepare(
+        `INSERT INTO spec_signoffs (scope_type, scope_value, signed_off_by)
+         VALUES ('doc', 'legacy-prd', 'tester')`
+      ).run()
+
+      applyMigrations(db)
+
+      expect((db.prepare(
+        "SELECT projection_key FROM invariants WHERE id = 'INV-PROJECTION-001'"
+      ).get() as { projection_key: string }).projection_key).toBe("legacy")
+      expect((db.prepare(
+        "SELECT projection_key FROM invariant_checks WHERE invariant_id = 'INV-PROJECTION-001'"
+      ).get() as { projection_key: string }).projection_key).toBe("legacy")
+      expect((db.prepare(
+        "SELECT projection_key FROM spec_tests WHERE invariant_id = 'INV-PROJECTION-001'"
+      ).get() as { projection_key: string }).projection_key).toBe("legacy")
+      expect((db.prepare(
+        "SELECT projection_key FROM spec_signoffs WHERE scope_value = 'legacy-prd'"
+      ).get() as { projection_key: string }).projection_key).toBe("legacy")
+      expect((db.prepare(
+        "SELECT content_hash FROM doc_projection_snapshots WHERE projection_key = 'legacy' AND doc_id = ?"
+      ).get(doc.id) as { content_hash: string }).content_hash).toBe("legacy-hash")
+      expect((db.prepare(
+        "SELECT COUNT(*) AS count FROM spec_test_runs"
+      ).get() as { count: number }).count).toBe(1)
+
+      db.prepare(
+        `INSERT INTO spec_projections (projection_key, content_root)
+         VALUES ('checkout-a', '/tmp/checkout-a'), ('checkout-b', '/tmp/checkout-b')`
+      ).run()
+      for (const [projectionKey, rule] of [
+        ["checkout-a", "checkout A rule"],
+        ["checkout-b", "checkout B rule"],
+      ] as const) {
+        db.prepare(
+          `INSERT INTO invariants (projection_key, id, rule, enforcement, doc_id)
+           VALUES (?, 'INV-PROJECTION-001', ?, 'integration_test', ?)`
+        ).run(projectionKey, rule, doc.id)
+        db.prepare(
+          `INSERT INTO spec_tests (
+             projection_key, invariant_id, test_id, test_file, test_name, discovery
+           ) VALUES (?, 'INV-PROJECTION-001', 'test/shared.test.ts::shared', 'test/shared.test.ts', 'shared', 'tag')`
+        ).run(projectionKey)
+      }
+
+      expect((db.prepare(
+        "SELECT COUNT(*) AS count FROM invariants WHERE id = 'INV-PROJECTION-001'"
+      ).get() as { count: number }).count).toBe(3)
+      expect((db.prepare(
+        "SELECT COUNT(*) AS count FROM spec_tests WHERE test_id = 'test/shared.test.ts::shared'"
+      ).get() as { count: number }).count).toBe(2)
+      expect(db.prepare("PRAGMA foreign_key_check").all()).toEqual([])
+    })
+
     it("leaves docs with a valid self-referencing parent FK (no dangling docs_new) so doc inserts work", () => {
       // Regression: migrations 036/041 rebuilt docs with `parent_doc_id REFERENCES
       // docs_new(id)` and renamed docs_new -> docs with foreign keys disabled (so
@@ -298,6 +378,8 @@ describe("Migration system", () => {
         "sync_events", "sync_streams", "sync_watermark",
         // Migration 034 — spec traceability
         "spec_tests", "spec_test_runs", "spec_signoffs",
+        // Migration 047 - worktree-scoped derived spec state
+        "spec_projections", "doc_projection_snapshots",
         // Migration 035 — process registry
         "process_registry",
         // Migration 037 — decisions

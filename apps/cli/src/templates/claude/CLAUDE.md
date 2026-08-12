@@ -1,4 +1,4 @@
-# tx — Headless, Local Infra for AI Agents
+# tx - Headless, Local Infra for AI Agents
 
 ## IMPORTANT: tx Is Canonical, Native Task List Is Allowed
 
@@ -217,7 +217,7 @@ done
 | System Design | `specs/system-design/` | `SD-NNN` | Shared architecture constraints |
 
 - `tx doc` scaffolds all 5 doc kinds: `overview`, `requirement`, `prd`, `design`, and `system_design`.
-- Docs have immutable `doc_id` values. Human `name` slugs only need to be unique within their doc kind, so matching PRD/design slugs are allowed.
+- Docs have immutable `doc_id` values. Treat human `name` slugs as globally unique for agent workflows and use distinct names such as `<feature>-prd` and `<feature>-design`. Resolve legacy duplicates with `kind/name` or `doc_id`.
 - Create docs for non-trivial features and plans; formalize behavior, scope, design, and SD when cross-cutting.
 - Skip docs for trivial changes (typos, obvious bug fixes, single-line edits, and focused test-only updates).
 - Link docs as a chain: `REQ -> PRD -> DD`, and include `SD` when constraints span multiple features.

@@ -71,7 +71,27 @@ export type InvariantUpsertInput = {
   testHint?: string | null
 }
 
+export type DocProjectionSnapshot = {
+  readonly docId: DocId
+  readonly contentHash: string
+  readonly title: string
+  readonly filePath: string
+  readonly headSha: string | null
+  readonly syncedAt: Date
+}
+
+export type DocProjectionSnapshotInput = {
+  readonly docId: DocId
+  readonly contentHash: string
+  readonly title: string
+  readonly filePath: string
+  readonly headSha?: string | null
+}
+
 export type DocRepositoryService = {
+  beginImmediate: () => Effect.Effect<void, DatabaseError>
+  commit: () => Effect.Effect<void, DatabaseError>
+  rollback: () => Effect.Effect<void, DatabaseError>
   insert: (input: DocInsertInput) => Effect.Effect<Doc, DatabaseError>
   findById: (id: DocId) => Effect.Effect<Doc | null, DatabaseError>
   findByDocId: (docId: DocStableId, version?: number) => Effect.Effect<Doc | null, DatabaseError>
@@ -100,4 +120,6 @@ export type DocRepositoryService = {
   insertInvariantCheck: (invariantId: string, passed: boolean, details: string | null, durationMs: number | null) => Effect.Effect<InvariantCheck, DatabaseError>
   getInvariantChecks: (invariantId: string, limit?: number) => Effect.Effect<InvariantCheck[], DatabaseError>
   countInvariantsByDoc: (docId: DocId) => Effect.Effect<number, DatabaseError>
+  upsertProjectionSnapshot: (input: DocProjectionSnapshotInput) => Effect.Effect<void, DatabaseError>
+  findProjectionSnapshot: (docId: DocId) => Effect.Effect<DocProjectionSnapshot | null, DatabaseError>
 }

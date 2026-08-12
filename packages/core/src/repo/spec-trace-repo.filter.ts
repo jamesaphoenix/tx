@@ -2,9 +2,11 @@ import type { SpecTraceFilter } from "./spec-trace-repo.types.js"
 
 export const buildInvariantFilterSql = (
   filter: SpecTraceFilter | undefined,
-  params: unknown[]
+  params: unknown[],
+  projectionKey: string
 ): string => {
-  const clauses: string[] = ["i.status = 'active'"]
+  const clauses: string[] = ["i.projection_key = ?", "i.status = 'active'"]
+  params.push(projectionKey)
 
   if (filter?.doc) {
     // `--doc` accepts both the human-readable name and the stable lineage ID.

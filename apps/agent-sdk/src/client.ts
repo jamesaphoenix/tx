@@ -10,7 +10,10 @@
  * const tx = new TxClient({ apiUrl: 'http://localhost:3456' })
  *
  * // Direct mode (for local agents, requires @tx/core)
- * const tx = new TxClient({ dbPath: '.tx/tasks.db' })
+ * const tx = new TxClient({
+ *   stateRoot: '/path/to/main-repo',
+ *   contentRoot: '/path/to/worktree',
+ * })
  *
  * // Usage
  * const ready = await tx.tasks.ready({ limit: 10 })
@@ -255,7 +258,7 @@ interface Transport {
   invariantsRecord(id: string, passed: boolean, details?: string, durationMs?: number): Promise<SerializedInvariantCheck>
 
   // Spec traceability
-  specDiscover(options?: { doc?: string; patterns?: string[] }): Promise<DiscoverResult>
+  specDiscover(options?: { doc?: string; patterns?: string[]; dryRun?: boolean; prune?: boolean }): Promise<DiscoverResult>
   specLink(invariantId: string, file: string, name?: string, framework?: string): Promise<SerializedSpecTest>
   specUnlink(invariantId: string, testId: string): Promise<{ removed: boolean }>
   specTests(invariantId: string): Promise<SerializedSpecTest[]>
@@ -952,7 +955,7 @@ class HttpTransport implements Transport {
     )
   }
 
-  async specDiscover(options?: { doc?: string; patterns?: string[] }): Promise<DiscoverResult> {
+  async specDiscover(options?: { doc?: string; patterns?: string[]; dryRun?: boolean; prune?: boolean }): Promise<DiscoverResult> {
     return await this.request<DiscoverResult>("POST", "/api/spec/discover", { body: options ?? {} })
   }
 
@@ -1143,7 +1146,8 @@ class HttpTransport implements Transport {
 
 /**
  * Module-level cache for ManagedRuntime instances.
- * Keyed by dbPath to ensure singleton per database.
+ * Keyed by database path and content checkout so shared task state can retain
+ * independent derived spec projections.
  * This prevents DOCTRINE RULE 8 violations - multiple clients
  * using the same dbPath share the same runtime/layer.
  */
@@ -1157,6 +1161,11 @@ const runtimeCache = new Map<string, { runtime: any; refCount: number; core: any
  */
 const pendingInit = new Map<string, Promise<{ runtime: any; core: any; Effect: any }>>()
 
+const resolveDirectDbPath = (dbPath: string): string =>
+  dbPath === ":memory:" || dbPath.startsWith("file:")
+    ? dbPath
+    : resolve(dbPath)
+
 /**
  * Direct SQLite transport using @tx/core.
  * Only available when @tx/core is installed and running on Bun runtime.
@@ -1165,20 +1174,33 @@ class DirectTransport implements Transport {
 
   private runtime: any
   private dbPath: string
+  private stateRoot?: string
+  private contentRoot?: string
+  private contentCwd: string
+  private runtimeKey: string
   private runtimeRefCounted = false
 
   constructor(config: TxClientConfig) {
-    if (!config.dbPath) {
-      throw new TxError("dbPath is required for direct transport", "CONFIG_ERROR")
+    if (!config.dbPath && !config.stateRoot) {
+      throw new TxError("dbPath or stateRoot is required for direct transport", "CONFIG_ERROR")
     }
-    this.dbPath = config.dbPath
+    this.contentCwd = process.cwd()
+    this.stateRoot = config.stateRoot ? resolve(config.stateRoot) : undefined
+    this.contentRoot = config.contentRoot ? resolve(config.contentRoot) : undefined
+    this.dbPath = resolveDirectDbPath(
+      config.dbPath ?? resolve(this.stateRoot!, ".tx", "tasks.db")
+    )
+    this.runtimeKey = JSON.stringify([
+      this.dbPath,
+      this.contentRoot ?? resolve(this.contentCwd),
+    ])
   }
 
   private async ensureRuntime(): Promise<void> {
     if (this.runtime) return
 
     // Check if we already have a cached runtime for this dbPath
-    const cached = runtimeCache.get(this.dbPath)
+    const cached = runtimeCache.get(this.runtimeKey)
     if (cached) {
       if (!this.runtimeRefCounted) {
         cached.refCount++
@@ -1194,14 +1216,14 @@ class DirectTransport implements Transport {
     // This prevents the TOCTOU race where concurrent ensureRuntime()
     // calls both miss the cache, both do async imports, and both
     // create separate runtimes — orphaning the first one.
-    const pending = pendingInit.get(this.dbPath)
+    const pending = pendingInit.get(this.runtimeKey)
     if (pending) {
       const result = await pending
       // After the pending init resolves, the cache entry exists.
       // Only increment refCount once per transport instance - concurrent calls
       // on the same transport must not inflate the count.
       if (!this.runtimeRefCounted) {
-        const nowCached = runtimeCache.get(this.dbPath)
+        const nowCached = runtimeCache.get(this.runtimeKey)
         if (nowCached) {
           nowCached.refCount++
         }
@@ -1216,7 +1238,7 @@ class DirectTransport implements Transport {
     // We are the first caller — create the initialization Promise
     // and store it so concurrent callers coalesce on it.
     const initPromise = this.initRuntime()
-    pendingInit.set(this.dbPath, initPromise)
+    pendingInit.set(this.runtimeKey, initPromise)
 
     try {
       const result = await initPromise
@@ -1226,7 +1248,7 @@ class DirectTransport implements Transport {
       // initRuntime() already set refCount=1 for this transport in the cache
       this.runtimeRefCounted = true
     } finally {
-      pendingInit.delete(this.dbPath)
+      pendingInit.delete(this.runtimeKey)
     }
   }
 
@@ -1240,11 +1262,20 @@ class DirectTransport implements Transport {
       const core = await import("@jamesaphoenix/tx")
       const { Effect, ManagedRuntime } = await import("effect")
 
-      const layer = core.makeAppLayer(this.dbPath)
+      const workspace = core.resolveWorkspaceContext({
+        cwd: this.contentCwd,
+        stateRoot: this.stateRoot,
+        contentRoot: this.contentRoot,
+        dbPath: this.dbPath,
+      })
+      const layer = core.makeAppLayer(workspace.dbPath, {
+        contentRoot: workspace.contentRoot,
+        projection: workspace,
+      })
       const runtime = ManagedRuntime.make(layer)
 
       // Cache the runtime for reuse by other clients
-      runtimeCache.set(this.dbPath, { runtime, refCount: 1, core, Effect })
+      runtimeCache.set(this.runtimeKey, { runtime, refCount: 1, core, Effect })
 
       return { runtime, core, Effect }
     } catch (e) {
@@ -3442,7 +3473,7 @@ class DirectTransport implements Transport {
   }
 
   // Spec traceability
-  async specDiscover(options?: { doc?: string; patterns?: string[] }): Promise<DiscoverResult> {
+  async specDiscover(options?: { doc?: string; patterns?: string[]; dryRun?: boolean; prune?: boolean }): Promise<DiscoverResult> {
     await this.ensureRuntime()
     const Effect = (this as any).Effect
     const core = (this as any).core
@@ -4115,7 +4146,8 @@ class DirectTransport implements Transport {
 
   /**
    * Dispose of the runtime and release resources.
-   * Only actually disposes when all clients using this dbPath have disposed.
+   * Only actually disposes when all clients using this database and content
+   * checkout have disposed.
    *
    * Safe against concurrent calls: `this.runtime` is nulled synchronously
    * before any await, so a second call immediately sees null and returns.
@@ -4127,12 +4159,12 @@ class DirectTransport implements Transport {
     // Null immediately so concurrent calls are idempotent from this tick.
     this.runtime = null
 
-    const cached = runtimeCache.get(this.dbPath)
+    const cached = runtimeCache.get(this.runtimeKey)
     if (cached) {
       cached.refCount--
       if (cached.refCount <= 0) {
         // Last client - actually dispose the runtime
-        runtimeCache.delete(this.dbPath)
+        runtimeCache.delete(this.runtimeKey)
         await rt.dispose()
       }
     }
@@ -4653,7 +4685,7 @@ class RunsNamespace {
 class SpecNamespace {
   constructor(private readonly transport: Transport) {}
 
-  async discover(options?: { doc?: string; patterns?: string[] }): Promise<DiscoverResult> {
+  async discover(options?: { doc?: string; patterns?: string[]; dryRun?: boolean; prune?: boolean }): Promise<DiscoverResult> {
     return this.transport.specDiscover(options)
   }
 
@@ -5399,12 +5431,12 @@ export class TxClient {
    * Create a new TxClient.
    *
    * @param config - Client configuration
-   * @throws TxError if neither apiUrl nor dbPath is provided
+   * @throws TxError if neither apiUrl nor direct-mode state is provided
    */
   constructor(config: TxClientConfig) {
-    if (!config.apiUrl && !config.dbPath) {
+    if (!config.apiUrl && !config.dbPath && !config.stateRoot) {
       throw new TxError(
-        "Either apiUrl or dbPath must be provided",
+        "Either apiUrl, dbPath, or stateRoot must be provided",
         "CONFIG_ERROR"
       )
     }
@@ -5412,7 +5444,7 @@ export class TxClient {
     this.config = config
 
     // Prefer direct mode if dbPath is provided
-    if (config.dbPath) {
+    if (config.dbPath || config.stateRoot) {
       this.transport = new DirectTransport(config)
     } else {
       this.transport = new HttpTransport(config)
@@ -5538,8 +5570,8 @@ export function _testInjectMockRuntime(
     runPromise: async () => {},
   }
   const transport = (client as any).transport as DirectTransport
-  const dbPath = (transport as any).dbPath as string
+  const runtimeKey = (transport as any).runtimeKey as string
   ;(transport as any).runtime = mockRuntime
-  runtimeCache.set(dbPath, { runtime: mockRuntime, refCount, core: {}, Effect: {} })
+  runtimeCache.set(runtimeKey, { runtime: mockRuntime, refCount, core: {}, Effect: {} })
   return { dispose: mockRuntime.dispose, disposeCallCount: () => calls }
 }

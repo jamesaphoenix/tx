@@ -164,6 +164,109 @@ describe("CLI spec traceability", () => {
     expect(statusJson.signedOff).toBe(false)
   })
 
+  it("previews discovery writes and only prunes stale mappings when explicitly requested", { timeout: 120_000 }, () => {
+    expect(runTx(cwd, dbPath, [
+      "doc", "add", "prd", "spec-cli-prune", "--title", "Spec CLI Prune",
+    ]).status).toBe(0)
+    writeSpecDocMd(cwd, "spec-cli-prune", [
+      { id: "INV-CLI-PRUNE-001", rule: "mapping lifecycle is explicit" },
+    ])
+    expect(runTx(cwd, dbPath, ["doc", "sync", "spec-cli-prune"]).status).toBe(0)
+
+    const testPath = join(cwd, "test", "spec", "explicit-prune.test.ts")
+    mkdirSync(join(cwd, "test", "spec"), { recursive: true })
+    writeFileSync(
+      testPath,
+      'import { it } from "vitest"\nit("[INV-CLI-PRUNE-001] explicit prune", () => {})\n',
+      "utf-8",
+    )
+
+    const dryRun = runTx(cwd, dbPath, [
+      "spec", "discover", "--doc", "spec-cli-prune",
+      "--patterns", "test/**/*.test.ts", "--dry-run", "--json",
+    ])
+    expect(dryRun.status).toBe(0)
+    expect(JSON.parse(dryRun.stdout)).toMatchObject({
+      dryRun: true,
+      pruneEnabled: false,
+      discoveredLinks: 1,
+      upserted: 0,
+      pruned: 0,
+    })
+    expect(JSON.parse(runTx(
+      cwd,
+      dbPath,
+      ["spec", "tests", "INV-CLI-PRUNE-001", "--json"],
+    ).stdout)).toHaveLength(0)
+
+    const initial = runTx(cwd, dbPath, [
+      "spec", "discover", "--doc", "spec-cli-prune",
+      "--patterns", "test/**/*.test.ts", "--json",
+    ])
+    expect(initial.status).toBe(0)
+    expect(JSON.parse(initial.stdout)).toMatchObject({ upserted: 1, pruned: 0 })
+
+    writeFileSync(
+      testPath,
+      'import { it } from "vitest"\nit("annotation removed", () => {})\n',
+      "utf-8",
+    )
+
+    const retained = runTx(cwd, dbPath, [
+      "spec", "discover", "--doc", "spec-cli-prune",
+      "--patterns", "test/**/*.test.ts", "--json",
+    ])
+    expect(retained.status).toBe(0)
+    const retainedJson = JSON.parse(retained.stdout) as {
+      prospectivePruneCount: number
+      prospectivePrunes: Array<{ invariantId: string; testId: string; discovery: string }>
+      pruned: number
+      pruneEnabled: boolean
+    }
+    expect(retainedJson.pruneEnabled).toBe(false)
+    expect(retainedJson.prospectivePruneCount).toBe(1)
+    expect(retainedJson.prospectivePrunes).toEqual([
+      {
+        invariantId: "INV-CLI-PRUNE-001",
+        testId: "test/spec/explicit-prune.test.ts::[INV-CLI-PRUNE-001] explicit prune",
+        testFile: "test/spec/explicit-prune.test.ts",
+        discovery: "tag",
+      },
+    ])
+    expect(retainedJson.pruned).toBe(0)
+    expect(JSON.parse(runTx(
+      cwd,
+      dbPath,
+      ["spec", "tests", "INV-CLI-PRUNE-001", "--json"],
+    ).stdout)).toHaveLength(1)
+
+    const pruned = runTx(cwd, dbPath, [
+      "spec", "discover", "--doc", "spec-cli-prune",
+      "--patterns", "test/**/*.test.ts", "--prune", "--json",
+    ])
+    expect(pruned.status).toBe(0)
+    const prunedJson = JSON.parse(pruned.stdout) as {
+      prospectivePruneCount: number
+      prospectivePrunes: unknown[]
+      pruned: number
+      prunedMappings: unknown[]
+    }
+    expect(prunedJson.prospectivePruneCount).toBe(1)
+    expect(prunedJson.pruned).toBe(1)
+    expect(prunedJson.prunedMappings).toEqual(prunedJson.prospectivePrunes)
+    expect(JSON.parse(runTx(
+      cwd,
+      dbPath,
+      ["spec", "tests", "INV-CLI-PRUNE-001", "--json"],
+    ).stdout)).toHaveLength(0)
+
+    const conflicting = runTx(cwd, dbPath, [
+      "spec", "discover", "--prune", "--no-prune",
+    ])
+    expect(conflicting.status).not.toBe(0)
+    expect(conflicting.stderr).toContain("Use either --prune or --no-prune")
+  })
+
   it("transitions HARDEN -> COMPLETE via spec run and complete", { timeout: 120_000 }, () => {
     expect(runTx(cwd, dbPath, ["doc", "add", "prd", "spec-cli-b", "--title", "Spec CLI B"]).status).toBe(0)
     writeSpecDocMd(cwd, "spec-cli-b", [
