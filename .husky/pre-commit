@@ -2,6 +2,16 @@
 
 # Pre-commit hook: Fast checks (types + lint) + targeted tests for changed files
 
+# Git exports repository-local variables to hooks. If a targeted test creates
+# a temporary repository, those variables can redirect its git commands back
+# to this checkout. Clear them before starting any subprocesses. Git commands
+# run by this hook rediscover the repository from the working directory.
+unset GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CONFIG GIT_CONFIG_PARAMETERS \
+    GIT_CONFIG_COUNT GIT_OBJECT_DIRECTORY GIT_DIR GIT_WORK_TREE \
+    GIT_IMPLICIT_WORK_TREE GIT_GRAFT_FILE GIT_INDEX_FILE \
+    GIT_NO_REPLACE_OBJECTS GIT_REPLACE_REF_BASE GIT_PREFIX \
+    GIT_SHALLOW_FILE GIT_COMMON_DIR
+
 echo "🔍 Running pre-commit checks..."
 
 # Run type checking and linting (fast feedback)

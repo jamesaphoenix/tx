@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite"
-import { describe, it, expect, afterEach } from "vitest"
+import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { spawnSync, type SpawnSyncReturns } from "child_process"
 import { appendFileSync, chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -7,6 +7,26 @@ import { join, resolve } from "node:path"
 
 const REPO_ROOT = resolve(__dirname, "..", "..")
 const SOURCE_RALPH = resolve(REPO_ROOT, "scripts", "ralph.sh")
+
+const REPOSITORY_LOCAL_GIT_ENV_KEYS = [
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  "GIT_CONFIG",
+  "GIT_CONFIG_PARAMETERS",
+  "GIT_CONFIG_COUNT",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_DIR",
+  "GIT_WORK_TREE",
+  "GIT_IMPLICIT_WORK_TREE",
+  "GIT_GRAFT_FILE",
+  "GIT_INDEX_FILE",
+  "GIT_NO_REPLACE_OBJECTS",
+  "GIT_REPLACE_REF_BASE",
+  "GIT_PREFIX",
+  "GIT_SHALLOW_FILE",
+  "GIT_COMMON_DIR",
+] as const
+
+const inheritedGitEnv = new Map<string, string | undefined>()
 
 interface Sandbox {
   dir: string
@@ -20,6 +40,14 @@ interface Sandbox {
 
 const sandboxes: string[] = []
 
+function isolatedGitEnv(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+  const env = { ...process.env }
+  for (const key of REPOSITORY_LOCAL_GIT_ENV_KEYS) {
+    delete env[key]
+  }
+  return { ...env, ...overrides }
+}
+
 function writeExecutable(path: string, content: string): void {
   writeFileSync(path, content)
   chmodSync(path, 0o755)
@@ -31,6 +59,7 @@ function runTxCli(dir: string, args: string[], label: string): SpawnSyncReturns<
     encoding: "utf-8",
     stdio: "pipe",
     timeout: 90000,
+    env: isolatedGitEnv(),
   })
 
   if (result.status !== 0) {
@@ -153,11 +182,10 @@ function runRalph(sandbox: Sandbox, extraArgs: string[] = []): SpawnSyncReturns<
       encoding: "utf-8",
       stdio: "pipe",
       timeout: 60000,
-      env: {
-        ...process.env,
+      env: isolatedGitEnv({
         PATH: `${join(sandbox.dir, "bin")}:${process.env.PATH ?? ""}`,
         RALPH_E2E_STATE_DIR: sandbox.stateDir,
-      },
+      }),
     },
   )
 }
@@ -172,12 +200,34 @@ function assertRalphSuccess(result: SpawnSyncReturns<string>, sandbox: Sandbox):
   throw new Error(`ralph failed (${result.status})\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}\nlog:\n${log}`)
 }
 
+beforeEach(() => {
+  for (const key of REPOSITORY_LOCAL_GIT_ENV_KEYS) {
+    inheritedGitEnv.set(key, process.env[key])
+  }
+
+  // Reproduce the environment supplied by Git hooks without pointing at a
+  // real repository. The sandbox commands must ignore these inherited values.
+  process.env.GIT_DIR = join(tmpdir(), "tx-ralph-inherited.git")
+  process.env.GIT_WORK_TREE = join(tmpdir(), "tx-ralph-inherited-worktree")
+  process.env.GIT_INDEX_FILE = join(tmpdir(), "tx-ralph-inherited.index")
+})
+
 afterEach(() => {
   for (const dir of sandboxes.splice(0, sandboxes.length)) {
     if (existsSync(dir)) {
       rmSync(dir, { recursive: true, force: true })
     }
   }
+
+  for (const key of REPOSITORY_LOCAL_GIT_ENV_KEYS) {
+    const value = inheritedGitEnv.get(key)
+    if (value === undefined) {
+      delete process.env[key]
+    } else {
+      process.env[key] = value
+    }
+  }
+  inheritedGitEnv.clear()
 })
 
 describe("RALPH context bundle e2e", () => {
