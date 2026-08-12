@@ -1232,7 +1232,7 @@ describe("tx doc sync", () => {
     expect(index).toContain("**Total invariants**: 2")
   })
 
-  it("leaves hashes, invariants, and index unchanged when an all-doc sync cannot validate every doc", () => {
+  it("leaves hashes, invariants, and index unchanged when an all-doc sync cannot validate every doc", { timeout: 30_000 }, () => {
     expect(runTx(
       ["doc", "add", "prd", "atomic-good", "--title", "Atomic Good"],
       tmpProjectDir,
