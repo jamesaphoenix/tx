@@ -628,7 +628,7 @@ tx spec discover --doc design/<name>
 tx spec lint
 ```
 
-`tx doc sync` updates the stored document hash but does not refresh derived invariants. The scoped discovery command reparses this design without reconciling unrelated docs. Treat schema and parser errors as blocking. Coverage-oriented warnings after generation, such as unlinked tasks or invariants without tests yet, should be surfaced separately from structural doc errors.
+`tx doc sync` refreshes the stored document hash, document-derived invariants, and generated index atomically. The scoped discovery command maps tests without reconciling unrelated docs. Treat schema and parser errors as blocking. Coverage-oriented warnings after generation, such as unlinked tasks or invariants without tests yet, should be surfaced separately from structural doc errors.
 
 ## Step 5.5 - Sync Plan File (MANDATORY)
 

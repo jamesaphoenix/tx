@@ -23,6 +23,14 @@ import { CliExitError } from "../cli-exit.js"
 
 const docKindStrings: readonly string[] = DOC_KINDS
 
+const contentRoot = (flags: Flags): string =>
+  typeof flags["content-root"] === "string" ? flags["content-root"] : process.cwd()
+
+const docsRoot = (flags: Flags): string => {
+  const root = contentRoot(flags)
+  return resolve(root, readTxConfig(root).docs.path)
+}
+
 const toEarsAreaSegment = (name: string): string => {
   const normalized = name
     .toUpperCase()
@@ -148,11 +156,11 @@ const docAdd = (pos: string[], flags: Flags) =>
     let relFilePath: string | undefined
     if (pathFlag) {
       // Register an existing file at a custom path
-      const config = readTxConfig()
-      const absPath = resolve(config.docs.path, pathFlag)
+      const root = docsRoot(flags)
+      const absPath = resolve(root, pathFlag)
       if (!existsSync(absPath)) {
         console.error(`File not found: ${absPath}`)
-        console.error(`Provide a path relative to '${config.docs.path}'`)
+        console.error(`Provide a path relative to '${root}'`)
         throw new CliExitError(1)
       }
       content = readFileSync(absPath, "utf8")
@@ -187,7 +195,7 @@ const docAdd = (pos: string[], flags: Flags) =>
     }
   })
 
-const docEdit = (pos: string[], _flags: Flags) =>
+const docEdit = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const ref = pos[0]
     if (!ref) {
@@ -198,8 +206,7 @@ const docEdit = (pos: string[], _flags: Flags) =>
     const svc = yield* DocService
     const doc = yield* svc.get(ref)
     const editor = process.env.EDITOR ?? "vi"
-    const config = readTxConfig()
-    const absPath = resolve(config.docs.path, doc.filePath)
+    const absPath = resolve(docsRoot(flags), doc.filePath)
 
     const [editorCmd, ...editorArgs] = editor.split(/\s+/).filter(Boolean)
     if (!editorCmd) {
@@ -233,8 +240,7 @@ const docShow = (pos: string[], flags: Flags) =>
     if (flag(flags, "json")) {
       console.log(toJson(doc))
     } else if (flag(flags, "md")) {
-      const config = readTxConfig()
-      const markdownPath = resolve(config.docs.path, doc.filePath)
+      const markdownPath = resolve(docsRoot(flags), doc.filePath)
       if (!existsSync(markdownPath)) {
         console.error(`File not found: ${markdownPath}`)
         throw new CliExitError(1)
@@ -507,12 +513,12 @@ const docLintEars = (pos: string[], flags: Flags) =>
         const message = `Doc '${target}' is kind '${doc.kind}'. EARS validation is only supported for PRD docs.`
         emitLintFailure({
           doc: target,
-          path: resolve(readTxConfig().docs.path, doc.filePath),
+          path: resolve(docsRoot(flags), doc.filePath),
           errors: [{ field: "kind", message }],
         })
       }
       docName = doc.name
-      docPath = resolve(readTxConfig().docs.path, doc.filePath)
+      docPath = resolve(docsRoot(flags), doc.filePath)
     }
 
     let markdownContent = ""
@@ -611,32 +617,23 @@ const docLintEars = (pos: string[], flags: Flags) =>
 const docSync = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const svc = yield* DocService
-    const config = readTxConfig()
     const targetName = pos[0]
-
-    const docs = targetName
-      ? [yield* svc.get(targetName)]
-      : yield* svc.list()
-
-    let synced = 0
-    let skipped = 0
-    const results: Array<{ name: string; status: string }> = []
-
-    for (const doc of docs) {
-      const absPath = resolve(config.docs.path, doc.filePath)
-      if (!existsSync(absPath)) {
-        results.push({ name: doc.name, status: "file_missing" })
-        skipped++
-        continue
-      }
-      const content = readFileSync(absPath, "utf8")
-      yield* svc.update(doc.docId, content)
-      results.push({ name: doc.name, status: "synced" })
-      synced++
-    }
+    const syncedResult = yield* svc.syncFromDisk(targetName)
+    const synced = syncedResult.synced.length
+    const skipped = syncedResult.missing.length
+    const results: Array<{ name: string; status: string }> = [
+      ...syncedResult.synced.map((doc) => ({ name: doc.name, status: "synced" })),
+      ...syncedResult.missing.map((doc) => ({ name: doc.name, status: "file_missing" })),
+    ]
 
     if (flag(flags, "json")) {
-      console.log(toJson({ synced, skipped, results }))
+      console.log(toJson({
+        synced,
+        skipped,
+        invariants: syncedResult.invariants.length,
+        index_refreshed: true,
+        results,
+      }))
     } else {
       console.log(`Synced ${synced} doc(s)${skipped > 0 ? `, ${skipped} skipped (file missing)` : ""}`)
       for (const r of results) {

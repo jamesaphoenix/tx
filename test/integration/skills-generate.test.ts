@@ -134,9 +134,9 @@ describe("tx skills generate", () => {
       const docsSkill = manifest.skills.find((skill) => skill.id === "tx-docs-specs")
       const docsSkillContent = readFileSync(join(target.outputDir, docsSkill!.installPath, "SKILL.md"), "utf-8")
       expect(docsSkillContent).toContain("tx spec discover --doc <doc-ref>")
-      expect(docsSkillContent).toContain("does not reparse invariant definitions")
-      expect(docsSkillContent).toContain("prunes tag, comment, and manifest mappings")
-      expect(docsSkillContent).toContain("`.tx/tasks.db` is shared or symlinked across worktrees")
+      expect(docsSkillContent).toContain("document-derived invariants, and generated index")
+      expect(docsSkillContent).toContain("It retains them by default")
+      expect(docsSkillContent).toContain("--state-root <main-repo>")
 
       const docsReference = readFileSync(join(target.outputDir, docsSkill!.installPath, "references", "commands.md"), "utf-8")
       expect(docsReference).toContain("## tx doc remove")
@@ -156,7 +156,8 @@ describe("tx skills generate", () => {
       const verifySkill = manifest.skills.find((skill) => skill.id === "verify-invariants")
       const verifyContent = readFileSync(join(target.outputDir, verifySkill!.installPath, "SKILL.md"), "utf-8")
       expect(verifyContent).toContain("Critical: Worktree And Pruning Safety")
-      expect(verifyContent).toContain("Auto-discovered tag, comment, and manifest mappings")
+      expect(verifyContent).toContain("retains them by default")
+      expect(verifyContent).toContain("only deletes them with `--prune`")
 
       if (target.target === "codex") {
         expect(designDocContent).toContain("~/.codex/plans/")

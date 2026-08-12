@@ -60,8 +60,8 @@ import { ValidationServiceLive } from "./services/validation-service.js"
 import { MessageRepositoryLive } from "./repo/message-repo.js"
 import { MessageServiceLive } from "./services/message-service.js"
 import { AgentServiceLive } from "./services/agent-service.js"
-import { DocRepositoryLive } from "./repo/doc-repo.js"
-import { DocServiceLive } from "./services/doc-service.js"
+import { makeDocRepositoryLive } from "./repo/doc-repo.js"
+import { makeDocServiceLive } from "./services/doc-service.js"
 import { MemoryDocumentRepositoryLive, MemoryLinkRepositoryLive, MemoryPropertyRepositoryLive, MemorySourceRepositoryLive } from "./repo/memory-repo.js"
 import { MemoryServiceLive } from "./services/memory-service.js"
 import { MemoryRetrieverServiceLive } from "./services/memory-retriever-service.js"
@@ -72,8 +72,9 @@ import { LabelRepositoryLive } from "./repo/label-repo.js"
 import { GuardServiceLive } from "./services/guard-service.js"
 import { VerifyServiceLive } from "./services/verify-service.js"
 import { ReflectServiceLive } from "./services/reflect-service.js"
-import { SpecTraceRepositoryLive } from "./repo/spec-trace-repo.js"
-import { SpecTraceServiceLive } from "./services/spec-trace-service.js"
+import { makeSpecTraceRepositoryLive } from "./repo/spec-trace-repo.js"
+import { makeSpecTraceServiceLive } from "./services/spec-trace-service.js"
+import { legacySpecProjectionContext, type SpecProjectionContext } from "./workspace-context.js"
 import { DecisionRepositoryLive } from "./repo/decision-repo.js"
 import { DecisionServiceLive } from "./services/decision-service.js"
 import { DecomposeServiceLive } from "./services/decompose-service.js"
@@ -274,7 +275,19 @@ export { PiReviewRuntimeLive } from "./services/pi-review-runtime.js"
  *
  * @param infra A layer providing SqliteClient
  */
-export const makeAppLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>) => {
+export type AppLayerOptions = {
+  readonly contentRoot?: string
+  readonly projection?: SpecProjectionContext
+}
+
+export const makeAppLayerFromInfra = <E>(
+  infra: Layer.Layer<SqliteClient, E>,
+  options: AppLayerOptions = {}
+) => {
+  const contentRoot = options.contentRoot
+  const projection = options.projection ?? legacySpecProjectionContext(contentRoot ?? process.cwd())
+  const docRepository = makeDocRepositoryLive(projection)
+  const specTraceRepository = makeSpecTraceRepositoryLive(projection)
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
     DependencyRepositoryLive,
@@ -293,7 +306,7 @@ export const makeAppLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>) =>
     OrchestratorStateRepositoryLive,
     CompactionRepositoryLive,
     MessageRepositoryLive,
-    DocRepositoryLive,
+    docRepository,
     MemoryDocumentRepositoryLive,
     MemoryLinkRepositoryLive,
     MemoryPropertyRepositoryLive,
@@ -301,7 +314,7 @@ export const makeAppLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>) =>
     PinRepositoryLive,
     GuardRepositoryLive,
     LabelRepositoryLive,
-    SpecTraceRepositoryLive,
+    specTraceRepository,
     DecisionRepositoryLive,
     DomainEventRepositoryLive,
     SupervisionRepositoryLive,
@@ -427,7 +440,7 @@ export const makeAppLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>) =>
   const messageService = MessageServiceLive.pipe(Layer.provide(repos))
 
   // DocServiceLive needs DocRepository (from repos)
-  const docService = DocServiceLive.pipe(Layer.provide(repos))
+  const docService = makeDocServiceLive(contentRoot).pipe(Layer.provide(repos))
 
   // AgentServiceLive is lazy and only does real work when invoked.
   const agentService = AgentServiceLive
@@ -438,7 +451,7 @@ export const makeAppLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>) =>
   )
 
   // SpecTraceServiceLive needs SpecTraceRepository + DocService
-  const specTraceService = SpecTraceServiceLive.pipe(
+  const specTraceService = makeSpecTraceServiceLive(contentRoot).pipe(
     Layer.provide(Layer.merge(repos, docService))
   )
 
@@ -496,8 +509,8 @@ export const makeAppLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>) =>
  *
  * @param dbPath Path to SQLite database file
  */
-export const makeAppLayer = (dbPath: string) => {
-  return makeAppLayerFromInfra(SqliteClientLive(dbPath))
+export const makeAppLayer = (dbPath: string, options: AppLayerOptions = {}) => {
+  return makeAppLayerFromInfra(SqliteClientLive(dbPath), options)
 }
 
 /**
@@ -509,7 +522,14 @@ export const makeAppLayer = (dbPath: string) => {
  *
  * @param infra A layer providing SqliteClient
  */
-export const makeMinimalLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>) => {
+export const makeMinimalLayerFromInfra = <E>(
+  infra: Layer.Layer<SqliteClient, E>,
+  options: AppLayerOptions = {}
+) => {
+  const contentRoot = options.contentRoot
+  const projection = options.projection ?? legacySpecProjectionContext(contentRoot ?? process.cwd())
+  const docRepository = makeDocRepositoryLive(projection)
+  const specTraceRepository = makeSpecTraceRepositoryLive(projection)
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
     DependencyRepositoryLive,
@@ -528,7 +548,7 @@ export const makeMinimalLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>
     OrchestratorStateRepositoryLive,
     CompactionRepositoryLive,
     MessageRepositoryLive,
-    DocRepositoryLive,
+    docRepository,
     MemoryDocumentRepositoryLive,
     MemoryLinkRepositoryLive,
     MemoryPropertyRepositoryLive,
@@ -536,7 +556,7 @@ export const makeMinimalLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>
     PinRepositoryLive,
     GuardRepositoryLive,
     LabelRepositoryLive,
-    SpecTraceRepositoryLive,
+    specTraceRepository,
     DecisionRepositoryLive,
     DomainEventRepositoryLive,
     SupervisionRepositoryLive,
@@ -630,10 +650,10 @@ export const makeMinimalLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>
   const messageService = MessageServiceLive.pipe(Layer.provide(repos))
 
   // DocServiceLive needs DocRepository (from repos)
-  const docService = DocServiceLive.pipe(Layer.provide(repos))
+  const docService = makeDocServiceLive(contentRoot).pipe(Layer.provide(repos))
 
   // SpecTraceServiceLive needs SpecTraceRepository + DocService
-  const specTraceService = SpecTraceServiceLive.pipe(
+  const specTraceService = makeSpecTraceServiceLive(contentRoot).pipe(
     Layer.provide(Layer.merge(repos, docService))
   )
 
@@ -698,6 +718,6 @@ export const makeMinimalLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>
  *
  * @param dbPath Path to SQLite database file
  */
-export const makeMinimalLayer = (dbPath: string) => {
-  return makeMinimalLayerFromInfra(SqliteClientLive(dbPath))
+export const makeMinimalLayer = (dbPath: string, options: AppLayerOptions = {}) => {
+  return makeMinimalLayerFromInfra(SqliteClientLive(dbPath), options)
 }

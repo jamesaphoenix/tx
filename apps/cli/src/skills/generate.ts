@@ -142,9 +142,9 @@ const SKILL_GROUPS: readonly SkillGroupDefinition[] = [
     ],
     operationalNotes: [
       "Treat `<doc-ref>` as a globally unique name, a kind-scoped reference such as `design/auth-flow`, or a stable `doc_id`. Prefer distinct companion names such as `<feature>-prd` and `<feature>-design`; use `tx doc list --json` to recover IDs for legacy duplicate slugs.",
-      "`tx doc sync <doc-ref>` refreshes the stored document record and hash, but it does not reparse invariant definitions. After changing an invariant block, run `tx spec discover --doc <doc-ref>`.",
-      "`tx spec discover` scans the current working directory and reconciles auto-discovered mappings. It prunes tag, comment, and manifest mappings that are absent from that scan; manually linked mappings are preserved.",
-      "When `.tx/tasks.db` is shared or symlinked across worktrees, task and spec state is shared while files remain branch-local. Run file-sensitive doc/spec commands from the exact checkout being described, prefer `--doc`, and reserve unscoped discovery for a deliberate whole-checkout reconciliation.",
+      "`tx doc sync <doc-ref>` refreshes the stored document record, document-derived invariants, and generated index in one transaction.",
+      "`tx spec discover` reports every stale tag, comment, and manifest mapping by identity. It retains them by default; use `--dry-run` to preview all writes and `--prune` to delete stale auto-discovered mappings explicitly. Manual mappings are always preserved.",
+      "Task state can remain shared while derived spec projections are scoped to the content checkout. Use `--state-root <main-repo>` with `--content-root <worktree>` when the roots differ, and confirm both with `tx diag doctor`.",
       "Clear drift with `tx doc sync <doc-ref>`. Never remove and recreate a document merely to update its hash.",
     ],
   },

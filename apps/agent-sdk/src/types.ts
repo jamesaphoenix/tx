@@ -334,6 +334,18 @@ export interface TxClientConfig {
   dbPath?: string
 
   /**
+   * Root containing shared .tx task state (for direct mode).
+   * Used to resolve .tx/tasks.db when dbPath is omitted.
+   */
+  stateRoot?: string
+
+  /**
+   * Checkout containing specs, source files, and .tx/config.toml (for direct mode).
+   * Derived spec state is isolated by this checkout.
+   */
+  contentRoot?: string
+
+  /**
    * Request timeout in milliseconds.
    * @default 30000
    */

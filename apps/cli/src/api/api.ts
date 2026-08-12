@@ -1480,6 +1480,8 @@ const SpecGapsResponse = Schema.Struct({
 const SpecDiscoverBody = Schema.Struct({
   doc: Schema.optional(Schema.String),
   patterns: Schema.optional(Schema.Array(Schema.String.pipe(Schema.minLength(1)))),
+  dryRun: Schema.optional(Schema.Boolean),
+  prune: Schema.optional(Schema.Boolean),
 })
 
 const SpecLinkBody = Schema.Struct({

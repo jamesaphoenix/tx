@@ -11,6 +11,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { spawnSync } from "node:child_process"
+import { Database } from "bun:sqlite"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
@@ -221,6 +222,63 @@ describe("CLI spec lint", () => {
       // drift is a warning, not an error
       expect(result.stdout).toContain("1 drifted")
       expect(result.stdout).toContain("Drift:")
+    })
+
+    it("uses stable document IDs when duplicate slugs exist across kinds", { timeout: 120_000 }, () => {
+      expect(runTx(cwd, dbPath, [
+        "doc", "add", "prd", "shared-slug", "--title", "Shared PRD",
+      ]).status).toBe(0)
+      expect(runTx(cwd, dbPath, [
+        "doc", "add", "design", "shared-slug", "--title", "Shared Design",
+      ]).status).toBe(0)
+
+      const prdPath = join(cwd, "specs", "prd", "shared-slug.md")
+      writeFileSync(
+        prdPath,
+        readFileSync(prdPath, "utf-8") + "\n# Checkout-only edit\n",
+        "utf-8",
+      )
+
+      const result = runTx(cwd, dbPath, ["spec", "lint", "--json"])
+      expect(result.status).toBe(0)
+      const json = JSON.parse(result.stdout) as {
+        issues: Array<{ section: string; severity: string; message: string }>
+      }
+      const driftIssues = json.issues.filter((issue) => issue.section === "drift")
+      expect(driftIssues.some((issue) =>
+        issue.message.includes("shared-slug: Content hash mismatch")
+      )).toBe(true)
+      expect(driftIssues.some((issue) =>
+        issue.message.includes("ambiguous") || issue.message.includes("resolution failed")
+      )).toBe(false)
+    })
+
+    it("reports stable-ID drift resolution failures as lint errors", { timeout: 120_000 }, () => {
+      expect(runTx(cwd, dbPath, [
+        "doc", "add", "prd", "missing-stable-id", "--title", "Missing Stable ID",
+      ]).status).toBe(0)
+
+      const db = new Database(dbPath)
+      try {
+        db.prepare("UPDATE docs SET doc_id = NULL WHERE name = 'missing-stable-id'").run()
+      } finally {
+        db.close()
+      }
+
+      const result = runTx(cwd, dbPath, ["spec", "lint", "--json"])
+      expect(result.status).toBe(1)
+      const json = JSON.parse(result.stdout) as {
+        ok: boolean
+        issues: Array<{ section: string; severity: string; message: string }>
+      }
+      expect(json.ok).toBe(false)
+      expect(json.issues).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          section: "drift",
+          severity: "error",
+          message: expect.stringContaining("drift resolution failed"),
+        }),
+      ]))
     })
   })
 

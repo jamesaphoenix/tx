@@ -1742,9 +1742,9 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
             const insertDocLinkStmt = db.prepare("INSERT INTO doc_links (from_doc_id, to_doc_id, link_type, created_at) VALUES (?, ?, ?, ?)");
             const checkTaskDocLinkStmt = db.prepare("SELECT 1 FROM task_doc_links WHERE task_id = ? AND doc_id = ? AND link_type = ?");
             const insertTaskDocLinkStmt = db.prepare("INSERT INTO task_doc_links (task_id, doc_id, link_type, created_at) VALUES (?, ?, ?, ?)");
-            const findInvariantStmt = db.prepare("SELECT 1 FROM invariants WHERE id = ?");
-            const insertInvariantStmt = db.prepare(`INSERT INTO invariants (id, rule, enforcement, doc_id, subsystem, test_ref, lint_rule, prompt_ref, status, created_at, metadata)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+            const findInvariantStmt = db.prepare("SELECT 1 FROM invariants WHERE projection_key = 'legacy' AND id = ?");
+            const insertInvariantStmt = db.prepare(`INSERT INTO invariants (projection_key, id, rule, enforcement, doc_id, subsystem, test_ref, lint_rule, prompt_ref, status, created_at, metadata)
+             VALUES ('legacy', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
             // Hoist parent resolution UPDATE statement outside the loop
             const updateParentDocStmt = db.prepare("UPDATE docs SET parent_doc_id = ? WHERE id = ?");
             return yield* Effect.try({

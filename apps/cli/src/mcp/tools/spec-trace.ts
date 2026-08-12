@@ -88,7 +88,12 @@ const normalizeBatchRows = (
     details: typeof row.details === "string" ? row.details : undefined,
   }))
 
-const handleSpecDiscover = async (args: { doc?: string; patterns?: string[] }): Promise<McpToolResult> => {
+const handleSpecDiscover = async (args: {
+  doc?: string
+  patterns?: string[]
+  dryRun?: boolean
+  prune?: boolean
+}): Promise<McpToolResult> => {
   try {
     const result = await runEffect(
       Effect.gen(function* () {
@@ -100,6 +105,8 @@ const handleSpecDiscover = async (args: { doc?: string; patterns?: string[] }): 
         return yield* svc.discover({
           doc: doc || undefined,
           patterns: patterns && patterns.length > 0 ? patterns : undefined,
+          dryRun: args.dryRun,
+          prune: args.prune,
         })
       })
     )
@@ -425,6 +432,8 @@ export const registerSpecTraceTools = (server: McpServer): void => {
     {
       doc: z.string().optional().describe("Optional doc name to sync before discovery"),
       patterns: z.array(z.string()).optional().describe("Optional file globs overriding configured [spec].test_patterns"),
+      dryRun: z.boolean().optional().describe("Preview discovery and prospective pruning without writing mappings"),
+      prune: z.boolean().optional().describe("Explicitly remove stale auto-discovered mappings"),
     },
     handleSpecDiscover,
   )

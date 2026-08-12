@@ -46,6 +46,13 @@ export type InsertSpecTestRunInput = {
   runAt?: string
 }
 
+export type SpecPruneCandidate = {
+  readonly invariantId: string
+  readonly testId: string
+  readonly testFile: string
+  readonly discovery: Exclude<SpecDiscoveryMethod, "manual">
+}
+
 export type SpecTraceRepositoryService = {
   readonly upsertSpecTest: (input: UpsertSpecTestInput) => Effect.Effect<SpecTest, DatabaseError>
   readonly deleteSpecTest: (invariantId: string, testId: string) => Effect.Effect<boolean, DatabaseError>
@@ -57,7 +64,16 @@ export type SpecTraceRepositoryService = {
   readonly syncDiscoveredSpecTests: (params: {
     rows: readonly SyncDiscoveredSpecTestInput[]
     invariantIds: readonly string[]
-  }) => Effect.Effect<{ upserted: number; pruned: number }, DatabaseError>
+    prune: boolean
+  }) => Effect.Effect<{
+    upserted: number
+    pruned: number
+    prunedMappings: readonly SpecPruneCandidate[]
+  }, DatabaseError>
+  readonly previewDiscoveredSpecTestPrune: (params: {
+    rows: readonly SyncDiscoveredSpecTestInput[]
+    invariantIds: readonly string[]
+  }) => Effect.Effect<readonly SpecPruneCandidate[], DatabaseError>
   readonly insertRun: (input: InsertSpecTestRunInput) => Effect.Effect<SpecTestRun, DatabaseError>
   readonly insertRunsBatch: (inputs: readonly InsertSpecTestRunInput[]) => Effect.Effect<readonly SpecTestRun[], DatabaseError>
   readonly findLatestRunsBySpecTestIds: (specTestIds: readonly number[]) => Effect.Effect<ReadonlyMap<number, SpecTestRun>, DatabaseError>

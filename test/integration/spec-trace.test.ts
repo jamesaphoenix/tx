@@ -339,6 +339,7 @@ describe("SpecTraceService Integration", () => {
           rootDir: tempDir,
           patterns: ["test/**/*.test.ts"],
           doc: "spec-prune-doc",
+          prune: true,
         })
 
         const autoTests = yield* spec.testsForInvariant("INV-SPEC-PRUNE-001")
@@ -353,6 +354,9 @@ describe("SpecTraceService Integration", () => {
     expect(result.first.upserted).toBe(1)
     expect(result.second.discoveredLinks).toBe(0)
     expect(result.second.upserted).toBe(0)
+    expect(result.second.prospectivePruneCount).toBe(1)
+    expect(result.second.pruned).toBe(1)
+    expect(result.second.prunedMappings).toEqual(result.second.prospectivePrunes)
     expect(result.autoTests).toHaveLength(0)
     expect(result.manualTests).toHaveLength(1)
     expect(result.gaps.map((g) => g.id)).toContain("INV-SPEC-PRUNE-001")

@@ -34,10 +34,11 @@ This means `@spec` comments work in ANY file (test or source), but `[INV-*]` bra
 
 ### Critical: Worktree And Pruning Safety
 
-`tx spec discover` reads files from the current checkout and reconciles the shared spec database. Auto-discovered tag, comment, and manifest mappings that are absent from the scan are pruned; manual mappings are preserved.
+`tx spec discover` reads files from the selected content root and writes to that checkout's derived projection. It reports stale tag, comment, and manifest mappings by identity, retains them by default, and only deletes them with `--prune`. Manual mappings are preserved.
 
-- If a worktree symlinks `.tx/tasks.db` to the primary checkout, its task and spec state is shared even though its files are branch-local.
-- Always run `tx spec discover --doc <doc-ref>` from the checkout containing the target doc and annotations.
+- Task state may be shared across worktrees, while derived spec state is isolated by content checkout.
+- Run from the target checkout, or pass `--state-root <main-repo> --content-root <worktree>` explicitly.
+- Always run `tx spec discover --doc <doc-ref>` for focused work and inspect `--dry-run` before `--prune`.
 - Do not substitute an unscoped discovery run for the required doc-scoped command.
 - Review discovery output and the resulting spec status before recording test runs.
 

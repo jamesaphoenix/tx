@@ -19,7 +19,7 @@ export { ProcessRegistryRepository, ProcessRegistryRepositoryLive } from "./proc
 export { OrchestratorStateRepository, OrchestratorStateRepositoryLive, type OrchestratorStateUpdate } from "./orchestrator-state-repo.js"
 export { CompactionRepository, CompactionRepositoryLive, type CompactionLogEntry, type CreateCompactionLogInput } from "./compaction-repo.js"
 export { MessageRepository, MessageRepositoryLive } from "./message-repo.js"
-export { DocRepository, DocRepositoryLive } from "./doc-repo.js"
+export { DocRepository, DocRepositoryLive, makeDocRepositoryLive } from "./doc-repo.js"
 export {
   MemoryDocumentRepository, MemoryDocumentRepositoryLive,
   MemoryLinkRepository, MemoryLinkRepositoryLive,
@@ -33,6 +33,7 @@ export { LabelRepository, LabelRepositoryLive, type Label, type LabelRow } from 
 export {
   SpecTraceRepository,
   SpecTraceRepositoryLive,
+  makeSpecTraceRepositoryLive,
   type InvariantSummary,
   type SpecTraceFilter,
 } from "./spec-trace-repo.js"

@@ -10,9 +10,9 @@ import { TxError } from "./utils.js"
 
 describe("TxClient", () => {
   describe("configuration", () => {
-    it("throws if neither apiUrl nor dbPath is provided", () => {
+    it("throws if neither apiUrl nor direct-mode state is provided", () => {
       expect(() => new TxClient({})).toThrow(TxError)
-      expect(() => new TxClient({})).toThrow("Either apiUrl or dbPath must be provided")
+      expect(() => new TxClient({})).toThrow("Either apiUrl, dbPath, or stateRoot must be provided")
     })
 
     it("creates HTTP transport when apiUrl is provided", () => {
@@ -25,6 +25,24 @@ describe("TxClient", () => {
       const client = new TxClient({ dbPath: ".tx/test.db" })
       expect(client.isDirect).toBe(true)
       expect(client.isHttp).toBe(false)
+    })
+
+    it("preserves SQLite virtual database paths", () => {
+      const memoryClient = new TxClient({ dbPath: ":memory:" })
+      const uriClient = new TxClient({ dbPath: "file::memory:?cache=shared" })
+
+      expect((memoryClient as any).transport.dbPath).toBe(":memory:")
+      expect((uriClient as any).transport.dbPath).toBe("file::memory:?cache=shared")
+    })
+
+    it("creates direct transport from explicit state and content roots", () => {
+      const client = new TxClient({
+        stateRoot: "/tmp/tx-state-root",
+        contentRoot: "/tmp/tx-content-root",
+      })
+      expect(client.isDirect).toBe(true)
+      expect(client.configuration.stateRoot).toBe("/tmp/tx-state-root")
+      expect(client.configuration.contentRoot).toBe("/tmp/tx-content-root")
     })
 
     it("prefers direct mode when both apiUrl and dbPath are provided", () => {
@@ -65,6 +83,17 @@ describe("TxClient", () => {
 
       expect(client1.configuration.dbPath).toBe(".tx/db1.db")
       expect(client2.configuration.dbPath).toBe(".tx/db2.db")
+    })
+
+    it("keeps separate runtimes for one database used by different content roots", () => {
+      const dbPath = ".tx/shared-state.db"
+      const clientA = new TxClient({ dbPath, contentRoot: "/tmp/checkout-a" })
+      const clientB = new TxClient({ dbPath, contentRoot: "/tmp/checkout-b" })
+
+      _testInjectMockRuntime(clientA, 1)
+      _testInjectMockRuntime(clientB, 1)
+
+      expect(_testGetRuntimeCacheSize()).toBe(2)
     })
 
     it("concurrent ensureRuntime() calls share the same runtime cache key", () => {
