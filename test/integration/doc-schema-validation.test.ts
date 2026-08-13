@@ -3,11 +3,17 @@ import { spawnSync } from "node:child_process"
 import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { Effect } from "effect"
+import { Effect, Either } from "effect"
 import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx/testing"
-import { DocService } from "@jamesaphoenix/tx"
+import {
+  DocService,
+  lintSpecSections,
+  parseMdDocSync,
+  readTxConfig,
+  resolveSpecTypes,
+} from "@jamesaphoenix/tx"
 import { fixtureId } from "../fixtures.js"
-import type { DocKind } from "@jamesaphoenix/tx/types"
+import { asDocKind } from "@jamesaphoenix/tx/types"
 
 const CLI_SRC = resolve(__dirname, "../../apps/cli/src/cli.ts")
 const BUN_BIN = process.execPath.includes("bun") ? process.execPath : "bun"
@@ -79,7 +85,7 @@ describe("Markdown content schema validation integration", () => {
   let tempProjectDir: string
 
   const createDoc = async (input: {
-    kind: DocKind
+    kind: string
     name: string
     title: string
     content: string
@@ -87,7 +93,7 @@ describe("Markdown content schema validation integration", () => {
     Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* DocService
-        return yield* svc.create(input)
+        return yield* svc.create({ ...input, kind: asDocKind(input.kind) })
       }).pipe(Effect.provide(shared.layer))
     )
 
@@ -154,7 +160,7 @@ ears_requirements:
     expect(doc.name).toBe(name)
   })
 
-  it("2. PRD missing problem fails with problem error", async () => {
+  it("2. [INV-SPECCFG-003] PRD missing problem is created, then reported by section lint", async () => {
     const name = shortName("doc-schema-prd-missing-problem", "prd")
     const content = withSpecFrontmatter(
       "prd",
@@ -183,14 +189,22 @@ ears_requirements:
 - None.`
     )
 
-    await expect(
-      createDoc({
-        kind: "prd",
-        name,
-        title: "Missing Problem PRD",
-        content,
-      })
-    ).rejects.toThrow(/problem/i)
+    // Lint-only: creation succeeds; `tx spec lint` surfaces the missing section.
+    const doc = await createDoc({
+      kind: "prd",
+      name,
+      title: "Missing Problem PRD",
+      content,
+    })
+    expect(doc.kind).toBe("prd")
+
+    const parsed = parseMdDocSync(content)
+    if (Either.isLeft(parsed)) throw new Error("expected parse to succeed")
+
+    const registry = resolveSpecTypes(readTxConfig(tempProjectDir))
+    const findings = lintSpecSections(parsed.right, registry, { docName: name })
+    expect(findings.map((finding) => finding.section)).toEqual(["Problem"])
+    expect(findings[0]!.message).toMatch(/problem/i)
   })
 
   it("3. PRD with deprecated requirements passes and keeps deprecation warning path", async () => {
@@ -318,7 +332,7 @@ verification:
     expect(doc.name).toBe(name)
   })
 
-  it("5. design doc missing architecture fails", async () => {
+  it("5. design doc missing architecture is created, then reported by section lint", async () => {
     const name = shortName("doc-schema-design-missing-architecture", "design")
     const content = withSpecFrontmatter(
       "design",
@@ -351,14 +365,21 @@ verification: []
 \`\`\``
     )
 
-    await expect(
-      createDoc({
-        kind: "design",
-        name,
-        title: "Missing Architecture Design",
-        content,
-      })
-    ).rejects.toThrow(/architecture/i)
+    // Lint-only: creation succeeds; `tx spec lint` surfaces the missing section.
+    const doc = await createDoc({
+      kind: "design",
+      name,
+      title: "Missing Architecture Design",
+      content,
+    })
+    expect(doc.kind).toBe("design")
+
+    const parsed = parseMdDocSync(content)
+    if (Either.isLeft(parsed)) throw new Error("expected parse to succeed")
+
+    const registry = resolveSpecTypes(readTxConfig(tempProjectDir))
+    const findings = lintSpecSections(parsed.right, registry, { docName: name })
+    expect(findings.map((finding) => finding.section)).toEqual(["Architecture"])
   })
 
   it("6. design doc with null testing_strategy renders successfully", () => {
@@ -547,7 +568,9 @@ verification: []
     expect(doc.kind).toBe("design")
   })
 
-  it("10. overview doc missing problem_definition fails", async () => {
+  it("10. overview doc missing a required section is created, then reported by lint", async () => {
+    // Required sections are configurable per spec type, so they are lint-only:
+    // a missing heading must not block doc creation, sync, or drift detection.
     const name = shortName("doc-schema-overview-missing-problem-definition", "overview")
     const content = withSpecFrontmatter(
       "overview",
@@ -563,14 +586,22 @@ Architecture summary.
 Primary data flow description.`
     )
 
-    await expect(
-      createDoc({
-        kind: "overview",
-        name,
-        title: "Missing Problem Definition Overview",
-        content,
-      })
-    ).rejects.toThrow(/components/i)
+    const doc = await createDoc({
+      kind: "overview",
+      name,
+      title: "Missing Problem Definition Overview",
+      content,
+    })
+    expect(doc.kind).toBe("overview")
+
+    const parsed = parseMdDocSync(content)
+    expect(Either.isRight(parsed)).toBe(true)
+    if (Either.isLeft(parsed)) throw new Error("expected parse to succeed")
+
+    const registry = resolveSpecTypes(readTxConfig(tempProjectDir))
+    const findings = lintSpecSections(parsed.right, registry, { docName: name })
+    expect(findings.map((finding) => finding.section)).toEqual(["Components"])
+    expect(findings[0]!.severity).toBe("error")
   })
 
   it("11. EARS validation still fails invalid pattern entries", () => {

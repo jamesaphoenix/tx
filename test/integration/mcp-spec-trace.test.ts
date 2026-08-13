@@ -15,6 +15,7 @@ import { tmpdir } from "node:os"
 import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx/testing"
 import { DocService, SpecTraceService, parseBatchRunInput } from "@jamesaphoenix/tx"
 import { registerSpecTraceTools } from "../../apps/cli/src/mcp/tools/spec-trace.js"
+import { asDocKind } from "@jamesaphoenix/tx/types"
 
 type InvariantInput = {
   id: string
@@ -102,7 +103,7 @@ const createDocWithInvariants = (docName: string, invariants: readonly Invariant
     ].join("\n")
 
     yield* docService.create({
-      kind: "prd",
+      kind: asDocKind("prd"),
       name: docName,
       title: docName,
       content,

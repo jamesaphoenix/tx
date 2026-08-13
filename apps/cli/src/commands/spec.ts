@@ -11,6 +11,9 @@ import {
   parseBatchRunInput,
   parseMdDocSync,
   readTxConfig,
+  resolveSpecTypes,
+  specTypeNames,
+  lintSpecSections,
   validateEarsRequirements,
   type BatchSource,
 } from "@jamesaphoenix/tx"
@@ -95,6 +98,7 @@ export const spec = (pos: string[], flags: Flags) => {
     case "status": return specStatus(rest, flags)
     case "health": return specHealthImpl(rest, flags)
     case "lint": return specLint(rest, flags)
+    case "types": return specTypes(rest, flags)
     default:
       return Effect.sync(() => {
         console.error(`Unknown spec subcommand: ${sub ?? "(none)"}`)
@@ -103,6 +107,75 @@ export const spec = (pos: string[], flags: Flags) => {
       })
   }
 }
+
+/**
+ * Print the effective spec-type registry: sections, descriptions, and the lint
+ * prompt each missing section produces.
+ *
+ * This is the machine-readable contract agents and generated skills consume —
+ * it always reflects the current `.tx/config.toml`.
+ */
+const specTypes = (_pos: string[], flags: Flags) =>
+  Effect.sync(() => {
+    const root = typeof flags["content-root"] === "string"
+      ? flags["content-root"]
+      : process.cwd()
+    const registry = resolveSpecTypes(readTxConfig(root))
+    const types = specTypeNames(registry)
+      .map((name) => registry.types.get(name)!)
+      .filter((def) => def.sections.length > 0 || def.builtin)
+
+    if (flag(flags, "json")) {
+      console.log(toJson({
+        types: types.map((def) => ({
+          name: def.name,
+          builtin: def.builtin,
+          customized: def.sectionsCustomized,
+          severity: def.severity,
+          subdir: def.subdir,
+          template: def.templatePath,
+          sections: def.sections.map((section) => ({
+            slug: section.slug,
+            heading: section.heading,
+            description: section.description,
+            message: section.message,
+          })),
+        })),
+        messages: {
+          missing_section: registry.messages.missingSection,
+          unknown_spec_type: registry.messages.unknownSpecType,
+        },
+        warnings: registry.warnings,
+      }))
+      return
+    }
+
+    console.log(`Spec Types (${types.length}) — from .tx/config.toml [spec.types.*]`)
+    for (const def of types) {
+      const origin = def.builtin
+        ? def.sectionsCustomized ? "built-in, customized" : "built-in"
+        : "custom"
+      console.log("")
+      console.log(`  ${def.name}  (${origin}, severity: ${def.severity})`)
+      console.log(`    dir: ${def.subdir === "" ? "<docs root>" : def.subdir}${def.templatePath ? `, template: ${def.templatePath}` : ""}`)
+      if (def.sections.length === 0) {
+        console.log("    (no required sections)")
+        continue
+      }
+      for (const section of def.sections) {
+        console.log(`    # ${section.heading}`)
+        if (section.description) console.log(`        ${section.description}`)
+      }
+    }
+
+    if (registry.warnings.length > 0) {
+      console.log("")
+      console.log("  Warnings:")
+      for (const warning of registry.warnings) {
+        console.log(`    ⚠ ${warning}`)
+      }
+    }
+  })
 
 const specDiscover = (_pos: string[], flags: Flags) =>
   Effect.gen(function* () {
@@ -495,7 +568,34 @@ const specLint = (_pos: string[], flags: Flags) =>
       addIssue("index", "warn", w)
     }
 
-    // --- 4. EARS lint (validate PRD requirements) ---
+    // --- 4. Configured spec-type sections (lint-only; never blocks doc sync) ---
+    const registry = resolveSpecTypes(config)
+    for (const warning of registry.warnings) {
+      addIssue("config", "warn", warning)
+    }
+
+    let sectionFindings = 0
+    for (const doc of docs) {
+      const absPath = resolve(docsPath, doc.filePath)
+      if (!existsSync(absPath) || !doc.filePath.endsWith(".md")) continue
+      let content: string
+      try {
+        content = readFileSync(absPath, "utf8")
+      } catch {
+        continue
+      }
+      const parsed = parseMdDocSync(content)
+      if (Either.isLeft(parsed) || parsed.right.kind !== "spec") continue
+      for (const finding of lintSpecSections(parsed.right, registry, {
+        docName: doc.name,
+        filePath: doc.filePath,
+      })) {
+        sectionFindings++
+        addIssue("sections", finding.severity, finding.message)
+      }
+    }
+
+    // --- 5. EARS lint (validate PRD requirements) ---
     const prdDocs = docs.filter(d => d.kind === "prd")
     for (const doc of prdDocs) {
       const absPath = resolve(docsPath, doc.filePath)
@@ -544,6 +644,8 @@ const specLint = (_pos: string[], flags: Flags) =>
         drift_count: driftCount,
         coverage_warnings: taskWarnings.length,
         index_warnings: indexWarnings.length,
+        section_warnings: sectionFindings,
+        config_warnings: registry.warnings.length,
         fci: fci.fci,
         phase: fci.phase,
         issues,
@@ -555,6 +657,7 @@ const specLint = (_pos: string[], flags: Flags) =>
       console.log(`  Docs:      ${docs.length} total, ${driftCount} drifted`)
       console.log(`  Coverage:  ${taskWarnings.length} unlinked task(s)`)
       console.log(`  Index:     ${indexWarnings.length} searchable metadata warning(s)`)
+      console.log(`  Sections:  ${sectionFindings} missing section finding(s)`)
       console.log(`  EARS:      ${prdDocs.length} PRD(s) checked`)
       if (fci.total > 0) {
         console.log(`  Spec-Test: ${fci.covered}/${fci.total} covered (${fci.fci}%, ${fci.phase})`)
@@ -563,8 +666,10 @@ const specLint = (_pos: string[], flags: Flags) =>
       }
 
       if (issues.length > 0) {
-        const sectionOrder = ["drift", "coverage", "index", "ears", "spec"] as const
+        const sectionOrder = ["config", "drift", "coverage", "index", "sections", "ears", "spec"] as const
         const sectionLabels: Record<string, string> = {
+          config: "Spec Type Config",
+          sections: "Required Sections",
           drift: "Drift",
           coverage: "Coverage",
           index: "Index Searchability",

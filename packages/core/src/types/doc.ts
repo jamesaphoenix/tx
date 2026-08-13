@@ -83,17 +83,45 @@ export const MD_REQUIRED_SECTIONS_BY_SPEC_TYPE = {
 // SCHEMAS & TYPES — Docs
 // =============================================================================
 
-/** Doc kind — overview, requirement, prd, design, or system_design. */
-export const DocKindSchema = Schema.Literal(...DOC_KINDS)
+/**
+ * Doc kind. Built-in kinds are listed in `DOC_KINDS`, but users can define their
+ * own spec types in `.tx/config.toml`, so this accepts any kebab/snake-case
+ * identifier. Membership is validated against the resolved spec-type registry
+ * (see utils/spec-type-registry.ts), not by this schema.
+ */
+export const SPEC_TYPE_NAME_PATTERN = /^[a-z][a-z0-9_-]*$/
+export const DocKindSchema = Schema.String.pipe(
+  Schema.pattern(SPEC_TYPE_NAME_PATTERN),
+  Schema.brand("DocKind")
+)
 export type DocKind = typeof DocKindSchema.Type
+
+/** True when `kind` is one of tx's built-in doc kinds. */
+export const isBuiltinDocKind = (kind: string): boolean =>
+  (DOC_KINDS as readonly string[]).includes(kind)
+
+/** Brand a known-good kind string. Throws if it is not a valid identifier. */
+export const asDocKind = (kind: string): DocKind => DocKindSchema.make(kind)
 
 /** Markdown-first doc kind — `spec` or `task`. */
 export const MdDocKindSchema = Schema.Literal(...MD_DOC_KINDS)
 export type MdDocKind = typeof MdDocKindSchema.Type
 
-/** Markdown-first spec subtype. */
-export const MdSpecTypeSchema = Schema.Literal(...MD_SPEC_TYPES)
+/**
+ * Markdown-first spec subtype. Built-ins are in `MD_SPEC_TYPES`, but users can
+ * declare their own in `.tx/config.toml`, so any identifier parses here and
+ * membership is checked against the resolved registry by the doc service and
+ * `tx spec lint`.
+ */
+export const MdSpecTypeSchema = Schema.String.pipe(
+  Schema.pattern(SPEC_TYPE_NAME_PATTERN),
+  Schema.brand("MdSpecType")
+)
 export type MdSpecType = typeof MdSpecTypeSchema.Type
+
+/** True when `specType` is one of tx's built-in markdown spec types. */
+export const isBuiltinSpecType = (specType: string): boolean =>
+  (MD_SPEC_TYPES as readonly string[]).includes(specType)
 
 /** Markdown-first spec status. */
 export const MdSpecStatusSchema = Schema.Literal(...MD_SPEC_STATUSES)
@@ -754,7 +782,7 @@ export type RecordInvariantCheckInput =
  * Check if a string is a valid doc kind.
  */
 export const isValidDocKind = (kind: string): kind is DocKind => {
-  return (DOC_KINDS as readonly string[]).includes(kind)
+  return (DOC_KINDS as readonly string[]).includes(kind) || SPEC_TYPE_NAME_PATTERN.test(kind)
 }
 
 export class InvalidDocKindError extends Error {
@@ -831,16 +859,8 @@ export const assertDocLinkType = (linkType: string): DocLinkType => {
 export const DocGraphNodeSchema = Schema.Struct({
   id: Schema.String,
   label: Schema.String,
-  kind: Schema.Literal(
-    "overview",
-    "prd",
-    "design",
-    "requirement",
-    "system_design",
-    "runbook",
-    "decision",
-    "task"
-  ),
+  // Any configured spec type, plus "task" for task nodes.
+  kind: Schema.String,
   status: Schema.optional(Schema.String),
 })
 export type DocGraphNode = typeof DocGraphNodeSchema.Type

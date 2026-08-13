@@ -197,6 +197,14 @@ If a PRD exists for this feature:
 
 If no PRD exists, the design doc stands alone. Suggest creating one after.
 
+## This Project's `design` Structure
+
+<!-- tx:spec-structure:start -->
+<!-- tx:spec-structure:end -->
+
+The sections above are what `tx spec lint` checks in THIS project. If they differ
+from the generic guidance later in this skill, the table wins.
+
 ## Step 1 - Scaffold via tx
 
 ```bash

@@ -383,7 +383,7 @@ function scaffoldGeneratedSkills(
   const selectedSkillIds = normalizeSelectedSkills(options?.skills)
 
   try {
-    generateSkillBundles({ target, outputDir: tempDir, clean: true })
+    generateSkillBundles({ target, outputDir: tempDir, clean: true, contentRoot: projectDir })
     const root = installRoot(target)
     const src = join(tempDir, target, root)
     const dest = join(projectDir, root)

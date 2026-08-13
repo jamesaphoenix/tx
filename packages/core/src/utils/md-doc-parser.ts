@@ -1,7 +1,6 @@
 import { Data, Effect, Either, Schema } from "effect"
 import { parse as parseYaml } from "yaml"
 import {
-  MD_REQUIRED_SECTIONS_BY_SPEC_TYPE,
   MdAcceptanceCriterionSchema,
   MdEmbeddedBlocksSchema,
   MdEarsRequirementSchema,
@@ -312,29 +311,6 @@ const extractSections = (body: string): ParseEither<readonly MdSection[]> => {
   return decodeUnknown(Schema.Array(MdSectionSchema), sections, "Section extraction validation failed")
 }
 
-const normalizeHeading = (heading: string): string => heading.trim().toLowerCase()
-
-const validateRequiredSections = (
-  frontmatter: MdFrontmatter,
-  sections: readonly MdSection[]
-): ParseEither<void> => {
-  const requiredSections = MD_REQUIRED_SECTIONS_BY_SPEC_TYPE[frontmatter.spec_type]
-  const present = new Set(sections.map((section) => normalizeHeading(section.heading)))
-  const missing = requiredSections.filter(
-    (requiredHeading) => !present.has(normalizeHeading(requiredHeading))
-  )
-
-  if (missing.length > 0) {
-    return Either.left(
-      new MdDocParseError({
-        reason: `Missing required section(s) for spec_type '${frontmatter.spec_type}': ${missing.join(", ")}`,
-      })
-    )
-  }
-
-  return Either.right(undefined)
-}
-
 const parseFrontmatterByKind = (
   rawFrontmatter: Record<string, unknown>
 ): ParseEither<
@@ -393,14 +369,9 @@ export const parseMdDocSync = (content: string): ParseEither<MdParsedDoc> => {
   }
 
   if (parsedFrontmatterResult.right.kind === "spec") {
-    const sectionValidation = validateRequiredSections(
-      parsedFrontmatterResult.right.frontmatter,
-      sectionsResult.right
-    )
-    if (Either.isLeft(sectionValidation)) {
-      return Either.left(sectionValidation.left)
-    }
-
+    // Required sections are NOT validated here. They are configurable per spec
+    // type and checked by `tx spec lint` (see utils/spec-section-lint.ts), so a
+    // missing heading never blocks doc add/update/sync or drift detection.
     return decodeUnknown(
       MdParsedDocSchema,
       {

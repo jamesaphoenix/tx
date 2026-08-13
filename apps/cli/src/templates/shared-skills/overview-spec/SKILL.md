@@ -145,6 +145,14 @@ DONE
 
 The doc's frontmatter gets `plan: ~/.claude/plans/<name>.md` and the `# Plan` section in the document body contains a reference link to the plan file, not the full content.
 
+## This Project's `overview` Structure
+
+<!-- tx:spec-structure:start -->
+<!-- tx:spec-structure:end -->
+
+The sections above are what `tx spec lint` checks in THIS project. If they differ
+from the generic guidance later in this skill, the table wins.
+
 ## Step 1 - Scaffold via tx
 
 ```bash

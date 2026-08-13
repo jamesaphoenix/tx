@@ -27,6 +27,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import type { Invariant, InvariantCheck } from "@jamesaphoenix/tx/types"
+import { asDocKind } from "@jamesaphoenix/tx/types"
 
 // =============================================================================
 // Helpers
@@ -164,7 +165,7 @@ const createDocWithInvariants = (
       "```",
     ].join("\n")
 
-    yield* docService.create({ kind: "prd", name, title, content })
+    yield* docService.create({ kind: asDocKind("prd"), name, title, content })
     const synced = yield* docService.syncInvariants(name)
     return synced
   })

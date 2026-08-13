@@ -25,7 +25,6 @@ import {
   TASK_STATUSES,
   LEARNING_SOURCE_TYPES,
   RUN_STATUSES,
-  DOC_KINDS,
   DOC_STATUSES,
   DOC_LINK_TYPES,
   INVARIANT_ENFORCEMENT_TYPES,
@@ -993,7 +992,8 @@ const DocSerializedSchema = Schema.Struct({
   id: Schema.Number.pipe(Schema.int()),
   docId: Schema.String,
   hash: Schema.String,
-  kind: Schema.Literal(...DOC_KINDS),
+  // Any configured spec type; see [spec.types.*] in .tx/config.toml.
+  kind: Schema.String,
   name: Schema.String,
   title: Schema.String,
   version: Schema.Number.pipe(Schema.int()),
@@ -1014,7 +1014,8 @@ const DocListParams = Schema.Struct({
 })
 
 const CreateDocBody = Schema.Struct({
-  kind: Schema.Literal(...DOC_KINDS),
+  // Any configured spec type; see [spec.types.*] in .tx/config.toml.
+  kind: Schema.String,
   name: SafePathString.pipe(Schema.minLength(1)),
   title: Schema.String.pipe(Schema.minLength(1)),
   content: Schema.String.pipe(Schema.minLength(1)),

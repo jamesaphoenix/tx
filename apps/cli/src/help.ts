@@ -2176,7 +2176,9 @@ Replace generic placeholders with subsystem-specific language. 'tx spec lint'
 and 'tx doc validate' will explain exactly how to fix missing search metadata.
 
 Arguments:
-  <kind>    Required. Doc kind: overview, prd, or design
+  <kind>    Required. Any spec type from 'tx spec types' (built-ins:
+            overview, prd, design, runbook, decision; plus any custom type
+            defined under [spec.types.*] in .tx/config.toml)
   <name>    Required. Doc name (alphanumeric with dashes/dots)
 
 Options:
@@ -2188,6 +2190,26 @@ Examples:
   tx doc add prd auth-flow --title "Authentication Flow"
   tx doc add design auth-impl -t "Auth Implementation"
   tx doc add overview system-overview`,
+
+  "doc template": `tx doc template - Print the scaffold for a spec type
+
+Usage: tx doc template <type> [--name <name>] [--title <title>]
+
+Prints the exact markdown 'tx doc add <type>' would scaffold, without writing
+anything to disk or the database. Use it to preview the sections that
+'tx spec lint' will check for a given spec type.
+
+Arguments:
+  <type>    Required. Any type listed by 'tx spec types'
+
+Options:
+  --name, -n <name>    Doc name used in the template (default: example-<type>)
+  --title, -t <title>  Doc title (defaults to name)
+  --help               Show this help
+
+Examples:
+  tx doc template prd
+  tx doc template rfc --name my-rfc --title "My RFC"`,
 
   "doc edit": `tx doc edit - Open doc YAML in editor
 
@@ -3449,8 +3471,15 @@ Runs all doc and spec checks in a single pass:
   - Task-doc coverage: tasks not linked to any doc
   - Index searchability: validates frontmatter used to build Description and
     Search Keywords in generated specs/index.md
+  - Spec type config: advisory warnings about [spec.types.*] in .tx/config.toml
+  - Required sections: missing sections per the configured spec type
   - EARS lint: validates PRD requirements syntax
   - Spec-test status: uncovered or failing invariants
+
+Section checks are lint-only: a missing heading never blocks tx doc add,
+tx doc update, tx doc sync, or drift detection. Configure required sections,
+their descriptions, per-section lint prompts, and severity (error|warn|off)
+under [spec.types.*] in .tx/config.toml. Run 'tx spec types' to see them.
 
 Options:
   --json    Output as JSON
@@ -3459,6 +3488,36 @@ Options:
 Examples:
   tx spec lint
   tx spec lint --json`,
+
+  "spec types": `tx spec types - Show the configured spec types
+
+Usage: tx spec types [--json]
+
+Prints the effective spec-type registry resolved from [spec.types.*] in
+.tx/config.toml: required sections, what belongs under each heading, the lint
+prompt emitted when one is missing, the target subdirectory, and severity.
+
+Spec structure is user-configurable. Built-in types (prd, design, overview,
+runbook, decision) ship with defaults that are written into .tx/config.toml by
+'tx init'; edit them freely, or define a new type by adding a
+[spec.types.<name>] section. Custom types are scaffolded and linted like
+built-ins.
+
+Not configurable: the frontmatter contract and the embedded yaml block schemas
+(ears_requirements with REQ-* ids, invariants with INV-* ids, verification,
+interfaces, failure_modes, acceptance_criteria). Those blocks are located
+anywhere in the body, so renaming a heading never breaks 'tx spec discover'.
+
+The --json output is the machine-readable contract that generated skills and
+agents consume.
+
+Options:
+  --json    Output as JSON
+  --help    Show this help
+
+Examples:
+  tx spec types
+  tx spec types --json`,
 
   triangle: `tx triangle is a deprecated alias for 'tx spec health'.
 

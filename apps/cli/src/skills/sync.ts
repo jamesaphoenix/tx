@@ -192,6 +192,8 @@ export function syncSkillBundles(options?: {
       target: targetSelection,
       outputDir: tempDir,
       clean: true,
+      // Render this project's configured spec sections into the skills.
+      contentRoot: projectDir,
     })
 
     const targets = selectedTargets(targetSelection).map((target): SkillSyncTargetSummary => {

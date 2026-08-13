@@ -13,9 +13,12 @@ import {
   formatEarsValidationErrors,
   parseMdDocSync,
   readTxConfig,
+  resolveSpecTypes,
+  specTypeNames,
   validateEarsRequirements,
 } from "@jamesaphoenix/tx"
-import { DOC_KINDS } from "@jamesaphoenix/tx/types"
+import type { SpecTypeDefinition, SpecTypeRegistry } from "@jamesaphoenix/tx"
+import { DOC_KINDS, asDocKind } from "@jamesaphoenix/tx/types"
 import type { DocKind, DocLinkType, TaskDocLinkType } from "@jamesaphoenix/tx/types"
 import { toJson } from "../output.js"
 import { type Flags, flag, opt } from "../utils/parse.js"
@@ -41,10 +44,10 @@ const toEarsAreaSegment = (name: string): string => {
 
 const normalizeDocKind = (kind: DocKind): DocKind => {
   if (kind === "requirement") {
-    return "prd"
+    return asDocKind("prd")
   }
   if (kind === "system_design") {
-    return "design"
+    return asDocKind("design")
   }
   return kind
 }
@@ -109,6 +112,7 @@ export const doc = (pos: string[], flags: Flags) => {
   }
   switch (sub) {
     case "add": return docAdd(rest, flags)
+    case "template": return docTemplate(rest, flags)
     case "edit": return docEdit(rest, flags)
     case "show": return docShow(rest, flags)
     case "list": return docList(rest, flags)
@@ -143,8 +147,11 @@ const docAdd = (pos: string[], flags: Flags) =>
       console.error("  --path: register an existing file instead of scaffolding")
       throw new CliExitError(1)
     }
-    if (!docKindStrings.includes(kind)) {
-      console.error(`Invalid kind: ${kind}. Must be one of: ${DOC_KINDS.join(", ")}`)
+    const root = contentRoot(flags)
+    const registry = resolveSpecTypes(readTxConfig(root))
+    if (!registry.types.has(kind) && !docKindStrings.includes(kind)) {
+      console.error(`Invalid kind: ${kind}. Must be one of: ${specTypeNames(registry).join(", ")}`)
+      console.error(`Define a new one by adding a [spec.types.${kind}] section to .tx/config.toml`)
       throw new CliExitError(1)
     }
 
@@ -156,18 +163,18 @@ const docAdd = (pos: string[], flags: Flags) =>
     let relFilePath: string | undefined
     if (pathFlag) {
       // Register an existing file at a custom path
-      const root = docsRoot(flags)
-      const absPath = resolve(root, pathFlag)
+      const docsDir = docsRoot(flags)
+      const absPath = resolve(docsDir, pathFlag)
       if (!existsSync(absPath)) {
         console.error(`File not found: ${absPath}`)
-        console.error(`Provide a path relative to '${root}'`)
+        console.error(`Provide a path relative to '${docsDir}'`)
         throw new CliExitError(1)
       }
       content = readFileSync(absPath, "utf8")
       relFilePath = pathFlag
     } else {
       const title = opt(flags, "title", "t") ?? name
-      content = generateTemplate(kind as DocKind, name, title)
+      content = generateTemplate(kind as DocKind, name, title, registry, root)
     }
 
     // Parse frontmatter to get title (used for both modes)
@@ -193,6 +200,31 @@ const docAdd = (pos: string[], flags: Flags) =>
       console.log(`  File: ${doc.filePath}`)
       console.log(`  Hash: ${doc.hash.slice(0, 12)}...`)
     }
+  })
+
+/**
+ * Print the scaffold template for a spec type without touching the DB.
+ * Lets agents preview the exact structure `tx spec lint` will expect.
+ */
+const docTemplate = (pos: string[], flags: Flags) =>
+  Effect.sync(() => {
+    const kind = pos[0]
+    if (!kind) {
+      console.error("Usage: tx doc template <type> [--name <name>] [--title <title>]")
+      console.error("Run 'tx spec types' to list the configured spec types.")
+      throw new CliExitError(1)
+    }
+
+    const root = contentRoot(flags)
+    const registry = resolveSpecTypes(readTxConfig(root))
+    if (!registry.types.has(kind) && !docKindStrings.includes(kind)) {
+      console.error(`Unknown spec type: ${kind}. Configured: ${specTypeNames(registry).join(", ")}`)
+      throw new CliExitError(1)
+    }
+
+    const name = opt(flags, "name", "n") ?? `example-${kind}`
+    const title = opt(flags, "title", "t") ?? name
+    console.log(generateTemplate(kind as DocKind, name, title, registry, root))
   })
 
 const docEdit = (pos: string[], flags: Flags) =>
@@ -645,6 +677,8 @@ const docSync = (pos: string[], flags: Flags) =>
 
 const defaultSummary = (kind: DocKind, title: string): string => {
   switch (kind) {
+    default:
+      return `${title}.`
     case "overview":
       return `System overview for ${title}.`
     case "prd":
@@ -675,12 +709,116 @@ const defaultTags = (kind: DocKind, domain: string): string[] => {
   return Array.from(new Set([baseKind, ...tokens]))
 }
 
-/** Generate markdown-first template content for a doc kind. */
-function generateTemplate(
+/** Embedded yaml block seeded under a section, keyed by heading keyword. */
+const SEEDED_BLOCK_BY_HEADING: ReadonlyArray<readonly [RegExp, string]> = [
+  [/requirement/i, "ears_requirements: []"],
+  [/acceptance/i, "acceptance_criteria: []"],
+  [/invariant/i, "invariants: []"],
+  [/verification/i, "verification: []"],
+  [/interface/i, "interfaces: []"],
+  [/failure/i, "failure_modes: []"],
+]
+
+/**
+ * Build a template from the configured sections of a spec type.
+ * Used for user-defined types and for built-ins whose sections were customized,
+ * so the scaffolded doc always matches what `tx spec lint` will check.
+ */
+const generateSectionTemplate = (
+  def: SpecTypeDefinition,
   kind: DocKind,
   name: string,
   title: string
+): string => {
+  const today = new Date().toISOString().slice(0, 10)
+  const summary = defaultSummary(kind, title)
+  const domain = defaultDomain(name, kind)
+  const tags = defaultTags(kind, domain)
+
+  const lines: string[] = [
+    `---`,
+    `kind: spec`,
+    `spec_type: ${kind}`,
+    `name: ${name}`,
+    `title: "${title}"`,
+    `status: draft`,
+    `version: 1`,
+    `owners:`,
+    `  - docs-team`,
+    `summary: "${summary}"`,
+    `domain: ${domain}`,
+    `tags:`,
+    ...tags.map((tag) => `  - ${tag}`),
+    `depends_on: []`,
+    `supersedes: []`,
+    `implements: null`,
+    `last_reviewed_at: ${today}`,
+    `---`,
+    ``,
+  ]
+
+  for (const section of def.sections) {
+    lines.push(`# ${section.heading}`)
+    lines.push(section.description.length > 0 ? section.description : `TODO: fill in.`)
+    const seeded = SEEDED_BLOCK_BY_HEADING.find(([pattern]) => pattern.test(section.heading))
+    if (seeded) {
+      lines.push(``, "```yaml", seeded[1], "```")
+    }
+    lines.push(``)
+  }
+
+  return lines.join("\n")
+}
+
+/** Render a user-supplied template file, substituting {name}/{title}/{date}/{spec_type}. */
+const renderCustomTemplateFile = (
+  templatePath: string,
+  projectRoot: string,
+  kind: DocKind,
+  name: string,
+  title: string
+): string => {
+  const absolute = resolve(projectRoot, templatePath)
+  if (!existsSync(absolute)) {
+    console.error(`Template file not found: ${absolute}`)
+    console.error(`Referenced by [spec.types.${kind}].template in .tx/config.toml`)
+    throw new CliExitError(1)
+  }
+  const vars: Record<string, string> = {
+    name,
+    title,
+    spec_type: kind,
+    date: new Date().toISOString().slice(0, 10),
+  }
+  return readFileSync(absolute, "utf8").replace(
+    /\{(\w+)\}/g,
+    (match, key: string) => vars[key] ?? match
+  )
+}
+
+/**
+ * Generate markdown-first template content for a doc kind.
+ *
+ * Precedence: a configured `template` file, then the built-in rich template
+ * (only when the type's sections are untouched), then a generic template built
+ * from the configured sections.
+ */
+function generateTemplate(
+  kind: DocKind,
+  name: string,
+  title: string,
+  registry?: SpecTypeRegistry,
+  projectRoot?: string
 ): string {
+  const def = registry?.types.get(kind)
+
+  if (def?.templatePath && projectRoot) {
+    return renderCustomTemplateFile(def.templatePath, projectRoot, kind, name, title)
+  }
+  if (def && (!def.builtin || def.sectionsCustomized) && def.sections.length > 0) {
+    return generateSectionTemplate(def, kind, name, title)
+  }
+
   const today = new Date().toISOString().slice(0, 10)
   const summary = defaultSummary(kind, title)
   const domain = defaultDomain(name, kind)
@@ -926,10 +1064,26 @@ function generateTemplate(
     case "requirement":
       console.error("The 'requirement' kind is deprecated. Use 'prd' instead.")
       console.error("Creating as 'prd' with spec_type: prd...")
-      return generateTemplate("prd", name, title)
+      return generateTemplate(asDocKind("prd"), name, title, registry, projectRoot)
     case "system_design":
       console.error("The 'system_design' kind is deprecated. Use 'design' instead.")
       console.error("Creating as 'design' with spec_type: design...")
-      return generateTemplate("design", name, title)
+      return generateTemplate(asDocKind("design"), name, title, registry, projectRoot)
+    default:
+      // A configured type with no sections and no built-in template.
+      return generateSectionTemplate(
+        def ?? {
+          name: kind,
+          builtin: false,
+          sections: [],
+          severity: "error",
+          subdir: kind,
+          templatePath: null,
+          sectionsCustomized: false,
+        },
+        kind,
+        name,
+        title
+      )
   }
 }

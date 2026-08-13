@@ -32,7 +32,7 @@ import { decision } from "./commands/decision.js"
 import { triangle } from "./commands/triangle.js"
 import { groupContext } from "./commands/group-context.js"
 import { scaffoldClaude, scaffoldCodex, scaffoldWatchdog, parseWatchdogRuntimeMode, interactiveScaffold } from "./commands/scaffold.js"
-import { scaffoldConfigToml } from "@jamesaphoenix/tx"
+import { scaffoldConfigToml, upgradeConfigToml } from "@jamesaphoenix/tx"
 import { memory } from "./commands/memory.js"
 import { pin } from "./commands/pin.js"
 import { mdExport } from "./commands/md-export.js"
@@ -454,7 +454,15 @@ if (command === "init") {
     writeFileSync(gitignorePath, "tasks.db\ntasks.db-wal\ntasks.db-shm\n")
   }
   // Scaffold default config.toml with annotated defaults (no-op if exists)
-  scaffoldConfigToml(workspace.contentRoot)
+  const created = scaffoldConfigToml(workspace.contentRoot)
+  if (!created) {
+    // Existing project: append config sections added since it was initialized.
+    // Additive and idempotent; existing keys and comments are untouched.
+    const upgraded = upgradeConfigToml(workspace.contentRoot)
+    if (upgraded.length > 0) {
+      console.log(`Updated .tx/config.toml with ${upgraded.length} new section(s): ${upgraded.join(", ")}`)
+    }
+  }
 }
 
 const layer = makeAppLayer(dbPath, {

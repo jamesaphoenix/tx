@@ -25,6 +25,7 @@ import {
   parseBatchRunInput,
 } from "@jamesaphoenix/tx"
 import type { BatchRunInput } from "@jamesaphoenix/tx/types"
+import { asDocKind } from "@jamesaphoenix/tx/types"
 
 type InvariantInput = {
   id: string
@@ -118,7 +119,7 @@ const createDocWithInvariants = (docName: string, invariants: readonly Invariant
     ].join("\n")
 
     yield* docService.create({
-      kind: "prd",
+      kind: asDocKind("prd"),
       name: docName,
       title: docName,
       content,
@@ -229,7 +230,7 @@ describe("SpecTraceService Integration", () => {
       Effect.gen(function* () {
         const docService = yield* DocService
         const valid = yield* docService.create({
-          kind: "prd",
+          kind: asDocKind("prd"),
           name: "stable-id-discovery-doc",
           title: "stable-id-discovery-doc",
           content: [

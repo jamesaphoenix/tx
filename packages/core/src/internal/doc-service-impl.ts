@@ -30,9 +30,16 @@ import { renderIndexToMarkdown } from "../utils/doc-renderer.js"
 import { generateDocStableId } from "../id.js"
 import { parseMdDocSync, MdDocParseError } from "../utils/md-doc-parser.js"
 import { readTxConfig } from "../utils/toml-config.js"
+import {
+  resolveSpecTypes,
+  specTypeSubdir,
+  specTypeNames,
+  type SpecTypeRegistry,
+} from "../utils/spec-type-registry.js"
 import { resolvePathWithin } from "../utils/file-path.js"
 import {
   DOC_KINDS,
+  asDocKind,
 } from "../types/index.js"
 import type {
   Doc,
@@ -69,8 +76,14 @@ const inferLinkType = (
   return null
 }
 
-/** Get the subdirectory for a doc kind. overview lives at root. */
-const kindSubdir = (kind: DocKind): string => {
+/**
+ * Get the subdirectory for a doc kind, honouring `[spec.types.<kind>].subdir`.
+ * `overview` lives at the docs root by default.
+ */
+const kindSubdir = (kind: DocKind, registry?: SpecTypeRegistry): string =>
+  registry ? specTypeSubdir(registry, kind) : defaultKindSubdir(kind)
+
+const defaultKindSubdir = (kind: DocKind): string => {
   if (kind === "overview") return ""
   if (kind === "requirement") return "requirements"
   if (kind === "system_design") return "system-design"
@@ -81,9 +94,10 @@ const kindSubdir = (kind: DocKind): string => {
 const resolveDocPath = (
   docsPath: string,
   kind: DocKind,
-  name: string
+  name: string,
+  registry?: SpecTypeRegistry
 ): string => {
-  const sub = kindSubdir(kind)
+  const sub = kindSubdir(kind, registry)
   const relativeDocPath = sub ? join(sub, `${name}.md`) : `${name}.md`
   const resolvedDocPath = resolvePathWithin(docsPath, relativeDocPath, {
     useRealpath: true,
@@ -347,11 +361,25 @@ const upsertDocIdInMarkdown = (content: string, docId: string): string => {
   return nextContent === content ? content : nextContent
 }
 
-const parseSpecTypeAsDocKind = (name: string, specType: string): DocKind => {
-  if (!docKindStrings.includes(specType)) {
+/**
+ * Validate a doc's `spec_type` against the configured registry.
+ * Built-in kinds always resolve; user-defined types resolve once declared in
+ * `[spec.types.<name>]`.
+ */
+const parseSpecTypeAsDocKind = (
+  name: string,
+  specType: string,
+  registry?: SpecTypeRegistry
+): DocKind => {
+  const known = registry
+    ? registry.types.has(specType) || docKindStrings.includes(specType)
+    : docKindStrings.includes(specType)
+  if (!known) {
     throw new InvalidDocYamlError({
       name,
-      reason: `Unsupported spec_type '${specType}' for docs service.`,
+      reason: `Unsupported spec_type '${specType}' for docs service. Configured types: ${
+        registry ? specTypeNames(registry).join(", ") : docKindStrings.join(", ")
+      }. Add a [spec.types.${specType}] section to .tx/config.toml to define it.`,
     })
   }
   return specType as DocKind
@@ -553,6 +581,13 @@ export const makeDocServiceLive = (
       return resolve(root, config.docs.path)
     }
 
+    /**
+     * Effective spec types for this content root. Read per call (not cached at
+     * layer construction) so config edits take effect without a restart.
+     */
+    const getSpecRegistry = (): SpecTypeRegistry =>
+      resolveSpecTypes(readTxConfig(getContentRoot()))
+
     const resolveRegisteredDocPath = (docsPath: string, doc: Doc): string => {
       const docPath = resolvePathWithin(docsPath, doc.filePath, {
         useRealpath: true,
@@ -635,7 +670,7 @@ export const makeDocServiceLive = (
       }
 
       const parsed = parseMarkdownSpecDocContent(doc.name, normalized)
-      const parsedKind = parseSpecTypeAsDocKind(doc.name, parsed.frontmatter.spec_type)
+      const parsedKind = parseSpecTypeAsDocKind(doc.name, parsed.frontmatter.spec_type, getSpecRegistry())
 
       if (parsed.frontmatter.name !== doc.name) {
         throw new InvalidDocYamlError({
@@ -723,7 +758,7 @@ export const makeDocServiceLive = (
 
       const normalizedContent = upsertDocIdInMarkdown(content, doc.docId)
       const parsed = parseMarkdownSpecDocContent(doc.name, normalizedContent)
-      const parsedKind = parseSpecTypeAsDocKind(doc.name, parsed.frontmatter.spec_type)
+      const parsedKind = parseSpecTypeAsDocKind(doc.name, parsed.frontmatter.spec_type, getSpecRegistry())
 
       if (parsed.frontmatter.name !== doc.name) {
         throw new InvalidDocYamlError({
@@ -1079,9 +1114,12 @@ export const makeDocServiceLive = (
       create: (input) =>
         Effect.gen(function* () {
           const { kind, name, title, content, metadata, relFilePath } = input
-          if (!docKindStrings.includes(kind)) {
+          const registry = getSpecRegistry()
+          if (!registry.types.has(kind) && !docKindStrings.includes(kind)) {
             return yield* Effect.fail(
-              new ValidationError({ reason: `Invalid doc kind: ${kind}` })
+              new ValidationError({
+                reason: `Invalid doc kind: ${kind}. Configured types: ${specTypeNames(registry).join(", ")}. Add a [spec.types.${kind}] section to .tx/config.toml to define a new one.`,
+              })
             )
           }
           if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(name)) {
@@ -1106,7 +1144,7 @@ export const makeDocServiceLive = (
               : content
           const parsedDoc = parseMarkdownSpecDocContent(name, contentForParse)
           const frontmatter = parsedDoc.frontmatter
-          const parsedKind = parseSpecTypeAsDocKind(name, frontmatter.spec_type)
+          const parsedKind = parseSpecTypeAsDocKind(name, frontmatter.spec_type, getSpecRegistry())
 
           // Deprecation warnings for legacy PRD frontmatter fields
           if (parsedKind === "prd") {
@@ -1192,7 +1230,7 @@ export const makeDocServiceLive = (
             relPath = relFilePath
           } else {
             // Scaffolding a new file at the standard path
-            const filePath = resolveDocPath(docsPath, parsedKind, frontmatter.name)
+            const filePath = resolveDocPath(docsPath, parsedKind, frontmatter.name, getSpecRegistry())
             if (existsSync(filePath)) {
               return yield* Effect.fail(
                 new ValidationError({
@@ -1203,7 +1241,7 @@ export const makeDocServiceLive = (
             ensureDir(filePath)
             writeFileSync(filePath, contentWithDocId, "utf8")
 
-            const sub = kindSubdir(parsedKind)
+            const sub = kindSubdir(parsedKind, getSpecRegistry())
             relPath = sub
               ? join(sub, `${frontmatter.name}.md`)
               : `${frontmatter.name}.md`
@@ -1353,7 +1391,7 @@ export const makeDocServiceLive = (
           const hash = computeDocHash(content)
           const newVersion = doc.version + 1
 
-          const versionSub = kindSubdir(doc.kind)
+          const versionSub = kindSubdir(doc.kind, getSpecRegistry())
           const relPath = versionSub
             ? join(versionSub, `${doc.name}.md`)
             : `${doc.name}.md`
@@ -1441,7 +1479,7 @@ export const makeDocServiceLive = (
 
           const hash = computeDocHash(patchContent)
           const docsPath = getDocsPath()
-          const filePath = resolveDocPath(docsPath, "design", patchName)
+          const filePath = resolveDocPath(docsPath, asDocKind("design"), patchName, getSpecRegistry())
           ensureDir(filePath)
           writeFileSync(filePath, patchContent, "utf8")
 
@@ -1449,7 +1487,7 @@ export const makeDocServiceLive = (
           const patchDoc = yield* docRepo.insert({
             docId: patchDocId,
             hash,
-            kind: "design",
+            kind: asDocKind("design"),
             name: patchName,
             title: patchTitle,
             version: 1,

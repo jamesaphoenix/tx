@@ -3,6 +3,7 @@
  */
 import {
   DOC_KINDS,
+  SPEC_TYPE_NAME_PATTERN,
   DOC_STATUSES,
   DOC_LINK_TYPES,
   TASK_DOC_LINK_TYPES,
@@ -62,8 +63,13 @@ const earsPatternStrings: readonly string[] = EARS_PATTERNS
 // TYPE GUARDS
 // =============================================================================
 
+/**
+ * Doc kinds are user-extensible via [spec.types.*] in .tx/config.toml, so any
+ * well-formed identifier is a valid row value. Membership in the configured
+ * registry is enforced by the doc service, not by row mapping.
+ */
 export const isValidDocKind = (s: string): s is DocKind =>
-  docKindStrings.includes(s)
+  docKindStrings.includes(s) || SPEC_TYPE_NAME_PATTERN.test(s)
 export const isValidDocStatus = (s: string): s is DocStatus =>
   docStatusStrings.includes(s)
 export const isValidDocLinkType = (s: string): s is DocLinkType =>

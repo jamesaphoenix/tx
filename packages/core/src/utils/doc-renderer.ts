@@ -103,12 +103,10 @@ export const renderDocToMarkdown = (parsed: ParsedYaml, kind: DocKind): string =
     case "decision":
       renderDecision(parsed, lines)
       break
-    default: {
-      // Compile-time exhaustive check — adding a new DocKind without
-      // a case above will fail here with a type error.
-      const _exhaustive: never = kind
-      return _exhaustive
-    }
+    default:
+      // User-defined spec types have no bespoke renderer. Legacy YAML rendering
+      // only applies to the built-in kinds, so emit the metadata header alone.
+      break
   }
 
   return lines.join("\n")

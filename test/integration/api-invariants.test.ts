@@ -21,6 +21,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import type { Invariant, InvariantCheck } from "@jamesaphoenix/tx/types"
+import { asDocKind } from "@jamesaphoenix/tx/types"
 
 // =============================================================================
 // Helpers
@@ -183,7 +184,7 @@ describe("API Invariant Endpoints Integration", () => {
         ].join("\n")
 
         yield* docService.create({
-          kind: "prd",
+          kind: asDocKind("prd"),
           name: "inv-test-doc",
           title: "Invariant Test Doc",
           content,
@@ -283,7 +284,7 @@ describe("API Invariant Endpoints Integration", () => {
         ].join("\n")
 
         yield* docService.create({
-          kind: "prd",
+          kind: asDocKind("prd"),
           name: "inv-pass-doc",
           title: "Pass Check Doc",
           content,
@@ -375,7 +376,7 @@ describe("API Invariant Endpoints Integration", () => {
         ].join("\n")
 
         yield* docService.create({
-          kind: "prd",
+          kind: asDocKind("prd"),
           name: "inv-fail-doc",
           title: "Fail Check Doc",
           content,

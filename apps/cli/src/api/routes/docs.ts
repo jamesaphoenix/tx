@@ -23,7 +23,8 @@ import { TxApi, mapCoreError } from "../api.js"
 // Handler Layer
 // -----------------------------------------------------------------------------
 
-const PLACEHOLDER_TEXT_BY_KIND: Record<DocKind, readonly string[]> = {
+// Keyed by built-in kind; user-defined spec types have no placeholder text.
+const PLACEHOLDER_TEXT_BY_KIND: Record<string, readonly string[]> = {
   overview: [
     "Describe the system overview.",
     "What problem this system solves.",

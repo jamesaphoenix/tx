@@ -574,6 +574,7 @@ export {
   writeDashboardCycleStartDay,
   writeDashboardCarryStatuses,
   scaffoldConfigToml,
+  upgradeConfigToml,
   DASHBOARD_DEFAULT_TASK_ASSIGMENT_KEY,
   DASHBOARD_DEFAULT_TASK_VIEW_KEY,
   DASHBOARD_CYCLE_LENGTH_DAYS_KEY,
@@ -587,7 +588,31 @@ export {
   type ReviewRuntimeType,
   type ReviewTransportType,
   type SpecDesignDocMissingTaskLinksMode,
+  listTomlSections,
+  DEFAULT_MISSING_SECTION_MESSAGE,
+  DEFAULT_UNKNOWN_SPEC_TYPE_MESSAGE,
+  SPEC_LINT_MESSAGE_KEYS,
+  type SpecSectionSeverity,
+  type SpecSectionConfig,
+  type SpecTypeConfig,
+  type TxConfig,
 } from "./utils/toml-config.js"
+export {
+  resolveSpecTypes,
+  renderLintMessage,
+  specTypeSubdir,
+  specTypeNames,
+  type SpecTypeRegistry,
+  type SpecTypeDefinition,
+  type SpecSectionDefinition,
+  type SpecLintMessages,
+} from "./utils/spec-type-registry.js"
+export {
+  lintSpecSections,
+  type SectionLintFinding,
+  type SectionLintRule,
+  type SectionLintContext,
+} from "./utils/spec-section-lint.js"
 export { normalizeClaudeDebugLogPath } from "./utils/claude-debug-log.js"
 export {
   parseBlocks,
