@@ -12,6 +12,7 @@ import { parse as parseYaml } from "yaml"
 import { Effect } from "effect"
 import {
   applyMigrations,
+  asDocKind,
   computeDocHash,
   deriveDocStableId,
   escapeLikePattern,
@@ -1538,7 +1539,7 @@ function renderMarkdownFromYaml(yamlContent: string, filePath: string): string {
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       const parsedDoc = parsed as Record<string, unknown>
       const kindRaw = typeof parsedDoc.kind === "string" ? parsedDoc.kind.toLowerCase() : "overview"
-      const kind = isValidDocKind(kindRaw) ? kindRaw : "overview"
+      const kind = isValidDocKind(kindRaw) ? kindRaw : asDocKind("overview")
       return renderDocToMarkdown(parsedDoc, kind)
     }
   } catch {

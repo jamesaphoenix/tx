@@ -523,6 +523,13 @@ export {
 } from "./mappers/doc.js"
 
 export {
+  asDocKind,
+  isBuiltinDocKind,
+  isBuiltinSpecType,
+  SPEC_TYPE_NAME_PATTERN,
+} from "./types/doc.js"
+
+export {
   rowToMemoryDocument,
   rowToMemoryDocumentWithoutEmbedding,
   rowToMemoryLink,
