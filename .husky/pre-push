@@ -13,6 +13,30 @@ unset GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CONFIG GIT_CONFIG_PARAMETERS \
     GIT_NO_REPLACE_OBJECTS GIT_REPLACE_REF_BASE GIT_PREFIX \
     GIT_SHALLOW_FILE GIT_COMMON_DIR
 
+# Git sends one line per ref being pushed on stdin:
+#   <local-ref> <local-oid> <remote-ref> <remote-oid>
+#
+# A tag push carries no new code. The commit a tag points at was already checked
+# when the branch holding it was pushed, and again by CI, so re-running the full
+# build + integration suite here costs minutes during a release and can never
+# produce a different answer. Skip only when EVERY ref is a tag; a push carrying
+# any branch ref, or one we cannot classify, runs the checks as before.
+refs_total=0
+tag_refs=0
+while read -r _local_ref _local_oid remote_ref _remote_oid; do
+    [ -z "$remote_ref" ] && continue
+    refs_total=$((refs_total + 1))
+    case "$remote_ref" in
+        refs/tags/*) tag_refs=$((tag_refs + 1)) ;;
+    esac
+done
+
+if [ "$refs_total" -gt 0 ] && [ "$refs_total" -eq "$tag_refs" ]; then
+    echo "⏭️  Tag-only push ($tag_refs ref(s)): skipping pre-push checks."
+    echo "   The tagged commit was already verified when its branch was pushed."
+    exit 0
+fi
+
 echo "🔍 Running pre-push checks..."
 echo ""
 

@@ -1139,3 +1139,132 @@ describe("hooksStatus command", () => {
     }
   })
 })
+
+// =============================================================================
+// Pre-push Hook: tag-only push guard
+// =============================================================================
+
+describe("pre-push hook ref filtering", () => {
+  let testDir: string
+
+  /**
+   * Run the real .husky/pre-push against a stubbed scripts/check.sh.
+   *
+   * The stub records that it ran instead of executing the real build and
+   * integration suite, so a regression in the ref guard fails in milliseconds
+   * rather than kicking off a multi-minute check run inside the test.
+   */
+  const runPrePush = (stdin: string): { status: number; checksRan: boolean; output: string } => {
+    const marker = resolve(testDir, "check-ran")
+    mkdirSync(resolve(testDir, "scripts"), { recursive: true })
+    writeFileSync(
+      resolve(testDir, "scripts", "check.sh"),
+      `#!/bin/sh\ntouch "${marker}"\nexit 0\n`,
+    )
+    chmodSync(resolve(testDir, "scripts", "check.sh"), 0o755)
+
+    let status = 0
+    let output = ""
+    try {
+      output = execSync(`sh "${resolve(testDir, "pre-push")}" origin https://example.invalid/repo.git`, {
+        cwd: testDir,
+        input: stdin,
+        encoding: "utf-8",
+        timeout: 30000,
+      })
+    } catch (err) {
+      const e = err as { status?: number; stdout?: string; stderr?: string }
+      status = e.status ?? 1
+      output = `${e.stdout ?? ""}${e.stderr ?? ""}`
+    }
+
+    return { status, checksRan: existsSync(marker), output }
+  }
+
+  beforeEach(() => {
+    testDir = createTestDir("pre-push-refs", false)
+    mkdirSync(testDir, { recursive: true })
+    writeFileSync(
+      resolve(testDir, "pre-push"),
+      readFileSync(resolve(__dirname, "../../.husky/pre-push"), "utf-8"),
+    )
+  })
+
+  afterEach(() => {
+    cleanupTestDir(testDir)
+  })
+
+  const SHA_A = "1111111111111111111111111111111111111111"
+  const SHA_B = "2222222222222222222222222222222222222222"
+
+  it("skips checks for a tag-only push", () => {
+    const result = runPrePush(`refs/tags/v1.2.3 ${SHA_A} refs/tags/v1.2.3 ${SHA_B}\n`)
+
+    expect(result.status).toBe(0)
+    expect(result.checksRan).toBe(false)
+    expect(result.output).toContain("Tag-only push")
+  })
+
+  it("skips checks when several tags are pushed at once", () => {
+    const result = runPrePush(
+      `refs/tags/v1.2.3 ${SHA_A} refs/tags/v1.2.3 ${SHA_B}\n` +
+        `refs/tags/v1.2.4 ${SHA_A} refs/tags/v1.2.4 ${SHA_B}\n`,
+    )
+
+    expect(result.status).toBe(0)
+    expect(result.checksRan).toBe(false)
+  })
+
+  it("skips checks for a tag deletion", () => {
+    const zero = "0000000000000000000000000000000000000000"
+    const result = runPrePush(`(delete) ${zero} refs/tags/v1.2.3 ${SHA_B}\n`)
+
+    expect(result.status).toBe(0)
+    expect(result.checksRan).toBe(false)
+  })
+
+  it("runs checks for a branch push", () => {
+    const result = runPrePush(`refs/heads/main ${SHA_A} refs/heads/main ${SHA_B}\n`)
+
+    expect(result.status).toBe(0)
+    expect(result.checksRan).toBe(true)
+  })
+
+  it("runs checks when a push mixes a branch and a tag", () => {
+    const result = runPrePush(
+      `refs/heads/main ${SHA_A} refs/heads/main ${SHA_B}\n` +
+        `refs/tags/v1.2.3 ${SHA_A} refs/tags/v1.2.3 ${SHA_B}\n`,
+    )
+
+    expect(result.status).toBe(0)
+    expect(result.checksRan).toBe(true)
+  })
+
+  it("runs checks when stdin carries no refs", () => {
+    // Never skip on an input shape we do not understand.
+    const result = runPrePush("")
+
+    expect(result.status).toBe(0)
+    expect(result.checksRan).toBe(true)
+  })
+
+  it("still blocks the push when checks fail on a branch push", () => {
+    mkdirSync(resolve(testDir, "scripts"), { recursive: true })
+    writeFileSync(resolve(testDir, "scripts", "check.sh"), "#!/bin/sh\nexit 1\n")
+    chmodSync(resolve(testDir, "scripts", "check.sh"), 0o755)
+
+    let status = 0
+    try {
+      execSync(`sh "${resolve(testDir, "pre-push")}" origin https://example.invalid/repo.git`, {
+        cwd: testDir,
+        input: `refs/heads/main ${SHA_A} refs/heads/main ${SHA_B}\n`,
+        encoding: "utf-8",
+        timeout: 30000,
+      })
+    } catch (err) {
+      status = (err as { status?: number }).status ?? 1
+    }
+
+    expect(status).toBe(1)
+  })
+})
