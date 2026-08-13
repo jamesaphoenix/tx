@@ -10,6 +10,7 @@ import {
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import {
+  listTomlSections,
   readTxConfig,
   writeDashboardDefaultTaskAssigmentType,
   scaffoldConfigToml,
@@ -17,6 +18,15 @@ import {
 } from "@jamesaphoenix/tx";
 
 const tempDirs: string[] = [];
+
+// Built-in spec-type defaults, read from a directory with no config file.
+// Keeping these derived (rather than duplicated) keeps the round-trip
+// assertions meaningful: the scaffolded TOML must parse back to these exact
+// values.
+const NO_CONFIG_DEFAULTS = readTxConfig(mkdtempSync(join(tmpdir(), "tx-toml-defaults-")));
+const BUILTIN_SPEC_TYPES = NO_CONFIG_DEFAULTS.spec.types;
+const BUILTIN_LINT_MESSAGES = NO_CONFIG_DEFAULTS.spec.lintMessages;
+
 const DEFAULTS = {
   docs: { path: "specs" },
   spec: {
@@ -34,6 +44,10 @@ const DEFAULTS = {
       "**/*_test.{c,cpp,cc}",
     ],
     designDocMissingTaskLinks: "always",
+    // Section definitions are large and are asserted structurally below; reuse
+    // the values readTxConfig produces for a project with no config file.
+    types: BUILTIN_SPEC_TYPES,
+    lintMessages: BUILTIN_LINT_MESSAGES,
   },
   memory: { defaultDir: "specs" },
   cycles: { scanPrompt: null, agents: 3, model: "claude-opus-4-6" },
@@ -94,13 +108,13 @@ afterEach(() => {
 });
 
 describe("toml-config", () => {
-  it("returns defaults when config is missing", () => {
+  it("[INV-SPECCFG-001] returns defaults when config is missing", () => {
     const cwd = makeTempDir();
     const config = readTxConfig(cwd);
     expect(config).toEqual(DEFAULTS);
   });
 
-  it("returns defaults when config exists but cannot be read", () => {
+  it("[INV-SPECCFG-009] returns defaults when config exists but cannot be read", () => {
     const cwd = makeTempDir();
     const invalidPath = join(cwd, ".tx", "config.toml");
     mkdirSync(invalidPath, { recursive: true });
@@ -376,11 +390,211 @@ describe("scaffoldConfigToml", () => {
     expect(existsSync(join(cwd, ".tx", "config.toml"))).toBe(true);
   });
 
-  it("produces a file that readTxConfig parses correctly", () => {
+  it("[INV-SPECCFG-002] produces a file that readTxConfig parses correctly", () => {
     const cwd = makeTempDir();
     scaffoldConfigToml(cwd);
 
     const config = readTxConfig(cwd);
     expect(config).toEqual(DEFAULTS);
+  });
+});
+
+describe("listTomlSections", () => {
+  it("lists sections matching a prefix in file order", () => {
+    const toml = [
+      "[docs]",
+      'path = "specs"',
+      "[spec.types.prd]",
+      'severity = "error"',
+      "[spec.types.prd.section.summary]",
+      'heading = "Summary"',
+      "[spec.types.rfc]",
+      "[dashboard]",
+    ].join("\n");
+
+    expect(listTomlSections(toml, "spec.types")).toEqual([
+      "spec.types.prd",
+      "spec.types.prd.section.summary",
+      "spec.types.rfc",
+    ]);
+  });
+
+  it("ignores trailing comments, indentation, and duplicates", () => {
+    const toml = [
+      "  [spec.types.prd]   # the PRD type",
+      "[spec.types.prd]",
+      "[other]",
+    ].join("\n");
+
+    expect(listTomlSections(toml, "spec.types")).toEqual(["spec.types.prd"]);
+  });
+
+  it("returns an empty array when nothing matches", () => {
+    expect(listTomlSections("[docs]\npath = \"specs\"\n", "spec.types")).toEqual([]);
+  });
+
+  it("does not match a prefix that is only a partial name segment", () => {
+    expect(listTomlSections("[spec.typesetting]\n", "spec.types")).toEqual([]);
+  });
+});
+
+describe("spec type configuration", () => {
+  it("ships built-in types with headings, descriptions, and severities", () => {
+    const config = readTxConfig(makeTempDir());
+
+    expect(Object.keys(config.spec.types).sort()).toEqual([
+      "decision",
+      "design",
+      "overview",
+      "prd",
+      "runbook",
+    ]);
+    expect(config.spec.types.prd.sections.map((s) => s.heading)).toEqual([
+      "Summary",
+      "Problem",
+      "Scope",
+      "Requirements",
+      "Acceptance Criteria",
+    ]);
+    expect(config.spec.types.prd.severity).toBe("error");
+    // overview docs live at the docs root
+    expect(config.spec.types.overview.subdir).toBe("");
+    for (const section of config.spec.types.design.sections) {
+      expect(section.description.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("parses per-section tables with heading, description, and message", () => {
+    const cwd = makeTempDir();
+    writeConfig(
+      cwd,
+      [
+        "[spec.types.rfc]",
+        'severity = "warn"',
+        'subdir = "rfc"',
+        "",
+        "[spec.types.rfc.section.summary]",
+        'description = "What this proposes."',
+        "",
+        "[spec.types.rfc.section.open-questions]",
+        'message = "{name}: add {section}"',
+        "",
+      ].join("\n"),
+    );
+
+    const rfc = readTxConfig(cwd).spec.types.rfc;
+    expect(rfc.severity).toBe("warn");
+    expect(rfc.subdir).toBe("rfc");
+    expect(rfc.sections).toEqual([
+      { slug: "summary", heading: "Summary", description: "What this proposes.", message: null },
+      // heading falls back to the title-cased slug
+      { slug: "open-questions", heading: "Open Questions", description: "", message: "{name}: add {section}" },
+    ]);
+  });
+
+  it("accepts the sections array shorthand", () => {
+    const cwd = makeTempDir();
+    writeConfig(
+      cwd,
+      ["[spec.types.rfc]", 'sections = ["Summary", "Motivation"]', ""].join("\n"),
+    );
+
+    const rfc = readTxConfig(cwd).spec.types.rfc;
+    expect(rfc.sections.map((s) => s.heading)).toEqual(["Summary", "Motivation"]);
+    expect(rfc.sections.map((s) => s.slug)).toEqual(["summary", "motivation"]);
+    expect(rfc.severity).toBe("error");
+    // subdir defaults to the type name at registry-resolution time
+    expect(rfc.subdir).toBeNull();
+  });
+
+  it("prefers per-section tables over the array shorthand", () => {
+    const cwd = makeTempDir();
+    writeConfig(
+      cwd,
+      [
+        "[spec.types.rfc]",
+        'sections = ["Ignored"]',
+        "",
+        "[spec.types.rfc.section.summary]",
+        'description = "Wins."',
+        "",
+      ].join("\n"),
+    );
+
+    expect(readTxConfig(cwd).spec.types.rfc.sections.map((s) => s.heading)).toEqual([
+      "Summary",
+    ]);
+  });
+
+  it("overrides a built-in type's sections while keeping other built-ins", () => {
+    const cwd = makeTempDir();
+    writeConfig(
+      cwd,
+      [
+        "[spec.types.prd]",
+        'sections = ["Summary", "Why Now"]',
+        "",
+      ].join("\n"),
+    );
+
+    const config = readTxConfig(cwd);
+    expect(config.spec.types.prd.sections.map((s) => s.heading)).toEqual([
+      "Summary",
+      "Why Now",
+    ]);
+    expect(config.spec.types.design.sections).toEqual(BUILTIN_SPEC_TYPES.design.sections);
+  });
+
+  it("keeps built-in sections when a type declares only severity", () => {
+    const cwd = makeTempDir();
+    writeConfig(cwd, ['[spec.types.prd]', 'severity = "off"', ""].join("\n"));
+
+    const prd = readTxConfig(cwd).spec.types.prd;
+    expect(prd.severity).toBe("off");
+    expect(prd.sections).toEqual(BUILTIN_SPEC_TYPES.prd.sections);
+  });
+
+  it("falls back to the default severity when the value is invalid", () => {
+    const cwd = makeTempDir();
+    writeConfig(cwd, ['[spec.types.prd]', 'severity = "loud"', ""].join("\n"));
+
+    expect(readTxConfig(cwd).spec.types.prd.severity).toBe("error");
+  });
+
+  it("skips type names that are not valid identifiers", () => {
+    const cwd = makeTempDir();
+    writeConfig(cwd, ['[spec.types.Not Valid]', 'severity = "warn"', ""].join("\n"));
+
+    expect(readTxConfig(cwd).spec.types["Not Valid"]).toBeUndefined();
+    expect(Object.keys(readTxConfig(cwd).spec.types).sort()).toEqual(
+      Object.keys(BUILTIN_SPEC_TYPES).sort(),
+    );
+  });
+
+  it("reads global lint message overrides", () => {
+    const cwd = makeTempDir();
+    writeConfig(
+      cwd,
+      [
+        "[spec.lint.messages]",
+        'missing_section = "custom {section}"',
+        "",
+      ].join("\n"),
+    );
+
+    const messages = readTxConfig(cwd).spec.lintMessages;
+    expect(messages.missing_section).toBe("custom {section}");
+    // untouched keys keep their defaults
+    expect(messages.unknown_spec_type).toBe(BUILTIN_LINT_MESSAGES.unknown_spec_type);
+  });
+
+  it("keeps [spec] scalar keys readable alongside [spec.types.*] subtables", () => {
+    const cwd = makeTempDir();
+    scaffoldConfigToml(cwd);
+
+    const config = readTxConfig(cwd);
+    expect(config.spec.designDocMissingTaskLinks).toBe("always");
+    expect(config.spec.testPatterns.length).toBe(11);
+    expect(config.memory.defaultDir).toBe("specs");
   });
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { composeEarsSentence, renderDocToMarkdown } from "@jamesaphoenix/tx"
+import { asDocKind } from "@jamesaphoenix/tx/types"
 
 describe("EARS sentence composition", () => {
   it("composes each EARS pattern into deterministic prose", () => {
@@ -67,7 +68,7 @@ describe("EARS rendering in PRDs", () => {
   it("renders structured EARS section with summary table and details", () => {
     const markdown = renderDocToMarkdown(
       {
-        kind: "prd",
+        kind: asDocKind("prd"),
         title: "EARS test",
         ears_requirements: [
           {
@@ -88,7 +89,7 @@ describe("EARS rendering in PRDs", () => {
           },
         ],
       },
-      "prd"
+      asDocKind("prd")
     )
 
     expect(markdown).toContain("## Structured Requirements (EARS)")
@@ -107,21 +108,21 @@ describe("EARS rendering in PRDs", () => {
   it("omits EARS section when ears_requirements is empty or missing", () => {
     const withoutEars = renderDocToMarkdown(
       {
-        kind: "prd",
+        kind: asDocKind("prd"),
         title: "No EARS",
         requirements: ["Requirement 1"],
       },
-      "prd"
+      asDocKind("prd")
     )
     expect(withoutEars).not.toContain("Structured Requirements (EARS)")
 
     const emptyEars = renderDocToMarkdown(
       {
-        kind: "prd",
+        kind: asDocKind("prd"),
         title: "Empty EARS",
         ears_requirements: [],
       },
-      "prd"
+      asDocKind("prd")
     )
     expect(emptyEars).not.toContain("Structured Requirements (EARS)")
   })
@@ -129,7 +130,7 @@ describe("EARS rendering in PRDs", () => {
   it("escapes pipe characters in EARS content", () => {
     const markdown = renderDocToMarkdown(
       {
-        kind: "prd",
+        kind: asDocKind("prd"),
         title: "Pipe escaping",
         ears_requirements: [
           {
@@ -140,7 +141,7 @@ describe("EARS rendering in PRDs", () => {
           },
         ],
       },
-      "prd"
+      asDocKind("prd")
     )
 
     expect(markdown).toContain(
@@ -151,7 +152,7 @@ describe("EARS rendering in PRDs", () => {
   it("renders both legacy requirements and EARS requirements", () => {
     const markdown = renderDocToMarkdown(
       {
-        kind: "prd",
+        kind: asDocKind("prd"),
         title: "Mixed requirements",
         requirements: ["Legacy requirement"],
         ears_requirements: [
@@ -163,7 +164,7 @@ describe("EARS rendering in PRDs", () => {
           },
         ],
       },
-      "prd"
+      asDocKind("prd")
     )
 
     expect(markdown).toContain("## Requirements")

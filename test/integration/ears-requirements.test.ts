@@ -17,6 +17,7 @@ import { join, resolve } from "node:path"
 import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx/testing"
 import { DocService } from "@jamesaphoenix/tx"
 import { fixtureId } from "../fixtures.js"
+import { asDocKind } from "@jamesaphoenix/tx/types"
 
 const CLI_SRC = resolve(__dirname, "../../apps/cli/src/cli.ts")
 
@@ -168,7 +169,7 @@ ears_requirements:
       Effect.gen(function* () {
         const svc = yield* DocService
         yield* svc.create({
-          kind: "prd",
+          kind: asDocKind("prd"),
           name,
           title: "EARS PRD",
           content,
@@ -205,7 +206,7 @@ ears_requirements:
         Effect.gen(function* () {
           const svc = yield* DocService
           yield* svc.create({
-            kind: "prd",
+            kind: asDocKind("prd"),
             name,
             title: "Invalid EARS PRD",
             content,
@@ -239,7 +240,7 @@ ears_requirements:
         Effect.gen(function* () {
           const svc = yield* DocService
           yield* svc.create({
-            kind: "prd",
+            kind: asDocKind("prd"),
             name,
             title: "Duplicate EARS IDs",
             content,
@@ -269,7 +270,7 @@ ears_requirements:
         Effect.gen(function* () {
           const svc = yield* DocService
           yield* svc.create({
-            kind: "prd",
+            kind: asDocKind("prd"),
             name,
             title: "Invalid non-array EARS",
             content,
@@ -292,7 +293,7 @@ ears_requirements:
       Effect.gen(function* () {
         const svc = yield* DocService
         return yield* svc.create({
-          kind: "prd",
+          kind: asDocKind("prd"),
           name,
           title: "Legacy PRD",
           content,
@@ -318,7 +319,7 @@ ears_requirements:
       Effect.gen(function* () {
         const svc = yield* DocService
         return yield* svc.create({
-          kind: "prd",
+          kind: asDocKind("prd"),
           name,
           title: "Legacy PRD",
           content,
@@ -351,7 +352,7 @@ ears_requirements:
       Effect.gen(function* () {
         const svc = yield* DocService
         yield* svc.create({
-          kind: "prd",
+          kind: asDocKind("prd"),
           name,
           title: "Mixed PRD",
           content,
@@ -395,7 +396,7 @@ ears_requirements:
       Effect.gen(function* () {
         const svc = yield* DocService
         yield* svc.create({
-          kind: "prd",
+          kind: asDocKind("prd"),
           name,
           title: "Update PRD",
           content: initialContent,
@@ -437,7 +438,7 @@ ears_requirements:
       Effect.gen(function* () {
         const svc = yield* DocService
         yield* svc.create({
-          kind: "prd",
+          kind: asDocKind("prd"),
           name,
           title: "Update Invalid PRD",
           content: initialContent,
@@ -474,7 +475,7 @@ ears_requirements:
       Effect.gen(function* () {
         const svc = yield* DocService
         yield* svc.create({
-          kind: "prd",
+          kind: asDocKind("prd"),
           name,
           title: "Pipe Escape PRD",
           content,

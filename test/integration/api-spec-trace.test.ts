@@ -14,6 +14,7 @@ import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/t
 import { DocService, SpecTraceService, parseBatchRunInput } from "@jamesaphoenix/tx"
 import { mapCoreError } from "../../apps/cli/src/api/api.js"
 import type { SpecSignoff, TraceabilityMatrix } from "@jamesaphoenix/tx/types"
+import { asDocKind } from "@jamesaphoenix/tx/types"
 
 type InvariantInput = {
   id: string
@@ -100,7 +101,7 @@ const createDocWithInvariants = (docName: string, invariants: readonly Invariant
     ].join("\n")
 
     yield* docService.create({
-      kind: "prd",
+      kind: asDocKind("prd"),
       name: docName,
       title: docName,
       content,

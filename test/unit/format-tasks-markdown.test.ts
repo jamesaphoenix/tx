@@ -7,6 +7,7 @@
 import { describe, it, expect } from "vitest"
 import { formatTasksMarkdown } from "../../apps/cli/src/output.js"
 import type { ContextResult, LearningId, TaskId, TaskWithDeps } from "@jamesaphoenix/tx/types"
+import { asDocKind } from "@jamesaphoenix/tx/types"
 
 // Helper to create a minimal TaskWithDeps for testing
 type TaskOverride =
@@ -181,7 +182,7 @@ describe("formatTasksMarkdown", () => {
             docId: 1 as any,
             name: "auth-flow",
             title: "Auth Flow",
-            kind: "prd",
+            kind: asDocKind("prd"),
             version: 1,
             status: "changing",
             filePath: "specs/prd/auth-flow.md",

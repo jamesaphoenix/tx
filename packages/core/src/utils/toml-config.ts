@@ -24,6 +24,28 @@ export type GuardMode = "advisory" | "enforce"
 export type ReviewRuntimeType = "pi" | "custom"
 export type ReviewTransportType = "rpc" | "sdk"
 export type SpecDesignDocMissingTaskLinksMode = "always" | "locked_only" | "never"
+export type SpecSectionSeverity = "error" | "warn" | "off"
+
+/**
+ * A single required section of a spec type.
+ * `description` explains what belongs under the heading (bundled into generated
+ * skills and doc templates); `message` overrides the missing-section lint prompt.
+ */
+export type SpecSectionConfig = {
+  slug: string
+  heading: string
+  description: string
+  message: string | null
+}
+
+export type SpecTypeConfig = {
+  sections: SpecSectionConfig[]
+  severity: SpecSectionSeverity
+  /** Subdirectory under the docs root. `null` = derive from the type name. */
+  subdir: string | null
+  /** Project-relative path to a custom markdown template. */
+  template: string | null
+}
 
 export type ReviewDesignDocsConfig = {
   enabled: boolean
@@ -40,6 +62,10 @@ export type TxConfig = {
   spec: {
     testPatterns: string[]
     designDocMissingTaskLinks: SpecDesignDocMissingTaskLinksMode
+    /** Effective spec types: built-in defaults merged with user overrides. */
+    types: Record<string, SpecTypeConfig>
+    /** Global lint message templates keyed by rule id. */
+    lintMessages: Record<string, string>
   }
   memory: { defaultDir: string }
   cycles: { scanPrompt: string | null; agents: number; model: string }
@@ -86,9 +112,89 @@ const isSpecDesignDocMissingTaskLinksMode = (
 ): v is SpecDesignDocMissingTaskLinksMode =>
   v === "always" || v === "locked_only" || v === "never"
 
+/** Built-in missing-section lint prompt, used when no override is configured. */
+export const DEFAULT_MISSING_SECTION_MESSAGE =
+  "{name}: missing required section '{section}' for spec_type '{spec_type}'. {description}"
+
+/** Built-in prompt for a doc whose spec_type is not defined in config. */
+export const DEFAULT_UNKNOWN_SPEC_TYPE_MESSAGE =
+  "{name}: spec_type '{spec_type}' is not defined in .tx/config.toml. Add a [spec.types.{spec_type}] section or fix the frontmatter."
+
+export const SPEC_LINT_MESSAGE_KEYS = ["missing_section", "unknown_spec_type"] as const
+
+const DEFAULT_LINT_MESSAGES: Record<string, string> = {
+  missing_section: DEFAULT_MISSING_SECTION_MESSAGE,
+  unknown_spec_type: DEFAULT_UNKNOWN_SPEC_TYPE_MESSAGE,
+}
+
+/**
+ * Built-in section definitions per spec type.
+ * Tuples are [slug, heading, description, message | null].
+ * These are the sections `tx spec lint` checks and the descriptions bundled
+ * into generated skills and `tx doc template` output.
+ */
+const DEFAULT_SECTION_SPECS: Record<string, ReadonlyArray<readonly [string, string, string, string | null]>> = {
+  prd: [
+    ["summary", "Summary", "One paragraph stating what this feature is and why it matters.", null],
+    ["problem", "Problem", "The user or system problem being solved, with evidence or a motivating scenario.", "{name}: PRD is missing '# Problem'. State the problem before listing requirements. {description}"],
+    ["scope", "Scope", "Explicit Included and Excluded lists that bound this work.", null],
+    ["requirements", "Requirements", "EARS requirements in an embedded yaml `ears_requirements:` block with REQ-* ids.", "{name}: PRD is missing '# Requirements'. Add the section with an `ears_requirements:` yaml block. {description}"],
+    ["acceptance-criteria", "Acceptance Criteria", "Testable criteria in an embedded yaml `acceptance_criteria:` block with AC-* ids.", null],
+  ],
+  design: [
+    ["summary", "Summary", "One paragraph stating the technical approach.", null],
+    ["architecture", "Architecture", "Components, their responsibilities, and how they fit together.", null],
+    ["interfaces", "Interfaces", "Public surfaces in an embedded yaml `interfaces:` block (name, type, semantics, contract).", null],
+    ["data-model", "Data Model", "Tables, schemas, and types this design introduces or changes.", null],
+    ["invariants", "Invariants", "Invariants in an embedded yaml `invariants:` block with INV-* ids and verified_by test paths.", "{name}: design doc is missing '# Invariants'. tx derives spec coverage from this section's yaml block. {description}"],
+    ["failure-modes", "Failure Modes", "Failure modes in an embedded yaml `failure_modes:` block (condition, impact, handling).", null],
+    ["verification", "Verification", "Requirement-to-test mapping in an embedded yaml `verification:` block.", null],
+  ],
+  overview: [
+    ["summary", "Summary", "One paragraph describing the system this overview maps.", null],
+    ["architecture", "Architecture", "The high-level architectural shape and its boundaries.", null],
+    ["components", "Components", "Each major component and the responsibility it owns.", null],
+    ["data-flows", "Data Flows", "How data moves between components, including entry and exit points.", null],
+  ],
+  runbook: [
+    ["summary", "Summary", "One paragraph describing the operational scenario this runbook covers.", null],
+    ["symptoms", "Symptoms", "Observable signals that indicate this runbook applies.", null],
+    ["diagnosis", "Diagnosis", "Steps and queries that confirm the root cause.", null],
+    ["mitigation", "Mitigation", "Concrete actions that restore service, in order.", null],
+    ["escalation", "Escalation", "Who to page, when to escalate, and what context to hand over.", null],
+  ],
+  decision: [
+    ["summary", "Summary", "One paragraph stating the decision made.", null],
+    ["context", "Context", "The forces, constraints, and background driving this decision.", null],
+    ["alternatives", "Alternatives", "Options considered and why each was or was not chosen.", null],
+    ["decision", "Decision", "The option chosen, stated unambiguously.", null],
+    ["consequences", "Consequences", "What becomes easier or harder as a result, including follow-on work.", null],
+  ],
+}
+
+const buildDefaultSpecTypes = (): Record<string, SpecTypeConfig> => {
+  const out: Record<string, SpecTypeConfig> = {}
+  for (const [typeName, sectionSpecs] of Object.entries(DEFAULT_SECTION_SPECS)) {
+    out[typeName] = {
+      sections: sectionSpecs.map(([slug, heading, description, message]) => ({
+        slug,
+        heading,
+        description,
+        message,
+      })),
+      severity: "error",
+      subdir: typeName === "overview" ? "" : null,
+      template: null,
+    }
+  }
+  return out
+}
+
 const DEFAULT_CONFIG: TxConfig = {
   docs: { path: "specs" },
   spec: {
+    types: buildDefaultSpecTypes(),
+    lintMessages: { ...DEFAULT_LINT_MESSAGES },
     testPatterns: [
       "test/**/*.test.{ts,js,tsx,jsx}",
       "tests/**/*.py",
@@ -191,6 +297,210 @@ const parseBooleanOrDefault = (value: string | null, fallback: boolean): boolean
   return fallback
 }
 
+const SPEC_TYPE_NAME_PATTERN = /^[a-z][a-z0-9_-]*$/
+
+const isSpecSectionSeverity = (v: string | null): v is SpecSectionSeverity =>
+  v === "error" || v === "warn" || v === "off"
+
+/** "acceptance-criteria" -> "Acceptance Criteria" */
+const titleCaseSlug = (slug: string): string =>
+  slug
+    .split(/[-_]/)
+    .filter((part) => part.length > 0)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ")
+
+/**
+ * List TOML section header names equal to `prefix` or starting with `prefix + "."`.
+ * Returns unique names in first-occurrence file order.
+ *
+ * The hand-rolled parser can only read sections whose names are known up front;
+ * user-defined spec types are not, so this enumerates them.
+ */
+export const listTomlSections = (toml: string, prefix: string): string[] => {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const line of toml.split("\n")) {
+    const match = line.trim().match(/^\[([^\]]+)\]\s*(?:#.*)?$/)
+    if (!match) continue
+    const name = match[1]!.trim()
+    if (name !== prefix && !name.startsWith(`${prefix}.`)) continue
+    if (seen.has(name)) continue
+    seen.add(name)
+    out.push(name)
+  }
+  return out
+}
+
+type TomlTable = {
+  readonly scalars: Map<string, string>
+  readonly arrays: Map<string, string[]>
+}
+
+const parseTomlScalar = (raw: string): string | null => {
+  const trimmed = raw.trim()
+  const quoted = trimmed.match(/^["'](.*)["']\s*(?:#.*)?$/)
+  if (quoted) return quoted[1]!
+  const unquoted = trimmed.match(/^([^#\s]+)/)
+  return unquoted ? unquoted[1]! : null
+}
+
+const parseTomlInlineArray = (collected: string): string[] => {
+  const out: string[] = []
+  const quoted = /["']([^"']*)["']/g
+  let match: RegExpExecArray | null
+  while ((match = quoted.exec(collected)) !== null) {
+    const value = match[1]!.trim()
+    if (value.length > 0) out.push(value)
+  }
+  return out
+}
+
+/**
+ * Collect every TOML table whose name matches `prefix`, keyed by table name.
+ *
+ * Unlike `extractTomlValue`, this walks the whole file and merges repeated
+ * tables (later keys win). Spec-type config is commonly appended to a file that
+ * already scaffolds the same table, and a silently ignored second `[spec.types.design]`
+ * would be a confusing no-op.
+ */
+const collectTomlTables = (toml: string, prefix: string): Map<string, TomlTable> => {
+  const tables = new Map<string, TomlTable>()
+  const lines = toml.split("\n")
+  let current: TomlTable | null = null
+
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i]!.trim()
+    if (trimmed.length === 0 || trimmed.startsWith("#")) continue
+
+    const header = trimmed.match(/^\[([^\]]+)\]\s*(?:#.*)?$/)
+    if (header) {
+      const name = header[1]!.trim()
+      if (name !== prefix && !name.startsWith(`${prefix}.`)) {
+        current = null
+        continue
+      }
+      let table = tables.get(name)
+      if (!table) {
+        table = { scalars: new Map(), arrays: new Map() }
+        tables.set(name, table)
+      }
+      current = table
+      continue
+    }
+
+    if (!current) continue
+
+    const assignment = trimmed.match(/^([A-Za-z0-9_-]+)\s*=\s*(.*)$/)
+    if (!assignment) continue
+    const key = assignment[1]!
+    const value = assignment[2]!
+
+    if (value.trimStart().startsWith("[")) {
+      let collected = value
+      while (!collected.includes("]") && i + 1 < lines.length) {
+        i += 1
+        collected += lines[i]!.trim()
+      }
+      current.arrays.set(key, parseTomlInlineArray(collected))
+      continue
+    }
+
+    const scalar = parseTomlScalar(value)
+    if (scalar !== null) current.scalars.set(key, scalar)
+  }
+
+  return tables
+}
+
+/**
+ * Build the section list for one spec type from its
+ * `[spec.types.<type>.section.<slug>]` tables, falling back to the
+ * `sections = [...]` string-array shorthand.
+ */
+const parseSpecSections = (
+  tables: Map<string, TomlTable>,
+  typeName: string
+): SpecSectionConfig[] | null => {
+  const prefix = `${SPEC_SECTION}.types.${typeName}.section.`
+
+  const sections: SpecSectionConfig[] = []
+  for (const [tableName, table] of tables) {
+    if (!tableName.startsWith(prefix)) continue
+    const slug = tableName.slice(prefix.length)
+    if (slug.length === 0 || slug.includes(".") || !SPEC_TYPE_NAME_PATTERN.test(slug)) continue
+
+    const heading = table.scalars.get("heading")
+    const description = table.scalars.get("description")
+    const message = table.scalars.get("message")
+    sections.push({
+      slug,
+      heading: heading && heading.trim().length > 0 ? heading.trim() : titleCaseSlug(slug),
+      description: description ?? "",
+      message: message && message.trim().length > 0 ? message : null,
+    })
+  }
+  if (sections.length > 0) return sections
+
+  const shorthand = tables.get(`${SPEC_SECTION}.types.${typeName}`)?.arrays.get("sections")
+  if (!shorthand || shorthand.length === 0) return null
+  return shorthand.map((heading) => ({
+    slug: heading.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, ""),
+    heading: heading.trim(),
+    description: "",
+    message: null,
+  }))
+}
+
+/**
+ * Merge user-declared `[spec.types.*]` tables over the built-in defaults.
+ * Built-in types keep their default sections unless the file declares its own.
+ */
+const parseSpecTypes = (raw: string): Record<string, SpecTypeConfig> => {
+  const merged: Record<string, SpecTypeConfig> = {}
+  for (const [name, def] of Object.entries(DEFAULT_CONFIG.spec.types)) {
+    merged[name] = { ...def, sections: def.sections.map((section) => ({ ...section })) }
+  }
+
+  const typesPrefix = `${SPEC_SECTION}.types`
+  const tables = collectTomlTables(raw, typesPrefix)
+
+  for (const [tableName, table] of tables) {
+    const suffix = tableName.slice(typesPrefix.length + 1)
+    // Skip the bare prefix and the nested .section.* tables.
+    if (tableName === typesPrefix || suffix.length === 0 || suffix.includes(".")) continue
+    const typeName = suffix
+    if (!SPEC_TYPE_NAME_PATTERN.test(typeName)) continue
+
+    const existing = merged[typeName]
+    const sections = parseSpecSections(tables, typeName)
+    const severity = table.scalars.get("severity") ?? null
+    const subdir = table.scalars.get("subdir") ?? null
+    const template = table.scalars.get("template") ?? null
+
+    merged[typeName] = {
+      sections: sections ?? existing?.sections ?? [],
+      severity: isSpecSectionSeverity(severity) ? severity : existing?.severity ?? "error",
+      subdir: subdir ?? existing?.subdir ?? null,
+      template: template ?? existing?.template ?? null,
+    }
+  }
+  return merged
+}
+
+const parseSpecLintMessages = (raw: string): Record<string, string> => {
+  const messages: Record<string, string> = { ...DEFAULT_LINT_MESSAGES }
+  const table = collectTomlTables(raw, `${SPEC_SECTION}.lint.messages`).get(
+    `${SPEC_SECTION}.lint.messages`
+  )
+  if (!table) return messages
+  for (const key of SPEC_LINT_MESSAGE_KEYS) {
+    const value = table.scalars.get(key)
+    if (value && value.trim().length > 0) messages[key] = value
+  }
+  return messages
+}
+
 /**
  * Read .tx/config.toml and return parsed config.
  * Falls back to defaults if file doesn't exist or is invalid.
@@ -276,6 +586,8 @@ export const readTxConfig = (cwd: string = process.cwd()): TxConfig => {
         designDocMissingTaskLinks: isSpecDesignDocMissingTaskLinksMode(specDesignDocMissingTaskLinks)
           ? specDesignDocMissingTaskLinks
           : DEFAULT_CONFIG.spec.designDocMissingTaskLinks,
+        types: parseSpecTypes(raw),
+        lintMessages: parseSpecLintMessages(raw),
       },
       memory: {
         defaultDir: memoryDefaultDir ?? DEFAULT_CONFIG.memory.defaultDir,
@@ -657,6 +969,73 @@ function escapeRegex(value: string): string {
 }
 
 /**
+ * Render the `[spec.types.*]` tables from DEFAULT_CONFIG so the scaffolded file
+ * and the in-code defaults can never drift (see the round-trip test).
+ * Keys whose default is already correct (subdir, template) are left out so the
+ * merge in `parseSpecTypes` keeps them.
+ */
+const renderDefaultSpecTypesToml = (): string => {
+  const lines: string[] = []
+  for (const [typeName, def] of Object.entries(DEFAULT_CONFIG.spec.types)) {
+    lines.push("", `[${SPEC_SECTION}.types.${typeName}]`, `severity = "${def.severity}"`)
+    for (const section of def.sections) {
+      lines.push("", `[${SPEC_SECTION}.types.${typeName}.section.${section.slug}]`)
+      lines.push(`heading = "${section.heading}"`)
+      lines.push(`description = "${section.description}"`)
+      if (section.message !== null) {
+        lines.push(`message = "${section.message}"`)
+      }
+    }
+  }
+  return lines.join("\n")
+}
+
+/** Header comment for the [spec.types.*] block, shared by scaffold and upgrade. */
+const SPEC_TYPES_TOML_HEADER = `# ─── Spec Types ────────────────────────────────────────────────────
+# Required markdown sections per spec type, checked by \`tx spec lint\`.
+# These are LINT-ONLY: a missing section never blocks tx doc add/update/sync.
+#
+#   severity     "error" (fails tx spec lint) | "warn" | "off"
+#   heading      the markdown heading text matched in the doc (case-insensitive)
+#   description  what belongs under the heading. Bundled into generated skills
+#                and used as placeholder text by \`tx doc template\`.
+#   message      the lint prompt shown when the section is missing. Falls back to
+#                [spec.lint.messages].missing_section, then a built-in default.
+#                Placeholders: {name} {spec_type} {section} {description} {file}
+#
+# Edit, reorder, or delete any section below. Define a new spec type by adding
+# a [spec.types.<name>] table. It is scaffolded, linted, and exposed to agents
+# via \`tx spec types --json\` exactly like the built-ins.
+#
+# NOT configurable (tx functionality depends on them): the frontmatter contract
+# and the embedded yaml block schemas (ears_requirements with REQ-* ids,
+# invariants with INV-* ids, verification, interfaces, failure_modes,
+# acceptance_criteria). Those blocks are found anywhere in the body, so renaming
+# a heading never breaks \`tx spec discover\` or FCI scoring.
+`
+
+/** Commented examples that follow the generated [spec.types.*] tables. */
+const SPEC_TYPES_TOML_FOOTER = `
+# Custom spec type example. Uncomment to enable \`tx doc add rfc <name>\`:
+# [spec.types.rfc]
+# severity = "warn"
+# subdir = "rfc"                     # defaults to the type name
+# template = ".tx/templates/rfc.md"  # optional; {name} {title} {date} {spec_type} substituted
+# sections = ["Summary", "Motivation", "Proposal", "Drawbacks", "Alternatives"]
+#
+# ...or use per-section tables to attach descriptions and lint prompts:
+# [spec.types.rfc.section.motivation]
+# heading = "Motivation"
+# description = "Why this change is worth making now."
+# message = "{name}: every RFC needs '# Motivation'. {description}"
+
+# Global lint prompt overrides, used when a section has no \`message\` of its own.
+# [spec.lint.messages]
+# missing_section = "{name}: missing required section '{section}' for spec_type '{spec_type}'. {description}"
+# unknown_spec_type = "{name}: spec_type '{spec_type}' is not defined in .tx/config.toml."
+`
+
+/**
  * The default config.toml content with comments and doc links.
  * Written by `tx init` if config.toml does not exist.
  */
@@ -707,6 +1086,8 @@ test_patterns = [
 # "never" = suppress this warning entirely.
 design_doc_missing_task_links = "always"
 
+${SPEC_TYPES_TOML_HEADER}${renderDefaultSpecTypesToml()}
+${SPEC_TYPES_TOML_FOOTER}
 # ─── Memory ─────────────────────────────────────────────────────────
 # Filesystem-backed markdown search over your project's documentation.
 # Index directories with \`tx memory source add <dir>\`, then search
@@ -882,4 +1263,49 @@ export const scaffoldConfigToml = (cwd: string = process.cwd()): boolean => {
   mkdirSync(configDir, { recursive: true })
   writeFileSync(configPath, DEFAULT_CONFIG_TOML, "utf8")
   return true
+}
+
+/** Config sections added after a project was first initialized. */
+const UPGRADEABLE_SECTIONS: ReadonlyArray<{
+  readonly marker: string
+  readonly render: () => string
+}> = [
+  {
+    // Spec types became configurable; older configs predate [spec.types.*].
+    marker: `[${SPEC_SECTION}.types.`,
+    render: () => `${SPEC_TYPES_TOML_HEADER}${renderDefaultSpecTypesToml()}\n${SPEC_TYPES_TOML_FOOTER}`,
+  },
+]
+
+/**
+ * Append config sections that did not exist when the project was initialized.
+ *
+ * Additive and idempotent: a section is only written when its marker is absent,
+ * and the appended values match the built-in defaults, so behaviour does not
+ * change. Existing keys and comments are never touched.
+ *
+ * Returns the markers that were added.
+ */
+export const upgradeConfigToml = (cwd: string = process.cwd()): string[] => {
+  const configPath = resolve(cwd, ".tx", "config.toml")
+  if (!existsSync(configPath)) return []
+
+  let raw: string
+  try {
+    raw = readFileSync(configPath, "utf8")
+  } catch {
+    return []
+  }
+
+  const added: string[] = []
+  let next = raw
+  for (const section of UPGRADEABLE_SECTIONS) {
+    if (next.includes(section.marker)) continue
+    next = `${ensureTrailingNewline(next)}\n${section.render()}`
+    added.push(section.marker)
+  }
+
+  if (added.length === 0) return []
+  writeFileSync(configPath, ensureTrailingNewline(next), "utf8")
+  return added
 }

@@ -5,7 +5,7 @@ import { Schema } from "effect"
 import {
   TASK_STATUSES, TaskAssigneeTypeSchema,
   ANCHOR_TYPES, EDGE_TYPES, NODE_TYPES,
-  DOC_KINDS, DOC_STATUSES, DOC_LINK_TYPES, DOC_STABLE_ID_PATTERN, TASK_DOC_LINK_TYPES,
+  DOC_STATUSES, DOC_LINK_TYPES, DOC_STABLE_ID_PATTERN, TASK_DOC_LINK_TYPES,
   INVARIANT_ENFORCEMENT_TYPES, INVARIANT_STATUSES,
   DECISION_STATUSES, DECISION_SOURCES,
 } from "../types/index.js"
@@ -371,7 +371,11 @@ export type EdgeSyncOperation = typeof EdgeSyncOperationSchema.Type
 // ----- Doc Sync Operations -----
 
 // Doc kind schema
-export const SyncDocKindSchema = Schema.Literal(...DOC_KINDS)
+/**
+ * Doc kind on the wire. Accepts user-defined spec types from `.tx/config.toml`
+ * in addition to `DOC_KINDS`, so synced JSONL round-trips custom types.
+ */
+export const SyncDocKindSchema = Schema.String
 // Doc status schema
 export const SyncDocStatusSchema = Schema.Literal(...DOC_STATUSES)
 // Doc names must be simple identifiers (no path separators/traversal).

@@ -2,6 +2,14 @@ import { createHash } from "node:crypto"
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { dirname, join, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import {
+  readTxConfig,
+  resolveSpecTypes,
+  renderLintMessage,
+  specTypeNames,
+  type SpecTypeDefinition,
+  type SpecTypeRegistry,
+} from "@jamesaphoenix/tx"
 import { HELP_TEXT, commandHelp } from "../help.js"
 import { CLI_VERSION } from "../version.js"
 
@@ -224,6 +232,11 @@ const BUNDLED_SKILLS = [
     id: "ralph-loop",
     title: "Ralph Loop",
     shortDescription: "Run Ralph against the repo queue or one linked design doc.",
+  },
+  {
+    id: "spec-doc",
+    title: "Spec Doc",
+    shortDescription: "Author any configured spec type, including project-defined custom types.",
   },
   {
     id: "skills-sync",
@@ -493,8 +506,122 @@ function replaceSlashCommandReference(content: string, command: string): string 
     )
 }
 
-function renderBundledSkillContent(target: SkillTarget, skillId: string): string {
-  const content = readFileSync(join(SHARED_SKILLS_DIR, skillId, "SKILL.md"), "utf-8")
+const SPEC_STRUCTURE_START = "<!-- tx:spec-structure:start -->"
+const SPEC_STRUCTURE_END = "<!-- tx:spec-structure:end -->"
+
+/** Which spec type a bundled skill authors. `null` renders every configured type. */
+const SKILL_SPEC_TYPE: Record<string, string | null> = {
+  prd: "prd",
+  "design-doc": "design",
+  "overview-spec": "overview",
+  "spec-doc": null,
+}
+
+const escapeTableCell = (value: string): string =>
+  value.replace(/\|/g, "\\|").replace(/\r?\n/g, " ").trim()
+
+/**
+ * Render this project's configured spec structure as markdown.
+ *
+ * Each customer's skills embed THEIR headings, descriptions, and lint prompts,
+ * so an agent following the skill writes docs that pass `tx spec lint` here,
+ * not the tx defaults.
+ */
+const renderSpecStructure = (
+  registry: SpecTypeRegistry,
+  specType: string | null
+): string => {
+  const defs = specType
+    ? [registry.types.get(specType)].filter((def): def is SpecTypeDefinition => def !== undefined)
+    : specTypeNames(registry)
+        .map((name) => registry.types.get(name)!)
+        .filter((def) => def.sections.length > 0)
+
+  const lines: string[] = [
+    "> Generated from this project's `.tx/config.toml` (`[spec.types.*]`).",
+    "> If the config may have changed since the last `tx skills sync`, run",
+    "> `tx spec types --json`. That output is always authoritative.",
+    "",
+  ]
+
+  if (defs.length === 0) {
+    lines.push("_No spec types with required sections are configured._")
+    return lines.join("\n")
+  }
+
+  for (const def of defs) {
+    const label = def.builtin
+      ? def.sectionsCustomized
+        ? "built-in, customized in this project"
+        : "built-in"
+      : "custom to this project"
+    lines.push(
+      `### \`${def.name}\` (${label})`,
+      "",
+      `Scaffold with \`tx doc add ${def.name} <name> --title "<title>"\`; preview with \`tx doc template ${def.name}\`.`,
+      `Files land in \`${def.subdir === "" ? "<docs root>" : `${def.subdir}/`}\`. Missing sections are reported by \`tx spec lint\` at severity **${def.severity}**.`,
+      ""
+    )
+    if (def.sections.length === 0) {
+      lines.push("_No required sections._", "")
+      continue
+    }
+    lines.push(
+      "| Section | What belongs under it | Lint prompt if missing |",
+      "| --- | --- | --- |"
+    )
+    for (const section of def.sections) {
+      // Show the prompt as the agent will actually see it, not the raw template.
+      const prompt = renderLintMessage(section.message, {
+        name: "<doc-name>",
+        spec_type: def.name,
+        section: section.heading,
+        description: section.description,
+        file: "",
+      })
+      lines.push(
+        `| \`# ${escapeTableCell(section.heading)}\` | ${escapeTableCell(section.description) || "-"} | ${escapeTableCell(prompt)} |`
+      )
+    }
+    lines.push("")
+  }
+
+  lines.push(
+    "The frontmatter contract and the embedded yaml blocks (`ears_requirements` with",
+    "REQ-* ids, `invariants` with INV-* ids, `verification`, `interfaces`,",
+    "`failure_modes`, `acceptance_criteria`) are fixed by tx and are NOT configurable.",
+    "Those blocks are found anywhere in the body, so a renamed heading never breaks",
+    "`tx spec discover` or FCI scoring."
+  )
+
+  return lines.join("\n")
+}
+
+/** Replace the spec-structure marker block, if the skill declares one. */
+const fillSpecStructureBlock = (
+  content: string,
+  skillId: string,
+  registry: SpecTypeRegistry
+): string => {
+  const startIdx = content.indexOf(SPEC_STRUCTURE_START)
+  const endIdx = content.indexOf(SPEC_STRUCTURE_END)
+  if (startIdx === -1 || endIdx === -1 || endIdx < startIdx) return content
+
+  const rendered = renderSpecStructure(registry, SKILL_SPEC_TYPE[skillId] ?? null)
+  return (
+    content.slice(0, startIdx + SPEC_STRUCTURE_START.length) +
+    `\n${rendered}\n` +
+    content.slice(endIdx)
+  )
+}
+
+function renderBundledSkillContent(
+  target: SkillTarget,
+  skillId: string,
+  registry: SpecTypeRegistry
+): string {
+  const raw = readFileSync(join(SHARED_SKILLS_DIR, skillId, "SKILL.md"), "utf-8")
+  const content = fillSpecStructureBlock(raw, skillId, registry)
   if (target === "claude") {
     return content
   }
@@ -503,7 +630,7 @@ function renderBundledSkillContent(target: SkillTarget, skillId: string): string
     .replaceAll("~/.claude/plans/", "~/.codex/plans/")
     .replaceAll("CLAUDE.md", "project instructions (for example `AGENTS.md`, if present)")
 
-  for (const command of ["plan", "overview-spec", "design-doc", "prd", "verify-invariants", "map-invariants"]) {
+  for (const command of ["plan", "overview-spec", "design-doc", "prd", "spec-doc", "verify-invariants", "map-invariants"]) {
     rewritten = replaceSlashCommandReference(rewritten, command)
   }
 
@@ -513,12 +640,13 @@ function renderBundledSkillContent(target: SkillTarget, skillId: string): string
 function buildBundledSkill(
   target: SkillTarget,
   skillDefinition: (typeof BUNDLED_SKILLS)[number],
+  registry: SpecTypeRegistry,
 ): GeneratedSkill {
   const skillDir = `${installRoot(target)}/${skillDefinition.id}`
   const files = [
     {
       relativePath: `${skillDir}/SKILL.md`,
-      content: renderBundledSkillContent(target, skillDefinition.id),
+      content: renderBundledSkillContent(target, skillDefinition.id, registry),
     },
   ]
 
@@ -547,7 +675,7 @@ function installRoot(target: SkillTarget): ".claude/skills" | ".codex/skills" {
   return target === "claude" ? ".claude/skills" : ".codex/skills"
 }
 
-function buildTargetSkills(target: SkillTarget): GeneratedSkill[] {
+function buildTargetSkills(target: SkillTarget, registry: SpecTypeRegistry): GeneratedSkill[] {
   const grouped = new Map<string, string[]>()
   const keys = Object.keys(commandHelp).sort((a, b) => a.localeCompare(b))
 
@@ -589,7 +717,9 @@ function buildTargetSkills(target: SkillTarget): GeneratedSkill[] {
 
   validateGeneratedSkillCoverage(target, generatedSkills)
 
-  return generatedSkills.concat(BUNDLED_SKILLS.map((skillDefinition) => buildBundledSkill(target, skillDefinition)))
+  return generatedSkills.concat(
+    BUNDLED_SKILLS.map((skillDefinition) => buildBundledSkill(target, skillDefinition, registry))
+  )
 }
 
 function renderManifest(target: SkillTarget, skills: GeneratedSkill[]): string {
@@ -622,10 +752,15 @@ export function generateSkillBundles(options?: {
   target?: SkillTargetSelection
   outputDir?: string
   clean?: boolean
+  /** Project root whose .tx/config.toml defines the spec structure. */
+  contentRoot?: string
 }): SkillGenerationResult {
   const targetSelection = options?.target ?? "all"
   const outputDir = resolve(options?.outputDir ?? join(process.cwd(), ".tx", "generated-skills"))
   const clean = options?.clean ?? false
+  // Skills embed this project's configured spec sections, so they teach agents
+  // the structure `tx spec lint` actually enforces here.
+  const registry = resolveSpecTypes(readTxConfig(options?.contentRoot ?? process.cwd()))
 
   const targets = selectedTargets(targetSelection)
   const summaries: GeneratedTargetSummary[] = []
@@ -638,7 +773,7 @@ export function generateSkillBundles(options?: {
 
     mkdirSync(targetOutputDir, { recursive: true })
 
-    const skills = buildTargetSkills(target)
+    const skills = buildTargetSkills(target, registry)
     const manifestPath = join(targetOutputDir, installRoot(target), "manifest.json")
     let fileCount = 0
 

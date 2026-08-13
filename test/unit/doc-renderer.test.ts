@@ -1,10 +1,11 @@
 import { describe, it, expect } from "vitest"
 import { renderDocToMarkdown } from "@jamesaphoenix/tx"
+import { asDocKind } from "@jamesaphoenix/tx/types"
 
 describe("Doc renderer structured section normalization", () => {
   it("renders failure_modes scenario entries and string edge_cases without undefined", () => {
     const parsed: Record<string, unknown> = {
-      kind: "design",
+      kind: asDocKind("design"),
       title: "Cycle-Based Issue Discovery",
       status: "changing",
       version: 1,
@@ -23,7 +24,7 @@ describe("Doc renderer structured section normalization", () => {
       ],
     }
 
-    const markdown = renderDocToMarkdown(parsed, "design")
+    const markdown = renderDocToMarkdown(parsed, asDocKind("design"))
 
     // Renderer uses Condition | Impact | Handling columns (no ID column)
     expect(markdown).toContain(
@@ -39,21 +40,21 @@ describe("Doc renderer structured section normalization", () => {
 
   it("keeps object-form failure_modes rendering intact", () => {
     const parsed: Record<string, unknown> = {
-      kind: "design",
+      kind: asDocKind("design"),
       title: "Failure Modes Shape",
       failure_modes: [
         { condition: "Service timeout", impact: "Request fails", handling: "Retry once" },
       ],
     }
 
-    const markdown = renderDocToMarkdown(parsed, "design")
+    const markdown = renderDocToMarkdown(parsed, asDocKind("design"))
     // Renderer uses Condition | Impact | Handling columns
     expect(markdown).toContain("| Service timeout | Request fails | Retry once |")
   })
 
   it("renders requirement doc with expected sections", () => {
     const parsed: Record<string, unknown> = {
-      kind: "requirement",
+      kind: asDocKind("requirement"),
       title: "Auth Flows",
       status: "changing",
       actors: [
@@ -73,7 +74,7 @@ describe("Doc renderer structured section normalization", () => {
       ],
     }
 
-    const markdown = renderDocToMarkdown(parsed, "requirement")
+    const markdown = renderDocToMarkdown(parsed, asDocKind("requirement"))
     expect(markdown).toContain("# Auth Flows")
     expect(markdown).toContain("**Kind**: requirement")
     expect(markdown).toContain("## Actors")
@@ -88,7 +89,7 @@ describe("Doc renderer structured section normalization", () => {
 
   it("renders system_design doc with expected sections", () => {
     const parsed: Record<string, unknown> = {
-      kind: "system_design",
+      kind: asDocKind("system_design"),
       title: "Error Handling",
       status: "changing",
       scope: "All services",
@@ -105,7 +106,7 @@ describe("Doc renderer structured section normalization", () => {
       ],
     }
 
-    const markdown = renderDocToMarkdown(parsed, "system_design")
+    const markdown = renderDocToMarkdown(parsed, asDocKind("system_design"))
     expect(markdown).toContain("# Error Handling")
     expect(markdown).toContain("**Kind**: system_design")
     expect(markdown).toContain("## Scope")

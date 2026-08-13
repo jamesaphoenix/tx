@@ -13,6 +13,7 @@ import type { Doc, Task, TaskId, TaskWithDeps } from "@jamesaphoenix/tx/types"
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { asDocKind } from "@jamesaphoenix/tx/types"
 
 let sandboxDir = ""
 let previousCwd = ""
@@ -21,7 +22,7 @@ const DESIGN_DOC: Doc = {
   id: 1 as any,
   docId: "doc-abc123def456" as any,
   hash: "hash",
-  kind: "design",
+  kind: asDocKind("design"),
   name: "auth-flow-design",
   title: "Auth Flow Design",
   version: 1,
@@ -307,7 +308,7 @@ describe("DecomposeService", () => {
         Layer.mergeAll(
           harness.layer,
           Layer.succeed(DocService, {
-            get: () => Effect.succeed({ ...DESIGN_DOC, kind: "prd" } as Doc),
+            get: () => Effect.succeed({ ...DESIGN_DOC, kind: asDocKind("prd") } as Doc),
           } as any),
           Layer.succeed(DependencyService, {
             addBlocker: () => Effect.die(new Error("not implemented")),
