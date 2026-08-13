@@ -4,3 +4,12 @@
 
 /* Include fumadocs-ui components in Tailwind's content scanning */
 @source '../node_modules/fumadocs-ui/dist/**/*.js';
+
+/* The launch banner is hidden below the `sm` breakpoint (app/layout.tsx), but
+   fumadocs' <Banner> still sets --fd-banner-height globally, which offsets the
+   sticky mobile nav by 3rem. Zero it out where the banner is not rendered. */
+@media (width < 40rem) {
+  :root {
+    --fd-banner-height: 0px !important;
+  }
+}
