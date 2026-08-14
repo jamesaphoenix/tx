@@ -28,6 +28,14 @@ import {
 } from "@jamesaphoenix/tx"
 import { fixtureId } from "../fixtures.js"
 
+/**
+ * These tests start real subprocesses and poll for lock/pid effects, budgeting
+ * up to ~8.3s of waiting. Against vitest's global 10s testTimeout that leaves
+ * almost no headroom for process startup under CI load, so the test would be
+ * killed before its own waits could report a useful failure.
+ */
+const PROCESS_RACE_TIMEOUT_MS = 45000
+
 interface Harness {
   tmpDir: string
   stateDir: string
@@ -654,7 +662,7 @@ describeIf("ralph.sh integration", () => {
     } finally {
       await terminateChild(ownerProc)
     }
-  })
+  }, PROCESS_RACE_TIMEOUT_MS)
 
   it("stale-race: allows only one winner when concurrent starters race against a stale lock", async () => {
     const h = setupHarness()
@@ -707,7 +715,7 @@ describeIf("ralph.sh integration", () => {
       await terminateChild(proc1)
       await terminateChild(proc2)
     }
-  })
+  }, PROCESS_RACE_TIMEOUT_MS)
 
   itIfSqlite3("cancels orphaned runs and expires active claims for linked tasks", () => {
     const h = setupHarness()
