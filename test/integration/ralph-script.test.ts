@@ -359,18 +359,34 @@ function isPidLive(pid: number): boolean {
   }
 }
 
+/**
+ * Best-effort teardown for a spawned child.
+ *
+ * This runs from `finally` blocks, so it must never throw: an exception here
+ * replaces the real test outcome with a cleanup error. That is exactly what
+ * happened in CI, where a slow `exit` event under load surfaced as
+ * "Timed out waiting for process N to exit" and masked what the test actually
+ * asserted. SIGKILL cannot be caught, so a missing exit event within the
+ * window is a reporting artifact, not a process still running.
+ */
 async function terminateChild(proc: ReturnType<typeof spawn>): Promise<void> {
   if (proc.exitCode !== null) {
     return
   }
 
-  proc.kill("SIGTERM")
   try {
+    proc.kill("SIGTERM")
     await waitForExit(proc, 2000)
     return
   } catch {
+    // Fall through to SIGKILL.
+  }
+
+  try {
     proc.kill("SIGKILL")
-    await waitForExit(proc, 2000)
+    await waitForExit(proc, 5000)
+  } catch {
+    // Best effort: the harness cleanup also reaps by pid.
   }
 }
 
