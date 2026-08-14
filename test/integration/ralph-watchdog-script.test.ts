@@ -365,6 +365,17 @@ afterEach(() => {
   }
 })
 
+/**
+ * Every test in this file spawns bash subprocesses and polls for their effects.
+ * Their internal guards (waitForCondition/waitForExit, and the 30s spawnSync cap)
+ * budget well past vitest's global 10s testTimeout, so without an explicit
+ * per-test timeout vitest kills the test before its own guards can report a
+ * useful failure. That is what made these tests pass locally and time out under
+ * CI load. Keep this comfortably above the largest internal budget
+ * (8s lock wait + 15s exit wait + 8s release wait = 31s).
+ */
+const PROCESS_TEST_TIMEOUT_MS = 60000
+
 describe("watchdog launcher integration", () => {
   it("enforces single-instance lock and restarts cleanly", () => {
     const harness = createHarness({ stubWatchdog: true })
@@ -398,7 +409,7 @@ describe("watchdog launcher integration", () => {
     expect(stop.status).toBe(0)
     expect(`${stop.stdout}\n${stop.stderr}`).toContain("Watchdog stopped")
     expect(existsSync(pidFile)).toBe(false)
-  })
+  }, PROCESS_TEST_TIMEOUT_MS)
 })
 
 describe("ralph-watchdog singleton lock integration", () => {
@@ -470,11 +481,11 @@ describe("ralph-watchdog singleton lock integration", () => {
 
   it("allows only one winner when concurrent starts race with an empty pid file", async () => {
     await expectSingleWinner()
-  })
+  }, PROCESS_TEST_TIMEOUT_MS)
 
   it("allows only one winner when concurrent starts race with a stale pid file", async () => {
     await expectSingleWinner({ preseedStalePidFile: true })
-  })
+  }, PROCESS_TEST_TIMEOUT_MS)
 })
 
 describe("ralph-watchdog signal trap integration", () => {
@@ -535,11 +546,11 @@ describe("ralph-watchdog signal trap integration", () => {
 
   it("exits cleanly on SIGTERM after releasing the watchdog lock", async () => {
     await expectSignalStopsWatchdog("SIGTERM", 143)
-  })
+  }, PROCESS_TEST_TIMEOUT_MS)
 
   it("exits cleanly on SIGINT after releasing the watchdog lock", async () => {
     await expectSignalStopsWatchdog("SIGINT", 130)
-  })
+  }, PROCESS_TEST_TIMEOUT_MS)
 })
 
 describeIfSqlite3("ralph-watchdog reconcile integration", () => {
@@ -591,7 +602,7 @@ describeIfSqlite3("ralph-watchdog reconcile integration", () => {
     const watchdogLog = readFileSync(join(harness.tmpDir, ".tx", "ralph-watchdog.log"), "utf-8")
     expect(watchdogLog).toContain(`Reconciled run=${runId} (missing pid)`)
     expect(existsSync(join(harness.tmpDir, ".tx", "ralph-watchdog.pid"))).toBe(false)
-  })
+  }, PROCESS_TEST_TIMEOUT_MS)
 
   it("cancels running rows with dead pid, resets task, and expires active claims", () => {
     const harness = createHarness()
@@ -637,7 +648,7 @@ describeIfSqlite3("ralph-watchdog reconcile integration", () => {
     const resetsLogPath = join(harness.stateDir, "resets.log")
     expect(existsSync(resetsLogPath)).toBe(true)
     expect(readFileSync(resetsLogPath, "utf-8")).toContain(taskId)
-  })
+  }, PROCESS_TEST_TIMEOUT_MS)
 
   it("does not cancel non-worker running rows that do not report a pid", () => {
     const harness = createHarness()
@@ -671,7 +682,7 @@ describeIfSqlite3("ralph-watchdog reconcile integration", () => {
 
     const watchdogLog = readFileSync(join(harness.tmpDir, ".tx", "ralph-watchdog.log"), "utf-8")
     expect(watchdogLog).toContain(`Skipping run=${runId} pid reconciliation`)
-  })
+  }, PROCESS_TEST_TIMEOUT_MS)
 
   it("cancels stale running rows, resets task, and expires active claims", () => {
     const harness = createHarness()
@@ -729,7 +740,7 @@ describeIfSqlite3("ralph-watchdog reconcile integration", () => {
     } finally {
       terminatePid(stalePid)
     }
-  })
+  }, PROCESS_TEST_TIMEOUT_MS)
 
   it("cancels stale runs without killing unrelated live PIDs when ownership cannot be confirmed", () => {
     const harness = createHarness()
@@ -788,7 +799,7 @@ describeIfSqlite3("ralph-watchdog reconcile integration", () => {
     } finally {
       terminatePid(unrelatedPid)
     }
-  })
+  }, PROCESS_TEST_TIMEOUT_MS)
 
   it("resets orphaned active tasks and expires active claims", () => {
     const harness = createHarness()
@@ -822,5 +833,5 @@ describeIfSqlite3("ralph-watchdog reconcile integration", () => {
 
     const watchdogLog = readFileSync(join(harness.tmpDir, ".tx", "ralph-watchdog.log"), "utf-8")
     expect(watchdogLog).toContain("Reset 1 orphaned active task(s)")
-  })
+  }, PROCESS_TEST_TIMEOUT_MS)
 })
