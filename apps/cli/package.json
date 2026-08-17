@@ -96,8 +96,8 @@
   },
   "dependencies": {
     "@clack/prompts": "^1.0.1",
-    "@effect/platform": "^0.96.0",
-    "@effect/platform-node": "^0.107.0",
+    "@effect/platform": "^0.97.1",
+    "@effect/platform-node": "^0.108.1",
     "@jamesaphoenix/tx": "*",
     "@modelcontextprotocol/sdk": "^1.25.3",
     "effect": "^3.19.15",

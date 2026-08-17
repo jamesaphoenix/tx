@@ -58,9 +58,9 @@
     "prepare": "husky"
   },
   "dependencies": {
-    "@effect/cli": "^0.75.0",
-    "@effect/platform": "^0.96.0",
-    "@effect/platform-node": "^0.107.0",
+    "@effect/cli": "^0.77.0",
+    "@effect/platform": "^0.97.1",
+    "@effect/platform-node": "^0.108.1",
     "@modelcontextprotocol/sdk": "^1.26.0",
     "effect": "^3.19.16",
     "esbuild": "^0.28.0",
