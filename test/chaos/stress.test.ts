@@ -1,3 +1,4 @@
+import { makeMinimalLayer } from "@jamesaphoenix/tx"
 /**
  * Chaos Engineering: Stress Tests
  *
@@ -10,7 +11,7 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest"
-import { Effect, Layer } from "effect"
+import { Effect, } from "effect"
 import type { TaskId } from "@jamesaphoenix/tx/types"
 import {
   createTestDatabase,
@@ -31,50 +32,7 @@ const FIXTURES = {
 // Test Layer Factory
 // =============================================================================
 
-async function makeTestLayer() {
-  const {
-    SqliteClientLive,
-    TaskRepositoryLive,
-    DependencyRepositoryLive,
-    LearningRepositoryLive,
-    FileLearningRepositoryLive,
-    AttemptRepositoryLive,
-    TaskServiceLive,
-    DependencyServiceLive,
-    ReadyServiceLive,
-    HierarchyServiceLive,
-    AutoSyncServiceNoop,
-    GuardRepositoryLive,
-    PinRepositoryLive,
-    ClaimRepositoryLive,
-    ClaimServiceLive,
-    OrchestratorStateRepositoryLive
-  } = await import("@jamesaphoenix/tx")
-
-  const infra = SqliteClientLive(":memory:")
-  const repos = Layer.mergeAll(
-    TaskRepositoryLive,
-    DependencyRepositoryLive,
-    GuardRepositoryLive,
-    PinRepositoryLive,
-    LearningRepositoryLive,
-    FileLearningRepositoryLive,
-    AttemptRepositoryLive,
-    ClaimRepositoryLive,
-    OrchestratorStateRepositoryLive
-  ).pipe(Layer.provide(infra))
-
-  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
-
-  const services = Layer.mergeAll(
-    TaskServiceLive,
-    DependencyServiceLive,
-    ReadyServiceLive,
-    HierarchyServiceLive
-  ).pipe(Layer.provide(Layer.mergeAll(repos, AutoSyncServiceNoop, claimService)))
-
-  return Layer.mergeAll(services, repos)
-}
+async function makeTestLayer() { return makeMinimalLayer(":memory:") }
 
 // =============================================================================
 // INVARIANT: System handles large task counts
@@ -286,7 +244,7 @@ describe("Chaos: Ready Detection Under Load", () => {
     db = await Effect.runPromise(createTestDatabase())
   })
 
-  it("ready detection query works with 1000 tasks", async () => {
+  it("task ready detection query works with 1000 tasks", async () => {
     // Create tasks with dependencies using chaos utility
     const loadResult = chaos.stressLoad({
       taskCount: 1000,
@@ -322,7 +280,7 @@ describe("Chaos: Ready Detection Under Load", () => {
     expect(ready.length).toBeGreaterThan(0)
   })
 
-  it("ready detection with limit parameter scales correctly", async () => {
+  it("task ready detection with limit parameter scales correctly", async () => {
     const { ReadyService, TaskService } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
@@ -365,7 +323,7 @@ describe("Chaos: Task Service Under Load", () => {
     db = await Effect.runPromise(createTestDatabase())
   })
 
-  it("list operation handles 1000+ tasks via direct DB query", async () => {
+  it("task list operation handles 1000+ tasks via direct DB query", async () => {
     // Test database-level performance with stress load
     chaos.stressLoad({
       taskCount: 1000,
@@ -386,7 +344,7 @@ describe("Chaos: Task Service Under Load", () => {
     expect(elapsedMs).toBeLessThan(5000) // < 5 seconds
   })
 
-  it("list with status filter scales correctly via direct DB query", async () => {
+  it("task list with status filter scales correctly via direct DB query", async () => {
     chaos.stressLoad({
       taskCount: 700,
       db,
@@ -481,61 +439,12 @@ describe("Chaos: Dependency Service Under Load", () => {
       )
     }
 
-    // Query what this task blocks
+    // Query what this task block s
     const blocked = db.query<{ blocked_id: string }>(
       "SELECT blocked_id FROM task_dependencies WHERE blocker_id = ?",
       [FIXTURES.STRESS_TASK]
     )
 
     expect(blocked.length).toBe(blockedCount)
-  })
-})
-
-// =============================================================================
-// INVARIANT: Concurrent operations stability
-// =============================================================================
-
-describe("Chaos: Concurrent Operation Stability", () => {
-  let db: TestDatabase
-
-  beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
-  })
-
-  it("handles sequential race scenarios on multiple tasks", async () => {
-    // Create multiple tasks
-    const taskCount = 5
-    const now = new Date().toISOString()
-
-    for (let i = 0; i < taskCount; i++) {
-      const taskId = fixtureId(`concurrent-task-${i}`)
-      db.run(
-        `INSERT INTO tasks (id, title, description, status, score, created_at, updated_at, metadata)
-         VALUES (?, ?, '', 'ready', 500, ?, ?, '{}')`,
-        [taskId, `Concurrent Task ${i}`, now, now]
-      )
-    }
-
-    // Run races sequentially to avoid worker ID conflicts
-    // (raceWorkers creates workers with deterministic IDs like race-worker-0)
-    const raceResults = []
-    for (let i = 0; i < taskCount; i++) {
-      // Clear previous workers to avoid UNIQUE constraint
-      db.run("DELETE FROM workers WHERE id LIKE 'tx-%'")
-      db.run("DELETE FROM task_claims WHERE task_id = ?", [fixtureId(`concurrent-task-${i}`)])
-
-      const result = await chaos.raceWorkers({
-        count: 3,
-        taskId: fixtureId(`concurrent-task-${i}`),
-        db
-      })
-      raceResults.push(result)
-    }
-
-    // Each race should have exactly one winner
-    raceResults.forEach(result => {
-      expect(result.successfulClaims).toBe(1)
-      expect(result.winner).not.toBeNull()
-    })
   })
 })

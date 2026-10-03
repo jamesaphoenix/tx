@@ -1,3 +1,4 @@
+import { makeMinimalLayer } from "@jamesaphoenix/tx"
 /**
  * Chaos Engineering: Invariant Assertion Tests
  *
@@ -17,7 +18,7 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest"
-import { Effect, Layer } from "effect"
+import { Effect, } from "effect"
 import type { TaskId } from "@jamesaphoenix/tx/types"
 import {
   createTestDatabase,
@@ -42,50 +43,7 @@ const FIXTURES = {
 // Test Layer Factory
 // =============================================================================
 
-async function makeTestLayer() {
-  const {
-    SqliteClientLive,
-    TaskRepositoryLive,
-    DependencyRepositoryLive,
-    LearningRepositoryLive,
-    FileLearningRepositoryLive,
-    AttemptRepositoryLive,
-    TaskServiceLive,
-    DependencyServiceLive,
-    ReadyServiceLive,
-    HierarchyServiceLive,
-    AutoSyncServiceNoop,
-    GuardRepositoryLive,
-    PinRepositoryLive,
-    ClaimRepositoryLive,
-    ClaimServiceLive,
-    OrchestratorStateRepositoryLive
-  } = await import("@jamesaphoenix/tx")
-
-  const infra = SqliteClientLive(":memory:")
-  const repos = Layer.mergeAll(
-    TaskRepositoryLive,
-    DependencyRepositoryLive,
-    GuardRepositoryLive,
-    PinRepositoryLive,
-    LearningRepositoryLive,
-    FileLearningRepositoryLive,
-    AttemptRepositoryLive,
-    ClaimRepositoryLive,
-    OrchestratorStateRepositoryLive
-  ).pipe(Layer.provide(infra))
-
-  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
-
-  const services = Layer.mergeAll(
-    TaskServiceLive,
-    DependencyServiceLive,
-    ReadyServiceLive,
-    HierarchyServiceLive
-  ).pipe(Layer.provide(Layer.mergeAll(repos, AutoSyncServiceNoop, claimService)))
-
-  return Layer.mergeAll(services, repos)
-}
+async function makeTestLayer() { return makeMinimalLayer(":memory:") }
 
 // =============================================================================
 // DOCTRINE RULE 1: Every API response MUST include full dependency information
@@ -135,7 +93,7 @@ describe("DOCTRINE Rule 1: TaskWithDeps in all responses", () => {
     expect(result.isReady).toBe(false) // Blocked
   })
 
-  it("ready service returns tasks with dependency info", async () => {
+  it("task ready service returns tasks with dependency info", async () => {
     const { ReadyService } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
@@ -395,7 +353,7 @@ describe("Data Integrity Invariants", () => {
     expect(task.completedAt).toBeInstanceOf(Date)
   })
 
-  it("ready tasks have isReady=true and no open blockers", async () => {
+  it("task ready tasks have isReady=true and no open blockers", async () => {
     const { TaskService, DependencyService, ReadyService } = await import("@jamesaphoenix/tx")
     const layer = await makeTestLayer()
 
@@ -427,56 +385,5 @@ describe("Data Integrity Invariants", () => {
     expect(task1?.isReady).toBe(true)
     expect(task1?.blockedBy).toEqual([])
     expect(task2).toBeUndefined() // Should not be in ready list
-  })
-})
-
-// =============================================================================
-// Stress Invariants: System maintains correctness under load
-// =============================================================================
-
-describe("Stress Invariants", () => {
-  let db: TestDatabase
-
-  beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
-  })
-
-  it("claim invariant: only one winner even under high concurrency", async () => {
-    const now = new Date().toISOString()
-    db.run(
-      `INSERT INTO tasks (id, title, description, status, score, created_at, updated_at, metadata)
-       VALUES (?, ?, '', 'ready', 500, ?, ?, '{}')`,
-      [FIXTURES.TASK_1, "Race Task", now, now]
-    )
-
-    const result = await chaos.raceWorkers({
-      count: 10,
-      taskId: FIXTURES.TASK_1,
-      db
-    })
-
-    // INVARIANT: Exactly one winner
-    expect(result.successfulClaims).toBe(1)
-    expect(result.winner).not.toBeNull()
-    expect(result.losers).toHaveLength(9)
-  })
-
-  it("transaction invariant: partial writes roll back completely", () => {
-    const result = chaos.partialWrite({
-      table: "tasks",
-      db,
-      rowCount: 10,
-      failAtRow: 5,
-      useTransaction: true
-    })
-
-    // INVARIANT: All-or-nothing with transactions
-    expect(result.rowsWritten).toBe(0)
-    expect(result.rolledBack).toBe(true)
-
-    const tasks = db.query<{ id: string }>(
-      "SELECT id FROM tasks WHERE title LIKE 'Partial Write%'"
-    )
-    expect(tasks.length).toBe(0)
   })
 })

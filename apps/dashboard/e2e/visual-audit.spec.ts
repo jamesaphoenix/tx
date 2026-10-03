@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test"
+import { test, } from "@playwright/test"
 
 /**
  * Visual audit for the restyled dashboard pages.

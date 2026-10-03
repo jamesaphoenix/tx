@@ -8,8 +8,6 @@ import type {
   PaginatedTasksResponse,
   TaskWithDeps,
   StatsResponse,
-  RalphResponse,
-  RunsResponse,
   TaskDetailResponse,
 } from '../api/client'
 
@@ -37,13 +35,6 @@ function createTask(overrides: Partial<TaskWithDeps> = {}): TaskWithDeps {
     blocks: [],
     children: [],
     isReady: true,
-    groupContext: null,
-    effectiveGroupContext: null,
-    effectiveGroupContextSourceTaskId: null,
-    orchestrationStatus: null,
-    claimedBy: null,
-    claimExpiresAt: null,
-    failedAttempts: 0,
     ...overrides,
   }
 }
@@ -52,21 +43,6 @@ const defaultStats: StatsResponse = {
   tasks: 10,
   done: 3,
   ready: 5,
-  learnings: 20,
-  runsRunning: 1,
-  runsTotal: 15,
-}
-
-const defaultRalph: RalphResponse = {
-  running: false,
-  pid: null,
-  currentIteration: 0,
-  currentTask: null,
-  recentActivity: [],
-}
-
-const defaultRuns: RunsResponse = {
-  runs: [],
 }
 
 
@@ -123,8 +99,6 @@ describe('E2E: Keyboard Navigation and Detail Panel', () => {
         dashboard: { defaultTaskAssigmentType: 'human', defaultTaskView: 'list' },
       })),
       http.get('/api/stats', () => HttpResponse.json(defaultStats)),
-      http.get('/api/ralph', () => HttpResponse.json(defaultRalph)),
-      http.get('/api/runs', () => HttpResponse.json(defaultRuns)),
       http.get('/api/tasks', () => {
         return HttpResponse.json({
           tasks: [],

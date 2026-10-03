@@ -1,16 +1,24 @@
 {
   "generator": "tx skills generate",
-  "version": "0.19.0",
+  "version": "0.20.0",
   "target": "claude",
   "installRoot": ".claude/skills",
-  "skillCount": 3,
+  "skillCount": 4,
   "commandCount": 0,
   "skills": [
+    {
+      "id": "tx-plan",
+      "title": "Copy an implementation plan",
+      "installPath": ".claude/skills/tx-plan",
+      "checksum": "7d251ec9ca72b58c901f3358a6c4d6bdd1e37b9aae2d598898b9abc440b06f80",
+      "commandKeys": [],
+      "source": "bundled"
+    },
     {
       "id": "tx-tasks",
       "title": "Create tx tasks",
       "installPath": ".claude/skills/tx-tasks",
-      "checksum": "ebcd20f2b0a912c7529f480916a2216a12980e6001546fe9d6ba4e3f660a1f0f",
+      "checksum": "0cfb200da4d0f5936dee12569f04accc346b068189380cb061a56004f58e6dd0",
       "commandKeys": [],
       "source": "bundled"
     },

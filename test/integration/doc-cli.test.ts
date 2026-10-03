@@ -1,3 +1,4 @@
+const normaliseTaskCommand = (args: string[]): string[] => /^(add|list|ready|show|update|done|reset|delete|bulk|label|dep|block|unblock|children|tree)$/.test(args[0] ?? "") ? ["task", ...(/^(block|unblock|children|tree)$/.test(args[0]) ? ["dep"] : []), ...args] : args
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { spawnSync } from "node:child_process"
 import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from "node:fs"
@@ -17,6 +18,8 @@ interface ExecResult {
 }
 
 function runTx(args: string[], cwd: string): ExecResult {
+  args = normaliseTaskCommand(args)
+
   const runner = HAS_BUN ? BUN_BIN : process.execPath
   const runnerArgs = HAS_BUN
     ? [CLI_SRC, ...args]
@@ -508,7 +511,7 @@ describe("tx doc lifecycle coverage", () => {
   })
 
   it("validate reflects unlinked tasks and clears after attach", () => {
-    const addTask = runTx(["add", "Implement docs flow", "--json"], tmpProjectDir)
+    const addTask = runTx(["task", "add", "Implement docs flow", "--json"], tmpProjectDir)
     expect(addTask.status).toBe(0)
     const task = JSON.parse(addTask.stdout) as { id: string }
 
@@ -552,7 +555,7 @@ describe("tx doc lifecycle coverage", () => {
   })
 
   it("detects content drift after markdown mutation", () => {
-    const addTask = runTx(["add", "Drift task", "--json"], tmpProjectDir)
+    const addTask = runTx(["task", "add", "Drift task", "--json"], tmpProjectDir)
     expect(addTask.status).toBe(0)
     const task = JSON.parse(addTask.stdout) as { id: string }
 

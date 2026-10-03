@@ -16,11 +16,6 @@ import {
   mapCoreError,
   SafePathString,
   TxApi,
-  HealthGroup,
-  TasksGroup,
-  LearningsGroup,
-  RunsGroup,
-  SyncGroup,
 } from "../api.js"
 
 // =============================================================================
@@ -189,14 +184,6 @@ describe("mapCoreError", () => {
 describe("API structure", () => {
   it("should export TxApi class", () => {
     expect(TxApi).toBeDefined()
-  })
-
-  it("should export all groups", () => {
-    expect(HealthGroup).toBeDefined()
-    expect(TasksGroup).toBeDefined()
-    expect(LearningsGroup).toBeDefined()
-    expect(RunsGroup).toBeDefined()
-    expect(SyncGroup).toBeDefined()
   })
 })
 

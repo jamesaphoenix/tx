@@ -13,7 +13,7 @@ import { TASK_STATUSES, serializeTask, assertTaskId } from "@jamesaphoenix/tx/ty
 
 // Re-export for use in other modules
 export { serializeTask }
-import { TaskService, ReadyService, DependencyService, HierarchyService, LearningService } from "@jamesaphoenix/tx"
+import { TaskService, ReadyService, DependencyService, HierarchyService } from "@jamesaphoenix/tx"
 import { runEffect } from "../runtime.js"
 import { handleToolError, type McpToolResult } from "../response.js"
 import { normalizeLimit, MCP_MAX_LIMIT } from "./index.js"
@@ -311,50 +311,6 @@ const handleUnblock = async (args: { taskId: string; blockerId: string }): Promi
   }
 }
 
-const handleGroupContextSet = async (args: { taskId: string; context: string }): Promise<McpToolResult> => {
-  try {
-    const taskId = assertTaskId(args.taskId)
-    const task = await runEffect(
-      Effect.gen(function* () {
-        const taskService = yield* TaskService
-        return yield* taskService.setGroupContext(taskId, args.context)
-      })
-    )
-    const serialized = serializeTask(task)
-    return {
-      content: [
-        { type: "text", text: `Updated task-group context for ${args.taskId}` },
-        { type: "text", text: JSON.stringify(serialized) }
-      ],
-      isError: false
-    }
-  } catch (error) {
-    return handleToolError("tx_group_context_set", args, error)
-  }
-}
-
-const handleGroupContextClear = async (args: { taskId: string }): Promise<McpToolResult> => {
-  try {
-    const taskId = assertTaskId(args.taskId)
-    const task = await runEffect(
-      Effect.gen(function* () {
-        const taskService = yield* TaskService
-        return yield* taskService.clearGroupContext(taskId)
-      })
-    )
-    const serialized = serializeTask(task)
-    return {
-      content: [
-        { type: "text", text: `Cleared task-group context for ${args.taskId}` },
-        { type: "text", text: JSON.stringify(serialized) }
-      ],
-      isError: false
-    }
-  } catch (error) {
-    return handleToolError("tx_group_context_clear", args, error)
-  }
-}
-
 const handleTree = async (args: { id: string }): Promise<McpToolResult> => {
   try {
     const taskId = assertTaskId(args.id)
@@ -382,24 +338,21 @@ const handleStats = async (): Promise<McpToolResult> => {
       Effect.gen(function* () {
         const taskService = yield* TaskService
         const readyService = yield* ReadyService
-        const learningService = yield* LearningService
 
         const total = yield* taskService.count()
         const done = yield* taskService.count({ status: "done" })
         const readyTasks = yield* readyService.getReady(MCP_MAX_LIMIT)
-        const learnings = yield* learningService.count()
 
         return {
           tasks: total,
           done,
-          ready: readyTasks.length,
-          learnings
+          ready: readyTasks.length
         }
       })
     )
     return {
       content: [
-        { type: "text", text: `Stats: ${stats.tasks} tasks (${stats.done} done, ${stats.ready} ready), ${stats.learnings} learnings` },
+        { type: "text", text: `Stats: ${stats.tasks} tasks (${stats.done} done, ${stats.ready} ready)` },
         { type: "text", text: JSON.stringify(stats) }
       ],
       isError: false
@@ -529,27 +482,6 @@ export const registerTaskTools = (server: McpServer): void => {
       blockerId: z.string().describe("Task ID to remove as a blocker")
     },
     handleUnblock
-  )
-
-  // tx_group_context_set - Set direct task-group context on a task
-  registerEffectTool(server,
-    "tx_group_context_set",
-    "Set direct task-group context on a task. The context is inherited by related ancestor/descendant tasks.",
-    {
-      taskId: z.string().describe("Task ID to set context on"),
-      context: z.string().max(20000).describe("Group context text")
-    },
-    handleGroupContextSet
-  )
-
-  // tx_group_context_clear - Clear direct task-group context from a task
-  registerEffectTool(server,
-    "tx_group_context_clear",
-    "Clear direct task-group context from a task and recompute effective inherited context.",
-    {
-      taskId: z.string().describe("Task ID to clear context from")
-    },
-    handleGroupContextClear
   )
 
   // tx_dep_tree - Show task subtree

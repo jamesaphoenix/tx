@@ -1,185 +1,90 @@
 # tx
 
-**Primitives, not frameworks.** Headless, local infrastructure for AI agents.
+Tasks and spec-driven development, with a local SQLite database and a dashboard.
+Write requirements and invariants, save your coding agent's plan, then create linked
+tasks. Map invariants to the code that enforces them and to meaningful tests.
 
-tx gives you a small set of reusable primitives for task state, docs-first specs, memory, coordination, and observability. You keep the orchestration loop.
+## Start
 
-## Install
+The npm CLI and direct SDK require [Bun](https://bun.sh). Standalone binaries
+include their own runtime. The dashboard runs from the source checkout.
 
 ```bash
-# Standalone binary (recommended)
-curl -fsSL https://raw.githubusercontent.com/jamesaphoenix/tx/main/install.sh | sh
-
-# Or via npm (requires bun)
 npm install -g @jamesaphoenix/tx-cli
+tx init
+tx task add "Ship the next improvement" --description "Acceptance: describe the observable result."
+tx task ready
+tx task done <task-id>
 ```
 
-## Start Small
+Standalone binaries: use [the installer](https://github.com/jamesaphoenix/tx/blob/main/install.sh)
+or download an asset from [Releases](https://github.com/jamesaphoenix/tx/releases).
 
-The recommended first path is:
-
-1. Task Management
-2. Spec-Driven Development
-3. Memory & Context
-4. Bounded Autonomy
-5. Coordination
-6. Observability
-
-Most users should start with just the first two.
-
-### Day 1: Task Management
+## Spec -> plan -> tasks
 
 ```bash
-tx init --codex                  # or: --claude, or plain tx init
-tx add "Write auth PRD" --json
-tx add "Implement auth flow" --json
-tx dep block <implement-task-id> <prd-task-id>
-tx ready
-tx show <prd-task-id>
-tx done <prd-task-id>
-tx ready
-tx sync export
+tx doc add prd checkout-prd --title "Checkout requirements"
+tx doc add design checkout-design --title "Checkout design"
+tx doc link checkout-prd checkout-design
+tx doc add plan checkout-plan --title "Checkout implementation plan"
+tx doc link checkout-design checkout-plan
+tx doc attach <task-id> checkout-plan
 ```
 
-This proves the basic loop:
-
-- the queue works
-- dependencies affect readiness
-- completion advances the queue
-- state exports cleanly to `.tx/streams`
-
-### Day 2: Spec-Driven Development
+Edit the generated files in `specs/`. Plans accept your coding agent's normal format:
+copy its text below the tx frontmatter and keep an adjacent `<name>.source` symlink
+to the original file when it was authored elsewhere. The saved copy is authoritative;
+the symlink records provenance and is not automatic synchronisation.
 
 ```bash
-tx doc add prd auth-flow-prd --title "Auth Flow PRD"
-tx doc add design auth-flow-design --title "Auth Flow Design"
-tx doc link auth-flow-prd auth-flow-design
-# add or update tests with [INV-*], _INV_*, @spec, or .tx/spec-tests.yml
-tx spec discover
-tx spec status --doc auth-flow-design
-tx decompose auth-flow-design --dry-run
-tx decompose auth-flow-design
-vitest run --reporter=json | tx spec batch --from vitest
-tx spec complete --doc auth-flow-design --by you
+tx doc sync checkout-design
+tx spec discover --doc checkout-design
+tx spec gaps --doc checkout-design
+tx spec health
 ```
 
-Use the spec primitives like this:
-
-- `tx spec fci`: compact machine score for agents and automation
-- `tx spec status`: human-readable blocker view for one scope
-- `tx spec health`: repo rollup, not part of the minimum day-1 loop
-
-### Human-in-Loop Example
-
-```bash
-task=$(tx ready --limit 1 --json | jq -r '.[0].id')
-codex "Read AGENTS.md. For task $task: run tx show $task, make sure a paired PRD/design doc is linked, then decompose the work into tx subtasks and dependency edges."
-echo "Review tx show $task, tx dep tree $task, and the linked PRD/DD docs, then press Enter to continue..."
-read
-codex "Read AGENTS.md. For task $task: execute the approved ready work from the linked PRD/DD docs and keep tx updated."
-```
-
-## The Six Layers
-
-### 1. Task Management
-
-Core queue and persistence:
-
-- `tx init`
-- `tx add`
-- `tx ready`
-- `tx show`
-- `tx done`
-- `tx dep block`
-- `tx sync`
-
-### 2. Spec-Driven Development
-
-Docs-first intent and closure:
-
-- `tx doc`
-- `tx decompose`
-- `tx spec`
-- `tx decision`
-
-### 3. Memory & Context
-
-Durable knowledge and prompt context:
-
-- `tx memory`
-- `tx pin`
-
-### 4. Bounded Autonomy
-
-Controls for agents with more freedom:
-
-- `tx auto label`
-- `tx auto guard`
-- `tx auto verify`
-- `tx auto reflect`
-- `tx auto gate`
-
-### 5. Coordination
-
-Multi-worker and multi-actor primitives:
-
-- `tx claim`
-- `tx msg send` / `tx msg inbox`
-- `tx group-context`
-
-### 6. Observability
-
-Operational visibility once the earlier layers are in place:
-
-- `tx trace`
-- `tx spec health`
-- `tx diag stats`
-- dashboard
+A mapping is traceability. Executed test results are evidence. Human sign-off is a
+separate step after verification. See [documentation](https://txdocs.dev/docs)
+for spec schemas and commands.
 
 ## Interfaces
 
-| Interface | Best For |
-|-----------|----------|
-| CLI | Shell scripts, human operators, local loops |
-| MCP Server | Claude Code, Cursor, IDE integrations |
-| TypeScript SDK | Custom Node/Bun agents |
-| REST API | Language-agnostic HTTP clients |
-| Dashboard | Visual monitoring and management |
+- CLI: `tx task`, `tx doc`, `tx spec`, `tx decision`, `tx sync` and `tx diag`.
+- Dashboard: tasks, labels, planning cycles, docs and Spec Health.
+- REST: `tx-api` from the CLI package.
+- MCP: `tx-mcp` from the CLI package.
+- TypeScript: `@jamesaphoenix/tx-agent-sdk` for HTTP or direct SQLite access.
+- Core: `@jamesaphoenix/tx` for Effect services, schemas and types.
 
-## Optional Later
+Use `tx help` and `tx schema` for the current command contract.
 
-Watchdog is intentionally not part of the main getting-started path.
+## Four small skills
 
-Use it only if you need detached, long-running supervision:
+`tx init --claude` or `tx init --codex` installs `tx-tasks`, `tx-docs`,
+`tx-plan` and `verify-invariants`. These guides help author tasks, docs and plans,
+and map and verify invariants. They do not ship agents or execution loops.
+Use `tx skills sync` to update tx-owned guides while preserving unrelated skills.
+
+## v0.20 migration
+
+Task commands now require `tx task`: replace `tx add` with `tx task add`,
+and `tx dep block` with `tx task dep block`. Old syntax fails with a replacement
+hint before opening the database. Run `tx task --help` for the full namespace.
+
+Memory, learnings, pins, claims, messaging, guards, task shell verification,
+reflection, automated decomposition, agent execution, Ralph and watchdog are retired.
+Ordinary labels and dashboard planning cycles remain. Existing tables and migration
+history are retained. Import validates historical stream events, reports recognised
+retired events as ignored, and rejects malformed or unknown events. Hydrate reapplies
+retained projections without truncating existing tables. Back up `.tx/` before upgrading.
+
+## Development
 
 ```bash
-tx init --watchdog --watchdog-runtime auto
-./scripts/watchdog-launcher.sh start
+bun install
+bun run build
+bun run check:ci
+bun run --cwd apps/dashboard dev:all
 ```
 
-Runbook:
-
-- [Watchdog Runbook](https://txdocs.dev/docs/watchdog-runbook)
-
-## Why tx
-
-|  | Native Tasks | Static Agent Docs | tx |
-|---|---|---|---|
-| Persistence | Session-scoped | Manual file edits | SQLite + git-backed streams |
-| Multi-agent safety | Easy collisions | Manual coordination | Claims, dependencies, messaging |
-| Intent tracking | Weak | Weak | Docs-first specs + decision capture |
-| Knowledge reuse | Lost each session | Static dump | Searchable memory + pins |
-| Orchestration | Fixed by tool | None | You own the loop |
-
-## Docs
-
-- [Getting Started](https://txdocs.dev/docs/getting-started)
-- [Primitives](https://txdocs.dev/docs/primitives)
-- [Agent SDK](https://txdocs.dev/docs/agent-sdk)
-- [PRDs and Design Docs](https://txdocs.dev/docs/prd)
-
-## Principle
-
-tx should stay small.
-
-It is not an agent framework, not a hosted memory product, and not a prescribed workflow. It is a local set of primitives you can compose into your own loop.
+MIT licence. [Source](https://github.com/jamesaphoenix/tx).

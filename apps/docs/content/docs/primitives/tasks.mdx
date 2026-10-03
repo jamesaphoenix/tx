@@ -1,0 +1,21 @@
+---
+doc_style: guide
+title: Tasks
+description: Create, prioritise and connect tasks
+---
+
+```bash
+tx task add "Implement checkout" --description "Acceptance: a customer can pay."
+tx task list
+tx task ready
+tx task show <id>
+tx task update <id> --status active
+tx task dep block <dependent-id> <blocker-id>
+tx task dep tree <id>
+tx task done <id>
+```
+
+Parent tasks model hierarchy; dependencies model blockers. Ordinary labels help filter
+tasks, and dashboard cycles group work into planning periods. Every interface returns
+blockers, blocked tasks, children and linked docs. Run `tx task --help` for reset,
+delete, bulk and label operations.

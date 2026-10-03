@@ -121,13 +121,6 @@ const serializeTask = (task: TaskWithDeps): Record<string, unknown> => ({
   blocks: task.blocks,
   children: task.children,
   isReady: task.isReady,
-  groupContext: task.groupContext,
-  effectiveGroupContext: task.effectiveGroupContext,
-  effectiveGroupContextSourceTaskId: task.effectiveGroupContextSourceTaskId,
-  orchestrationStatus: task.orchestrationStatus,
-  claimedBy: task.claimedBy,
-  claimExpiresAt: task.claimExpiresAt?.toISOString() ?? null,
-  failedAttempts: task.failedAttempts,
   linkedDocs: task.linkedDocs,
 })
 
@@ -153,13 +146,6 @@ const TaskWithDepsOutputSchema = Schema.Struct({
   blocks: Schema.Array(Schema.String),
   children: Schema.Array(Schema.String),
   isReady: Schema.Boolean,
-  groupContext: Schema.NullOr(Schema.String),
-  effectiveGroupContext: Schema.NullOr(Schema.String),
-  effectiveGroupContextSourceTaskId: Schema.NullOr(Schema.String),
-  orchestrationStatus: Schema.NullOr(Schema.String),
-  claimedBy: Schema.NullOr(Schema.String),
-  claimExpiresAt: Schema.NullOr(Schema.String),
-  failedAttempts: Schema.Number.pipe(Schema.int()),
   linkedDocs: Schema.Array(TaskLinkedDocRefSchema),
 })
 
@@ -187,13 +173,6 @@ function makeTestTask(overrides: Partial<TaskWithDeps> = {}): TaskWithDeps {
     blocks: [],
     children: [],
     isReady: true,
-    groupContext: null,
-    effectiveGroupContext: null,
-    effectiveGroupContextSourceTaskId: null,
-    orchestrationStatus: null,
-    claimedBy: null,
-    claimExpiresAt: null,
-    failedAttempts: 0,
     linkedDocs: [],
     ...overrides
   }
@@ -237,9 +216,6 @@ describe("TaskWithDeps Schema Validation", () => {
     expect(serialized).toHaveProperty("blocks")
     expect(serialized).toHaveProperty("children")
     expect(serialized).toHaveProperty("isReady")
-    expect(serialized).toHaveProperty("groupContext")
-    expect(serialized).toHaveProperty("effectiveGroupContext")
-    expect(serialized).toHaveProperty("effectiveGroupContextSourceTaskId")
   })
 
   it("validates blockedBy is an array of task IDs", () => {

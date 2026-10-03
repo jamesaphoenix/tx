@@ -19,11 +19,8 @@ export {
   mapCoreError,
   HealthGroup,
   TasksGroup,
-  LearningsGroup,
-  RunsGroup,
   SyncGroup,
   SpecGroup,
-  DecomposeGroup,
 } from "./api.js"
 
 // Server layer factory
@@ -32,8 +29,5 @@ export { makeServerLive } from "./server-lib.js"
 // Route handler layers
 export { TasksLive } from "./routes/tasks.js"
 export { HealthLive } from "./routes/health.js"
-export { LearningsLive } from "./routes/learnings.js"
-export { RunsLive } from "./routes/runs.js"
 export { SyncLive } from "./routes/sync.js"
 export { SpecTraceLive } from "./routes/spec-trace.js"
-export { DecomposeLive, runDecomposeApi } from "./routes/decompose.js"

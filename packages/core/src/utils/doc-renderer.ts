@@ -45,6 +45,7 @@ type IndexData = {
   search_keywords?: string[]
   requirements: IndexDoc[]
   prds: IndexPrd[]
+  plans?: IndexDoc[]
   design_docs: IndexDesignDoc[]
   system_designs: IndexDoc[]
   links: IndexLink[]
@@ -754,6 +755,17 @@ export const renderIndexToMarkdown = (indexData: IndexData): string => {
       lines.push(
         `| [${dd.name}](design/${dd.name}.md) | ${renderTableCell(dd.title)} | ${renderTableCell(dd.description)} | ${renderSearchKeywords(dd.search_keywords)} | ${renderTableCell(dd.implements ?? "-")} | ${renderTableCell(dd.status)} |`
       )
+    }
+    lines.push("")
+  }
+
+  // Coding-agent plans remain discoverable alongside their specifications.
+  if (indexData.plans && indexData.plans.length > 0) {
+    lines.push("## Implementation Plans", "")
+    lines.push("| Name | Title | Description | Search Keywords | Status |")
+    lines.push("|------|-------|-------------|-----------------|--------|")
+    for (const plan of indexData.plans) {
+      lines.push(`| [${plan.name}](plan/${plan.name}.md) | ${renderTableCell(plan.title)} | ${renderTableCell(plan.description)} | ${renderSearchKeywords(plan.search_keywords)} | ${renderTableCell(plan.status)} |`)
     }
     lines.push("")
   }

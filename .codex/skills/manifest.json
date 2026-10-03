@@ -1,16 +1,24 @@
 {
   "generator": "tx skills generate",
-  "version": "0.19.0",
+  "version": "0.20.0",
   "target": "codex",
   "installRoot": ".codex/skills",
-  "skillCount": 3,
+  "skillCount": 4,
   "commandCount": 0,
   "skills": [
+    {
+      "id": "tx-plan",
+      "title": "Copy an implementation plan",
+      "installPath": ".codex/skills/tx-plan",
+      "checksum": "ef280e4e95793bef5d692df810a724f175f890410dacebc6e8aa3b11c53fd60f",
+      "commandKeys": [],
+      "source": "bundled"
+    },
     {
       "id": "tx-tasks",
       "title": "Create tx tasks",
       "installPath": ".codex/skills/tx-tasks",
-      "checksum": "8c5dd900614393cdaf6efcfaed3872e0f81a41d0303144c9a97616e6f62e165f",
+      "checksum": "a2e653049eb59f3eb51cc21d2e60bd3dbb7044579afe3b11e752c6386248fd7b",
       "commandKeys": [],
       "source": "bundled"
     },

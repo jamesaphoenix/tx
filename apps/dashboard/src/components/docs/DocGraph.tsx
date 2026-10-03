@@ -16,6 +16,7 @@ const KIND_COLORS: Record<string, string> = {
   system_design: "#FB923C",
   runbook: "#22C55E",
   decision: "#EAB308",
+  plan: "#38BDF8",
   task: "#FBBF24",
 }
 
@@ -27,6 +28,7 @@ const KIND_LABELS: Record<string, string> = {
   system_design: "System Design",
   runbook: "Runbook",
   decision: "Decision",
+  plan: "Plan",
   task: "Task",
 }
 
@@ -42,7 +44,7 @@ function layoutNodes(nodes: DocGraphNode[], _edges: DocGraphEdge[], w: number, h
   if (nodes.length === 0) return []
 
   const layers: Record<string, DocGraphNode[]> = {
-    overview: [], requirement: [], prd: [], system_design: [], design: [], runbook: [], decision: [], task: [],
+    overview: [], requirement: [], prd: [], system_design: [], design: [], runbook: [], decision: [], plan: [], task: [],
   }
   for (const node of nodes) {
     const kind = node.kind in layers ? node.kind : "task"
@@ -50,7 +52,7 @@ function layoutNodes(nodes: DocGraphNode[], _edges: DocGraphEdge[], w: number, h
   }
 
   const positioned: PositionedNode[] = []
-  const layerOrder = ["overview", "requirement", "prd", "system_design", "design", "runbook", "decision", "task"]
+  const layerOrder = ["overview", "requirement", "prd", "system_design", "design", "runbook", "decision", "plan", "task"]
   const activeLayers = layerOrder.filter((k) => layers[k].length > 0)
 
   const padX = w * 0.1

@@ -20,9 +20,6 @@ export type DashboardCyclesConfig = {
   cycleStartDay: DashboardCycleStartDay
   carryStatuses: string[]
 }
-export type GuardMode = "advisory" | "enforce"
-export type ReviewRuntimeType = "pi" | "custom"
-export type ReviewTransportType = "rpc" | "sdk"
 export type SpecDesignDocMissingTaskLinksMode = "always" | "locked_only" | "never"
 export type SpecSectionSeverity = "error" | "warn" | "off"
 
@@ -47,16 +44,6 @@ export type SpecTypeConfig = {
   template: string | null
 }
 
-export type ReviewDesignDocsConfig = {
-  enabled: boolean
-  runtime: ReviewRuntimeType
-  transport: ReviewTransportType
-  template: string
-  blocking: boolean
-  createFollowupTasks: boolean
-  retriggerOnTaskReopen: boolean
-}
-
 export type TxConfig = {
   docs: { path: string }
   spec: {
@@ -67,18 +54,11 @@ export type TxConfig = {
     /** Global lint message templates keyed by rule id. */
     lintMessages: Record<string, string>
   }
-  memory: { defaultDir: string }
-  cycles: { scanPrompt: string | null; agents: number; model: string }
   dashboard: {
     defaultTaskAssigmentType: DashboardDefaultTaskAssigmentType
     defaultTaskView: DashboardDefaultTaskView
     cycles: DashboardCyclesConfig
   }
-  pins: { targetFiles: string[]; blockAgentDoneWhenTaskIdPresent: boolean }
-  guard: { mode: GuardMode; maxPending: number | null; maxChildren: number | null; maxDepth: number | null }
-  verify: { timeout: number; defaultSchema: string | null }
-  reflect: { provider: string; model: string | null; defaultSessions: number; includeTranscripts: boolean }
-  reviews: { designDocs: ReviewDesignDocsConfig }
 };
 
 export const DASHBOARD_DEFAULT_TASK_ASSIGMENT_KEY = "default_task_assigment_type"
@@ -90,22 +70,6 @@ export const DASHBOARD_CYCLE_START_DAY_KEY = "cycle_start_day"
 export const DASHBOARD_CARRY_STATUSES_KEY = "carry_statuses"
 const DOCS_SECTION = "docs"
 const SPEC_SECTION = "spec"
-const CYCLES_SECTION = "cycles"
-const PINS_SECTION = "pins"
-const MEMORY_SECTION = "memory"
-const GUARD_SECTION = "guard"
-const VERIFY_SECTION = "verify"
-const REFLECT_SECTION = "reflect"
-const REVIEWS_DESIGN_DOCS_SECTION = "reviews.design_docs"
-
-const isGuardMode = (v: string | null): v is GuardMode =>
-  v === "advisory" || v === "enforce"
-
-const isReviewRuntime = (v: string | null): v is ReviewRuntimeType =>
-  v === "pi" || v === "custom"
-
-const isReviewTransport = (v: string | null): v is ReviewTransportType =>
-  v === "rpc" || v === "sdk"
 
 const isSpecDesignDocMissingTaskLinksMode = (
   v: string | null
@@ -134,6 +98,7 @@ const DEFAULT_LINT_MESSAGES: Record<string, string> = {
  * into generated skills and `tx doc template` output.
  */
 const DEFAULT_SECTION_SPECS: Record<string, ReadonlyArray<readonly [string, string, string, string | null]>> = {
+  plan: [],
   prd: [
     ["summary", "Summary", "One paragraph stating what this feature is and why it matters.", null],
     ["problem", "Problem", "The user or system problem being solved, with evidence or a motivating scenario.", "{name}: PRD is missing '# Problem'. State the problem before listing requirements. {description}"],
@@ -210,8 +175,6 @@ const DEFAULT_CONFIG: TxConfig = {
     ],
     designDocMissingTaskLinks: "always",
   },
-  memory: { defaultDir: "specs" },
-  cycles: { scanPrompt: null, agents: 3, model: "claude-opus-4-6" },
   dashboard: {
     defaultTaskAssigmentType: "human",
     defaultTaskView: "list",
@@ -219,21 +182,6 @@ const DEFAULT_CONFIG: TxConfig = {
       cycleLengthDays: 7,
       cycleStartDay: "monday",
       carryStatuses: ["planning", "active", "blocked", "review", "needs_review"],
-    },
-  },
-  pins: { targetFiles: ["CLAUDE.md", "AGENTS.md"], blockAgentDoneWhenTaskIdPresent: true },
-  guard: { mode: "advisory", maxPending: null, maxChildren: null, maxDepth: null },
-  verify: { timeout: 300, defaultSchema: null },
-  reflect: { provider: "auto", model: null, defaultSessions: 10, includeTranscripts: false },
-  reviews: {
-    designDocs: {
-      enabled: false,
-      runtime: "pi",
-      transport: "rpc",
-      template: "double-check",
-      blocking: false,
-      createFollowupTasks: true,
-      retriggerOnTaskReopen: true,
     },
   },
 }
@@ -289,12 +237,6 @@ const parseDashboardCycleStartDayOrDefault = (value: string | null): DashboardCy
 const parseDashboardCarryStatusesOrDefault = (values: string[]): string[] => {
   const normalized = values.map((value) => value.trim()).filter((value) => value.length > 0)
   return normalized.length > 0 ? normalized : DEFAULT_CONFIG.dashboard.cycles.carryStatuses
-}
-
-const parseBooleanOrDefault = (value: string | null, fallback: boolean): boolean => {
-  if (value === "true") return true
-  if (value === "false") return false
-  return fallback
 }
 
 const SPEC_TYPE_NAME_PATTERN = /^[a-z][a-z0-9_-]*$/
@@ -520,9 +462,6 @@ export const readTxConfig = (cwd: string = process.cwd()): TxConfig => {
       SPEC_SECTION,
       "design_doc_missing_task_links"
     )
-    const cyclesScanPrompt = extractTomlValue(raw, CYCLES_SECTION, "scan_prompt")
-    const cyclesAgents = extractTomlValue(raw, CYCLES_SECTION, "agents")
-    const cyclesModel = extractTomlValue(raw, CYCLES_SECTION, "model")
     const defaultTaskAssigmentType = extractTomlValue(
       raw,
       DASHBOARD_SECTION,
@@ -548,34 +487,6 @@ export const readTxConfig = (cwd: string = process.cwd()): TxConfig => {
       DASHBOARD_CYCLES_SECTION,
       DASHBOARD_CARRY_STATUSES_KEY
     )
-    const memoryDefaultDir = extractTomlValue(raw, MEMORY_SECTION, "default_dir")
-    const pinsTargetFiles = extractTomlValue(raw, PINS_SECTION, "target_files")
-    const pinsBlockAgentDone = extractTomlValue(raw, PINS_SECTION, "block_agent_done_when_task_id_present")
-
-    // Guard section
-    const guardMode = extractTomlValue(raw, GUARD_SECTION, "mode")
-    const guardMaxPending = extractTomlValue(raw, GUARD_SECTION, "max_pending")
-    const guardMaxChildren = extractTomlValue(raw, GUARD_SECTION, "max_children")
-    const guardMaxDepth = extractTomlValue(raw, GUARD_SECTION, "max_depth")
-
-    // Verify section
-    const verifyTimeout = extractTomlValue(raw, VERIFY_SECTION, "timeout")
-    const verifyDefaultSchema = extractTomlValue(raw, VERIFY_SECTION, "default_schema")
-
-    // Reflect section
-    const reflectProvider = extractTomlValue(raw, REFLECT_SECTION, "provider")
-    const reflectModel = extractTomlValue(raw, REFLECT_SECTION, "model")
-    const reflectDefaultSessions = extractTomlValue(raw, REFLECT_SECTION, "default_sessions")
-    const reflectIncludeTranscripts = extractTomlValue(raw, REFLECT_SECTION, "include_transcripts")
-
-    // Reviews section
-    const reviewsEnabled = extractTomlValue(raw, REVIEWS_DESIGN_DOCS_SECTION, "enabled")
-    const reviewsRuntime = extractTomlValue(raw, REVIEWS_DESIGN_DOCS_SECTION, "runtime")
-    const reviewsTransport = extractTomlValue(raw, REVIEWS_DESIGN_DOCS_SECTION, "transport")
-    const reviewsTemplate = extractTomlValue(raw, REVIEWS_DESIGN_DOCS_SECTION, "template")
-    const reviewsBlocking = extractTomlValue(raw, REVIEWS_DESIGN_DOCS_SECTION, "blocking")
-    const reviewsCreateFollowup = extractTomlValue(raw, REVIEWS_DESIGN_DOCS_SECTION, "create_followup_tasks")
-    const reviewsRetrigger = extractTomlValue(raw, REVIEWS_DESIGN_DOCS_SECTION, "retrigger_on_task_reopen")
 
     return {
       docs: {
@@ -589,16 +500,6 @@ export const readTxConfig = (cwd: string = process.cwd()): TxConfig => {
         types: parseSpecTypes(raw),
         lintMessages: parseSpecLintMessages(raw),
       },
-      memory: {
-        defaultDir: memoryDefaultDir ?? DEFAULT_CONFIG.memory.defaultDir,
-      },
-      cycles: {
-        scanPrompt: cyclesScanPrompt ?? DEFAULT_CONFIG.cycles.scanPrompt,
-        agents: cyclesAgents
-          ? parseInt(cyclesAgents, 10)
-          : DEFAULT_CONFIG.cycles.agents,
-        model: cyclesModel ?? DEFAULT_CONFIG.cycles.model,
-      },
       dashboard: {
         defaultTaskAssigmentType: parseTaskAssigmentTypeOrDefault(defaultTaskAssigmentType),
         defaultTaskView: parseDashboardDefaultTaskViewOrDefault(defaultTaskView),
@@ -606,42 +507,6 @@ export const readTxConfig = (cwd: string = process.cwd()): TxConfig => {
           cycleLengthDays: parseDashboardCycleLengthOrDefault(dashboardCycleLengthDays),
           cycleStartDay: parseDashboardCycleStartDayOrDefault(dashboardCycleStartDay),
           carryStatuses: parseDashboardCarryStatusesOrDefault(dashboardCarryStatuses),
-        },
-      },
-      pins: {
-        targetFiles: pinsTargetFiles
-          ? pinsTargetFiles.split(",").map(f => f.trim()).filter(Boolean)
-          : DEFAULT_CONFIG.pins.targetFiles,
-        blockAgentDoneWhenTaskIdPresent: parseBooleanOrDefault(
-          pinsBlockAgentDone,
-          DEFAULT_CONFIG.pins.blockAgentDoneWhenTaskIdPresent
-        )
-      },
-      guard: {
-        mode: isGuardMode(guardMode) ? guardMode : DEFAULT_CONFIG.guard.mode,
-        maxPending: guardMaxPending ? parseInt(guardMaxPending, 10) : DEFAULT_CONFIG.guard.maxPending,
-        maxChildren: guardMaxChildren ? parseInt(guardMaxChildren, 10) : DEFAULT_CONFIG.guard.maxChildren,
-        maxDepth: guardMaxDepth ? parseInt(guardMaxDepth, 10) : DEFAULT_CONFIG.guard.maxDepth,
-      },
-      verify: {
-        timeout: verifyTimeout ? parseInt(verifyTimeout, 10) : DEFAULT_CONFIG.verify.timeout,
-        defaultSchema: verifyDefaultSchema ?? DEFAULT_CONFIG.verify.defaultSchema,
-      },
-      reflect: {
-        provider: reflectProvider ?? DEFAULT_CONFIG.reflect.provider,
-        model: reflectModel ?? DEFAULT_CONFIG.reflect.model,
-        defaultSessions: reflectDefaultSessions ? parseInt(reflectDefaultSessions, 10) : DEFAULT_CONFIG.reflect.defaultSessions,
-        includeTranscripts: reflectIncludeTranscripts === "true" ? true : DEFAULT_CONFIG.reflect.includeTranscripts,
-      },
-      reviews: {
-        designDocs: {
-          enabled: parseBooleanOrDefault(reviewsEnabled, DEFAULT_CONFIG.reviews.designDocs.enabled),
-          runtime: isReviewRuntime(reviewsRuntime) ? reviewsRuntime : DEFAULT_CONFIG.reviews.designDocs.runtime,
-          transport: isReviewTransport(reviewsTransport) ? reviewsTransport : DEFAULT_CONFIG.reviews.designDocs.transport,
-          template: reviewsTemplate ?? DEFAULT_CONFIG.reviews.designDocs.template,
-          blocking: parseBooleanOrDefault(reviewsBlocking, DEFAULT_CONFIG.reviews.designDocs.blocking),
-          createFollowupTasks: parseBooleanOrDefault(reviewsCreateFollowup, DEFAULT_CONFIG.reviews.designDocs.createFollowupTasks),
-          retriggerOnTaskReopen: parseBooleanOrDefault(reviewsRetrigger, DEFAULT_CONFIG.reviews.designDocs.retriggerOnTaskReopen),
         },
       },
     }
@@ -1088,43 +953,11 @@ design_doc_missing_task_links = "always"
 
 ${SPEC_TYPES_TOML_HEADER}${renderDefaultSpecTypesToml()}
 ${SPEC_TYPES_TOML_FOOTER}
-# ─── Memory ─────────────────────────────────────────────────────────
-# Filesystem-backed markdown search over your project's documentation.
-# Index directories with \`tx memory source add <dir>\`, then search
-# with \`tx memory search <query>\` (BM25) or \`--semantic\` (vector).
-# Docs: https://txdocs.dev/docs/primitives/memory
-[memory]
-
-# Default directory used by \`tx memory add\` when no source is registered.
-# If this directory isn't already a registered source, tx auto-registers
-# it so new documents survive future \`tx memory index\` runs.
-# Relative to the project root.
-default_dir = "specs"
-
-# ─── Cycles ─────────────────────────────────────────────────────────
-# Sub-agent swarm for automated issue discovery.
-# Run \`tx cycle\` to dispatch parallel scan agents that find issues,
-# then review results in the dashboard or via \`tx list\`.
-# Docs: https://txdocs.dev/docs/headful/docs-runs-cycles
-[cycles]
-
-# Optional prompt appended to each scan agent's system prompt.
-# Use this to focus scans on specific areas (e.g. security, performance).
-# scan_prompt = "Focus on security issues"
-
-# Number of parallel scan agents to dispatch per cycle run.
-# Higher values = faster scans but more API usage.
-agents = 3
-
-# LLM model used by cycle scan agents.
-# Must be a valid Anthropic model ID.
-model = "claude-opus-4-6"
-
 # ─── Dashboard ──────────────────────────────────────────────────────
 # Settings for the tx dashboard web UI (\`tx diag dashboard\`).
 # The dashboard provides a visual interface for task management,
-# doc browsing, run inspection, and cycle results.
-# Docs: https://txdocs.dev/docs/headful/filters-and-settings
+# doc browsing, spec health and planning cycles.
+# Docs: https://txdocs.dev/docs/getting-started
 [dashboard]
 
 # Default assignee type when creating new tasks from the dashboard.
@@ -1151,102 +984,6 @@ cycle_start_day = "monday"
 carry_statuses = ["planning", "active", "blocked", "review", "needs_review"]
 
 # ─── Pins ───────────────────────────────────────────────────────────
-# Context pins — persistent named content blocks that are injected
-# into agent context files as <tx-pin id="...">...</tx-pin> XML sections.
-# This enables programmatic CRUD of agent memory across sessions.
-# Commands: tx pin set, tx pin get, tx pin rm, tx pin list, tx pin sync
-# Docs: https://txdocs.dev/docs/primitives/pin
-[pins]
-
-# Comma-separated list of files that \`tx pin sync\` writes pins into.
-# Paths are relative to the project root.
-# Both Claude Code (CLAUDE.md) and Codex (AGENTS.md) are synced by default
-# so all agents share the same persistent context.
-target_files = "CLAUDE.md, AGENTS.md"
-
-# When true, agent-driven task completion is blocked for any task linked
-# from a gate pin via \`taskId\`. Humans can still complete the task.
-block_agent_done_when_task_id_present = true
-
-# ─── Guard ─────────────────────────────────────────────────────────
-# Task creation guards — lightweight limits checked at \`tx add\` time.
-# Prevents unbounded task proliferation in agent loops.
-# Commands: tx auto guard set, tx auto guard show, tx auto guard clear
-[guard]
-
-# Guard mode: "advisory" (default) or "enforce"
-# Advisory: tasks are created with warning metadata, stderr warning printed
-# Enforce: tx add fails with GuardExceededError when limits are hit
-mode = "advisory"
-
-# Default limits (can be overridden per-scope via tx auto guard set)
-# max_pending = 50
-# max_children = 10
-# max_depth = 4
-
-# ─── Verify ────────────────────────────────────────────────────────
-# Machine-checkable done criteria attached to tasks.
-# Attach a shell command to a task; \`tx auto verify run <id>\` executes it.
-# Exit 0 = pass, non-zero = fail.
-# Commands: tx auto verify set, tx auto verify show, tx auto verify run, tx auto verify clear
-[verify]
-
-# Default timeout in seconds for verification commands.
-timeout = 300
-
-# Default JSON schema for structured verification output.
-# Leave commented for exit-code-only mode (default).
-# default_schema = "verify-schema.json"
-
-# ─── Reflect ───────────────────────────────────────────────────────
-# Macro-level session retrospective — look at recent sessions,
-# assess what is working, and surface machine-readable signals.
-# Commands: tx auto reflect
-[reflect]
-
-# LLM provider for \`tx auto reflect --analyze\`
-# "auto" = auto-detect from available env vars (default)
-# "claude" = uses ANTHROPIC_API_KEY
-# "codex" = uses OPENAI_API_KEY
-provider = "auto"
-
-# Model for analysis tier
-# model = "claude-opus-4-6"
-
-# Default number of sessions to analyze
-default_sessions = 10
-
-# Whether to include transcript parsing by default
-include_transcripts = false
-
-# ─── Reviews ──────────────────────────────────────────────────────
-# Config-gated design-doc review triggers.
-# When all linked tasks for a design doc are completed, Ralph can
-# trigger an automated review via a configured runtime (e.g. Pi).
-# See DD-039 for specification.
-[reviews.design_docs]
-
-# Whether design-doc reviews are enabled.
-enabled = false
-
-# Review runtime: "pi" or "custom".
-runtime = "pi"
-
-# Transport for review execution: "rpc" (preferred) or "sdk".
-transport = "rpc"
-
-# Prompt template name for the review (e.g. "double-check").
-template = "double-check"
-
-# Whether a failing review blocks the design doc from being verified.
-blocking = false
-
-# Whether to create follow-up tasks when a review fails.
-create_followup_tasks = true
-
-# Whether to re-trigger a review when linked tasks are reopened
-# after a previous review passed.
-retrigger_on_task_reopen = true
 `
 
 /**

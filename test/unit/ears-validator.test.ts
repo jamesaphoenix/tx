@@ -22,7 +22,7 @@ describe("EARS validator", () => {
         id: "EARS-FL-003",
         pattern: "state_driven",
         state: "the task is blocked",
-        system: "ready service",
+        system: "task ready service",
         response: "exclude the task from ready queue",
       },
       {
@@ -44,7 +44,7 @@ describe("EARS validator", () => {
         pattern: "complex",
         trigger: "a task is completed",
         state: "dependent tasks exist",
-        system: "ready service",
+        system: "task ready service",
         response: "recompute readiness",
       },
     ]

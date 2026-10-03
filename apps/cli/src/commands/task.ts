@@ -3,7 +3,7 @@
  */
 
 import { Effect } from "effect"
-import { TaskService, ReadyService, AttemptService, VerifyService } from "@jamesaphoenix/tx"
+import { TaskService, ReadyService } from "@jamesaphoenix/tx"
 import { assertTaskStatus, TASK_STATUSES } from "@jamesaphoenix/tx/types"
 import { toJson, formatTaskWithDeps, formatTaskLine, formatReadyTaskLine } from "../output.js"
 import { type Flags, flag, opt, parseIntOpt, parseTaskId } from "../utils/parse.js"
@@ -29,13 +29,6 @@ export const add = (pos: string[], flags: Flags) =>
       metadata: {}
     })
 
-    // Attach verify command if provided
-    const verifyCmd = opt(flags, "verify")
-    if (verifyCmd) {
-      const verifySvc = yield* VerifyService
-      yield* verifySvc.set(task.id, verifyCmd)
-    }
-
     if (flag(flags, "json")) {
       const full = yield* svc.getWithDeps(task.id)
       console.log(toJson(full))
@@ -44,7 +37,6 @@ export const add = (pos: string[], flags: Flags) =>
       console.log(`  Title: ${task.title}`)
       console.log(`  Score: ${task.score}`)
       if (task.parentId) console.log(`  Parent: ${task.parentId}`)
-      if (verifyCmd) console.log(`  Verify: ${verifyCmd}`)
     }
   })
 
@@ -103,24 +95,6 @@ export const ready = (_pos: string[], flags: Flags) =>
     const labels = labelStr ? labelStr.split(",").map(s => s.trim()).filter(s => s.length > 0) : undefined
     const excludeLabels = excludeLabelStr ? excludeLabelStr.split(",").map(s => s.trim()).filter(s => s.length > 0) : undefined
 
-    // Atomic ready+claim mode
-    const claimWorkerId = opt(flags, "claim")
-    if (claimWorkerId) {
-      const leaseMins = parseIntOpt(flags, "lease") ?? 30
-      const result = yield* svc.readyAndClaim(claimWorkerId, leaseMins, {
-        labels: labels?.length ? labels : undefined,
-        excludeLabels: excludeLabels?.length ? excludeLabels : undefined,
-      })
-      if (flag(flags, "json")) {
-        console.log(toJson(result))
-      } else if (result) {
-        console.log(`Claimed ${result.task.id} for ${claimWorkerId} (expires ${result.claim.leaseExpiresAt})`)
-      } else {
-        console.log("No ready tasks available to claim")
-      }
-      return
-    }
-
     const tasks = yield* svc.getReady(limit, {
       labels: labels?.length ? labels : undefined,
       excludeLabels: excludeLabels?.length ? excludeLabels : undefined,
@@ -134,8 +108,7 @@ export const ready = (_pos: string[], flags: Flags) =>
       } else {
         console.log(`${tasks.length} ready task(s):`)
         for (const t of tasks) {
-          const failedWarning = t.failedAttempts >= 2 ? ` \u26A0 ${t.failedAttempts} failed attempts` : ""
-          console.log(formatReadyTaskLine(t) + failedWarning)
+          console.log(formatReadyTaskLine(t))
         }
       }
     }
@@ -151,30 +124,12 @@ export const show = (pos: string[], flags: Flags) =>
     const id = parseTaskId(raw)
 
     const svc = yield* TaskService
-    const attemptSvc = yield* AttemptService
     const task = yield* svc.getWithDeps(id)
 
-    // Get up to 10 most recent attempts
-    const allAttempts = yield* attemptSvc.listForTask(id)
-    const attempts = allAttempts.slice(0, 10)
-
     if (flag(flags, "json")) {
-      console.log(toJson({ ...task, attempts }))
+      console.log(toJson(task))
     } else {
       console.log(formatTaskWithDeps(task))
-      // Show attempt history if there are any
-      if (attempts.length > 0) {
-        console.log("")
-        console.log("Previous Attempts:")
-        for (const a of attempts) {
-          const outcomeSymbol = a.outcome === "succeeded" ? "\u2713" : "\u2717"
-          console.log(`  ${outcomeSymbol} ${a.approach}`)
-          if (a.reason) {
-            console.log(`      Reason: ${a.reason}`)
-          }
-          console.log(`      ${a.createdAt.toISOString()}`)
-        }
-      }
     }
   })
 

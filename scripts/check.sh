@@ -105,11 +105,11 @@ check_build() {
 
 check_test() {
     run_silent "Unit & Integration tests (packages)" "npx turbo test"
-    run_silent "Unit & Integration tests (root)" ".claude/skills/test-quiet/scripts/run.sh"
+    run_silent "Unit & Integration tests (root)" "scripts/test-quiet.sh"
 }
 
 check_test_quick() {
-    run_silent "Quick tests (no slow)" ".claude/skills/test-quiet/scripts/run.sh test/integration/core.test.ts"
+    run_silent "Quick tests (no slow)" "scripts/test-quiet.sh test/integration/core.test.ts"
 }
 
 check_workflow_policy() {

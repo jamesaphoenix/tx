@@ -1,3 +1,4 @@
+import { makeAppLayerFromInfra } from "@jamesaphoenix/tx"
 /**
  * AutoSyncService Integration Tests
  *
@@ -23,17 +24,6 @@ import {
   SqliteClient,
   TaskRepositoryLive,
   DependencyRepositoryLive,
-  GuardRepositoryLive,
-  LearningRepositoryLive,
-  FileLearningRepositoryLive,
-  AttemptRepositoryLive,
-  PinRepositoryLive,
-  AnchorRepositoryLive,
-  EdgeRepositoryLive,
-  DocRepositoryLive,
-  TaskServiceLive,
-  StreamServiceLive,
-  SyncServiceLive,
   SyncService,
   AutoSyncServiceLive,
   AutoSyncService,
@@ -48,7 +38,7 @@ const EMPTY_DEPENDENCY_IMPORT_RESULT = { added: 0, removed: 0, skipped: 0, failu
 const EMPTY_SYNC_EXPORT_RESULT = { eventCount: 0, opCount: 0, streamId: MOCK_STREAM_ID, path: MOCK_STREAM_PATH }
 const EMPTY_SYNC_IMPORT_RESULT = {
   importedEvents: 0,
-  appliedEvents: 0,
+  appliedEvents: 0, ignoredEvents: 0,
   streamCount: 0,
   imported: 0,
   skipped: 0,
@@ -62,8 +52,8 @@ const makeBaseSyncServiceStub = (): SyncServiceStub => ({
   enableAutoSync: () => Effect.void,
   disableAutoSync: () => Effect.void,
   isAutoSyncEnabled: () => Effect.succeed(false),
-  import: () => Effect.succeed(EMPTY_SYNC_IMPORT_RESULT),
-  hydrate: () => Effect.succeed({ importedEvents: 0, appliedEvents: 0, streamCount: 0, rebuilt: true }),
+  import: ((path?: string) => Effect.succeed(path ? { imported: 0, skipped: 0, conflicts: 0, dependencies: EMPTY_DEPENDENCY_IMPORT_RESULT } : EMPTY_SYNC_IMPORT_RESULT)) as SyncServiceStub["import"],
+  hydrate: () => Effect.succeed({ importedEvents: 0, appliedEvents: 0, ignoredEvents: 0, streamCount: 0, rebuilt: true }),
   compact: () => Effect.succeed({ before: 0, after: 0, path: ".tx/tasks.jsonl" }),
   stream: () => Effect.succeed({ streamId: MOCK_STREAM_ID, nextSeq: 1, lastSeq: 0, eventsDir: ".tx/streams/mock", configPath: ".tx/stream.json", knownStreams: [] }),
   importDecisions: () => Effect.succeed({ imported: 0, skipped: 0 }),
@@ -94,9 +84,6 @@ function makeMockSyncServiceLayer(
   const repos = Layer.mergeAll(
     TaskRepositoryLive,
     DependencyRepositoryLive,
-    LearningRepositoryLive,
-    FileLearningRepositoryLive,
-    AttemptRepositoryLive
   ).pipe(Layer.provide(infra))
 
   // Mock SyncService
@@ -153,33 +140,7 @@ function disableAutoSyncInDb(db: TestDatabase): void {
 /**
  * Build a real (no-mock) layer for AutoSyncService + SyncService integration tests.
  */
-function makeRealAutoSyncLayer(db: TestDatabase) {
-  const infra = Layer.succeed(SqliteClient, db.db as Database)
-
-  const repos = Layer.mergeAll(
-    TaskRepositoryLive,
-    DependencyRepositoryLive,
-    GuardRepositoryLive,
-    LearningRepositoryLive,
-    FileLearningRepositoryLive,
-    AttemptRepositoryLive,
-    PinRepositoryLive,
-    AnchorRepositoryLive,
-    EdgeRepositoryLive,
-    DocRepositoryLive,
-  ).pipe(Layer.provide(infra))
-
-  const taskServiceForSync = TaskServiceLive.pipe(Layer.provide(repos))
-  const streamService = StreamServiceLive.pipe(Layer.provide(infra))
-  const syncService = SyncServiceLive.pipe(
-    Layer.provide(Layer.mergeAll(infra, repos, taskServiceForSync, streamService))
-  )
-  const autoSyncService = AutoSyncServiceLive.pipe(
-    Layer.provide(Layer.merge(infra, syncService))
-  )
-
-  return Layer.mergeAll(infra, repos, taskServiceForSync, streamService, syncService, autoSyncService)
-}
+function makeRealAutoSyncLayer(db: TestDatabase) { return makeAppLayerFromInfra(Layer.succeed(SqliteClient, db.db as Database)) }
 
 // -----------------------------------------------------------------------------
 // Export Failure Tests
@@ -346,9 +307,6 @@ describe("AutoSyncService Concurrent Exports", () => {
     const repos = Layer.mergeAll(
       TaskRepositoryLive,
       DependencyRepositoryLive,
-      LearningRepositoryLive,
-      FileLearningRepositoryLive,
-      AttemptRepositoryLive
     ).pipe(Layer.provide(infra))
 
     const mockSyncService = Layer.succeed(
@@ -587,107 +545,6 @@ describe("AutoSyncService Config Changes", () => {
 })
 
 // -----------------------------------------------------------------------------
-// Entity-Specific Mutation Tests
-// -----------------------------------------------------------------------------
-
-describe("AutoSyncService Entity Mutations", () => {
-  let db: TestDatabase
-
-  beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
-    seedFixtures(db)
-    vi.spyOn(console, "error").mockImplementation(() => {})
-  })
-
-  afterEach(async () => {
-    vi.restoreAllMocks()
-    await Effect.runPromise(db.close())
-  })
-
-  it("afterLearningMutation triggers export", async () => {
-    let exportCalled = false
-    const layer = makeMockSyncServiceLayer(db, {
-      onExportCalled: () => { exportCalled = true }
-    })
-    enableAutoSyncInDb(db)
-
-    await Effect.runPromise(
-      Effect.gen(function* () {
-        const autoSync = yield* AutoSyncService
-        yield* autoSync.afterLearningMutation()
-        // Poll until the background fiber fires (up to 500ms)
-        for (let i = 0; i < 50 && !exportCalled; i++) {
-          yield* Effect.sleep(Duration.millis(10))
-        }
-      }).pipe(Effect.provide(layer))
-    )
-
-    expect(exportCalled).toBe(true)
-  })
-
-  it("afterFileLearningMutation triggers export", async () => {
-    let exportCalled = false
-    const layer = makeMockSyncServiceLayer(db, {
-      onExportCalled: () => { exportCalled = true }
-    })
-    enableAutoSyncInDb(db)
-
-    await Effect.runPromise(
-      Effect.gen(function* () {
-        const autoSync = yield* AutoSyncService
-        yield* autoSync.afterFileLearningMutation()
-        // Poll until the background fiber fires (up to 500ms)
-        for (let i = 0; i < 50 && !exportCalled; i++) {
-          yield* Effect.sleep(Duration.millis(10))
-        }
-      }).pipe(Effect.provide(layer))
-    )
-
-    expect(exportCalled).toBe(true)
-  })
-
-  it("afterAttemptMutation triggers export", async () => {
-    let exportCalled = false
-    const layer = makeMockSyncServiceLayer(db, {
-      onExportCalled: () => { exportCalled = true }
-    })
-    enableAutoSyncInDb(db)
-
-    await Effect.runPromise(
-      Effect.gen(function* () {
-        const autoSync = yield* AutoSyncService
-        yield* autoSync.afterAttemptMutation()
-        for (let i = 0; i < 50 && !exportCalled; i++) {
-          yield* Effect.sleep(Duration.millis(10))
-        }
-      }).pipe(Effect.provide(layer))
-    )
-
-    expect(exportCalled).toBe(true)
-  })
-
-  it("afterAnyMutation triggers export", async () => {
-    let exportCalled = false
-    const layer = makeMockSyncServiceLayer(db, {
-      onExportCalled: () => { exportCalled = true }
-    })
-    enableAutoSyncInDb(db)
-
-    await Effect.runPromise(
-      Effect.gen(function* () {
-        const autoSync = yield* AutoSyncService
-        yield* autoSync.afterAnyMutation()
-        for (let i = 0; i < 50 && !exportCalled; i++) {
-          yield* Effect.sleep(Duration.millis(10))
-        }
-      }).pipe(Effect.provide(layer))
-    )
-
-    expect(exportCalled).toBe(true)
-  })
-})
-
-// -----------------------------------------------------------------------------
 // Performance Impact Tests
 // -----------------------------------------------------------------------------
 
@@ -743,9 +600,6 @@ describe("AutoSyncService Performance", () => {
     const repos = Layer.mergeAll(
       TaskRepositoryLive,
       DependencyRepositoryLive,
-      LearningRepositoryLive,
-      FileLearningRepositoryLive,
-      AttemptRepositoryLive
     ).pipe(Layer.provide(infra))
 
     const mockSyncService = Layer.succeed(

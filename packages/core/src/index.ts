@@ -12,33 +12,10 @@
 // =============================================================================
 export {
   TaskNotFoundError,
-  LearningNotFoundError,
-  FileLearningNotFoundError,
-  AttemptNotFoundError,
-  RunNotFoundError,
   ValidationError,
   CircularDependencyError,
   DatabaseError,
   DependencyNotFoundError,
-  EmbeddingUnavailableError,
-  EmbeddingDimensionMismatchError,
-  EdgeNotFoundError,
-  AnchorNotFoundError,
-  CandidateNotFoundError,
-  ExtractionUnavailableError,
-  RerankerUnavailableError,
-  RetrievalError,
-  AstGrepError,
-  DaemonError,
-  // Orchestration errors (PRD-018)
-  RegistrationError,
-  WorkerNotFoundError,
-  AlreadyClaimedError,
-  ClaimNotFoundError,
-  ClaimIdNotFoundError,
-  LeaseExpiredError,
-  MaxRenewalsExceededError,
-  OrchestratorError,
   // Batch processing errors
   BatchProcessingError,
   // Optimistic locking errors
@@ -48,28 +25,13 @@ export {
   // Data validation errors
   InvalidStatusError,
   InvalidDateError,
-  // Message errors (PRD-024 agent outbox)
-  MessageNotFoundError,
-  MessageAlreadyAckedError,
   // Doc errors (DD-023 docs-as-primitives)
   DocNotFoundError,
   DocLockedError,
   InvalidDocYamlError,
   InvariantNotFoundError,
-  // Agent/Cycle errors (PRD-023 cycle scan)
-  AgentError,
-  CycleScanError,
-  // LLM errors
-  LlmUnavailableError,
-  // Memory errors
-  ZeroMagnitudeVectorError,
-  MemoryDocumentNotFoundError,
-  MemorySourceNotFoundError,
   // Label errors
   LabelNotFoundError,
-  // Guard/Verify errors
-  GuardExceededError,
-  VerifyError
 } from "./errors.js"
 
 // =============================================================================
@@ -81,6 +43,7 @@ export {
   makeSqliteClient,
   getSchemaVersion,
   applyMigrations,
+  runMigration,
   type SqliteDatabase,
   type SqliteStatement,
   type SqliteRunResult
@@ -101,340 +64,6 @@ export {
 } from "./workspace-context.js"
 
 // =============================================================================
-// Layers
-// =============================================================================
-export {
-  makeAppLayer,
-  makeAppLayerFromInfra,
-  makeMinimalLayer,
-  makeMinimalLayerFromInfra,
-  type AppLayerOptions,
-  // Re-exports for convenience
-  SyncService,
-  StreamService,
-  type StreamInfo,
-  type StreamProgress,
-  MigrationService,
-  AutoSyncService,
-  AutoSyncServiceNoop,
-  AutoSyncServiceLive,
-  LearningService,
-  FileLearningService,
-  EmbeddingService,
-  EmbeddingServiceNoop,
-  EmbeddingServiceLive,
-  EmbeddingServiceOpenAI,
-  EmbeddingServiceAuto,
-  createEmbedderLayer,
-  type EmbedderConfig,
-  AttemptService,
-  TaskService,
-  DependencyService,
-  ReadyService,
-  type ReadyCheckResult,
-  type ReadyAndClaimResult,
-  isReadyResult,
-  HierarchyService,
-  ScoreService,
-  DeduplicationService,
-  DeduplicationServiceLive,
-  DiversifierService,
-  DiversifierServiceNoop,
-  DiversifierServiceLive,
-  DiversifierServiceAuto,
-  CompactionService,
-  CompactionServiceLive,
-  CompactionServiceNoop,
-  CompactionServiceAuto,
-  type CompactionOutputMode,
-  MessageService,
-  MessageServiceLive,
-  type LlmCompletionRequest,
-  type LlmCompletionResult,
-  MemoryService,
-  MemoryServiceLive,
-  MemoryRetrieverService,
-  MemoryRetrieverServiceNoop,
-  MemoryRetrieverServiceLive,
-  PinService,
-  PinServiceLive,
-  PinRepository,
-  PinRepositoryLive,
-  GuardService,
-  GuardServiceLive,
-  type GuardCheckResult,
-  VerifyService,
-  VerifyServiceLive,
-  type VerifyResult,
-  ReflectService,
-  ReflectServiceLive,
-  type ReflectResult,
-  type ReflectSignal,
-  type StuckTask,
-  GuardRepository,
-  GuardRepositoryLive,
-  LabelRepository,
-  LabelRepositoryLive,
-  DomainEventRepository,
-  DomainEventRepositoryLive,
-  SupervisionRepository,
-  SupervisionRepositoryLive,
-  DocReviewRepository,
-  DocReviewRepositoryLive,
-  DomainEventService,
-  DomainEventServiceLive,
-  type PublishDomainEventInput,
-  SupervisionService,
-  SupervisionServiceLive,
-  DocReviewService,
-  DocReviewServiceLive,
-  type DocReviewConfig,
-  DEFAULT_REVIEW_CONFIG,
-  type CompletionStateResult,
-} from "./layer.js"
-
-// =============================================================================
-// Services (full exports)
-// =============================================================================
-export {
-  TaskServiceLive,
-  DependencyServiceLive,
-  ReadyServiceLive,
-  HierarchyServiceLive,
-  ScoreServiceLive,
-  LearningServiceLive,
-  FileLearningServiceLive,
-  AttemptServiceLive,
-  SyncServiceLive,
-  StreamServiceLive,
-  MigrationServiceLive,
-  AnchorService,
-  AnchorServiceLive,
-  EdgeService,
-  EdgeServiceLive,
-  CandidateExtractorService,
-  CandidateExtractorServiceNoop,
-  CandidateExtractorServiceLive,
-  CandidateExtractorServiceAuto,
-  LlmService,
-  LlmServiceNoop,
-  LlmServiceAgentSdk,
-  LlmServiceAnthropic,
-  LlmServiceAuto,
-  QueryExpansionService,
-  QueryExpansionServiceNoop,
-  QueryExpansionServiceLive,
-  QueryExpansionServiceAuto,
-  MAX_EXPANSION_QUERIES,
-  MAX_QUERY_LENGTH,
-  validateExpansions,
-  RerankerService,
-  RerankerServiceNoop,
-  RerankerServiceLive,
-  RerankerServiceAuto,
-  RetrieverService,
-  RetrieverServiceNoop,
-  RetrieverServiceLive,
-  RetrieverServiceAuto,
-  GraphExpansionService,
-  GraphExpansionServiceLive,
-  AnchorVerificationService,
-  AnchorVerificationServiceLive,
-  SwarmVerificationService,
-  SwarmVerificationServiceLive,
-  calculateMajorityVote,
-  AstGrepService,
-  AstGrepServiceLive,
-  AstGrepServiceNoop,
-  AstGrepServiceAuto,
-  EXT_TO_LANGUAGE,
-  DEFAULT_SYMBOL_PATTERNS,
-  DaemonService,
-  DaemonServiceLive,
-  DaemonServiceNoop,
-  PID_FILE_PATH,
-  LAUNCHD_PLIST_PATH,
-  SYSTEMD_SERVICE_PATH,
-  writePid,
-  readPid,
-  removePid,
-  removePidIfContentMatches,
-  isProcessRunning,
-  tryAtomicPidCreate,
-  acquirePidLock,
-  defaultDaemonConfig,
-  generateLaunchdPlist,
-  generateSystemdService,
-  type DaemonStatus,
-  type DaemonConfig,
-  type LaunchdPlistOptions,
-  type SystemdServiceOptions,
-  MIGRATIONS,
-  EMBEDDED_MIGRATIONS,
-  getLatestVersion,
-  type ScoreBreakdown,
-  type SyncStatus,
-  type DependencyImportResult,
-  type ImportResult,
-  type LegacySyncExportResult,
-  type SyncCompactResult,
-  type SyncExportResult,
-  type SyncImportResult,
-  type SyncHydrateResult,
-  type SyncStreamInfoResult,
-  type Migration,
-  type AppliedMigration,
-  type MigrationStatus,
-  type AutoSyncEntity,
-  type AnchorVerificationResult,
-  type BatchVerificationResult,
-  type TypedAnchorInput,
-  type GraphStatusResult,
-  type PruneResult,
-  type NeighborWithDepth,
-  type NeighborWithPath,
-  type FindNeighborsOptions,
-  type QueryExpansionResult,
-  type RerankerResult,
-  type SeedLearning,
-  type ExpandedLearning,
-  type GraphExpansionOptions,
-  type GraphExpansionResult,
-  type FailedAnchor,
-  type VerificationResult,
-  type VerificationSummary,
-  type VerifyOptions,
-  type VerificationBatch,
-  type BatchResult,
-  type SwarmMetrics,
-  type SwarmVerificationResult,
-  type SwarmVerifyOptions,
-  type VoteResult,
-  PromotionService,
-  type PromotionResult,
-  type AutoPromoteResult,
-  FeedbackTrackerService,
-  FeedbackTrackerServiceNoop,
-  FeedbackTrackerServiceLive,
-  type LearningUsageFeedback,
-  WorkerService,
-  WorkerServiceLive,
-  RunHeartbeatService,
-  RunHeartbeatServiceLive,
-  type RunHeartbeatInput,
-  type StalledRun,
-  type StalledRunQuery,
-  type ReapStalledOptions,
-  type ReapedRun,
-  type WorkerRegistration,
-  type WorkerFilter,
-  type FindDeadConfig,
-  ClaimService,
-  ClaimServiceLive,
-  ProcessRegistryService,
-  ProcessRegistryServiceLive,
-  OrchestratorService,
-  OrchestratorServiceLive,
-  type OrchestratorConfig,
-  runWorkerProcess,
-  type WorkerProcessConfig,
-  DocService,
-  DocServiceLive,
-  AgentService,
-  AgentServiceLive,
-  AgentServiceNoop,
-  DecomposeService,
-  DecomposeServiceLive,
-  type DecomposeError,
-  type AgentRunConfig,
-  type AgentRunResult,
-  type AgentMessageCallback,
-  CycleScanService,
-  CycleScanServiceLive,
-  SPEC_BATCH_MAX_BYTES,
-  SPEC_BATCH_MAX_RECORDS,
-  SpecTraceService,
-  SpecTraceServiceLive,
-  parseBatchRunInput,
-  type BatchSource,
-  type BatchRunResult,
-  type SpecTraceStatus,
-  DecisionService,
-  DecisionServiceLive,
-  ReviewRuntime,
-  ReviewRuntimeNoop,
-  ReviewExecutionParamsSchema,
-  type ReviewExecutionParams,
-  PiReviewRuntimeLive,
-  // Runtime interface validators for optional peer dependencies
-  isValidLlama,
-  isValidLlamaModel,
-  isValidLlamaEmbeddingContext,
-  isValidOpenAIClient,
-  // Dimension validation
-  validateEmbeddingDimensions
-} from "./services/index.js"
-
-// =============================================================================
-// Repositories
-// =============================================================================
-export {
-  TaskRepository,
-  TaskRepositoryLive,
-  DependencyRepository,
-  DependencyRepositoryLive,
-  LearningRepository,
-  LearningRepositoryLive,
-  type BM25Result,
-  FileLearningRepository,
-  FileLearningRepositoryLive,
-  AttemptRepository,
-  AttemptRepositoryLive,
-  RunRepository,
-  RunRepositoryLive,
-  AnchorRepository,
-  AnchorRepositoryLive,
-  EdgeRepository,
-  EdgeRepositoryLive,
-  DeduplicationRepository,
-  DeduplicationRepositoryLive,
-  CandidateRepository,
-  CandidateRepositoryLive,
-  TrackedProjectRepository,
-  TrackedProjectRepositoryLive,
-  WorkerRepository,
-  WorkerRepositoryLive,
-  ClaimRepository,
-  ClaimRepositoryLive,
-  ProcessRegistryRepository,
-  ProcessRegistryRepositoryLive,
-  OrchestratorStateRepository,
-  OrchestratorStateRepositoryLive,
-  type OrchestratorStateUpdate,
-  CompactionRepository,
-  CompactionRepositoryLive,
-  type CompactionLogEntry,
-  type CreateCompactionLogInput,
-  MessageRepository,
-  MessageRepositoryLive,
-  DocRepository,
-  DocRepositoryLive,
-  MemoryDocumentRepository,
-  MemoryDocumentRepositoryLive,
-  MemoryLinkRepository,
-  MemoryLinkRepositoryLive,
-  MemoryPropertyRepository,
-  MemoryPropertyRepositoryLive,
-  MemorySourceRepository,
-  MemorySourceRepositoryLive,
-  type MemoryBM25Result,
-  SpecTraceRepository,
-  SpecTraceRepositoryLive,
-  type InvariantSummary,
-  type SpecTraceFilter,
-} from "./repo/index.js"
-
-// =============================================================================
 // Schemas
 // =============================================================================
 export * from "./schemas/index.js"
@@ -451,62 +80,6 @@ export {
   type TaskRow,
   type DependencyRow
 } from "./mappers/task.js"
-
-export {
-  rowToLearning,
-  float32ArrayToBuffer,
-  type LearningRow
-} from "./mappers/learning.js"
-
-export {
-  rowToFileLearning,
-  matchesPattern,
-  type FileLearningRow
-} from "./mappers/file-learning.js"
-
-export {
-  rowToAttempt,
-  type AttemptRow
-} from "./mappers/attempt.js"
-
-export {
-  rowToAnchor,
-  rowToInvalidationLog,
-  type AnchorRow,
-  type InvalidationLogRow
-} from "./mappers/anchor.js"
-
-export {
-  rowToEdge,
-  type EdgeRow
-} from "./mappers/edge.js"
-
-export {
-  normalizeContent,
-  hashContent,
-  rowToProcessedHash,
-  serializeProcessedHash,
-  rowToFileProgress,
-  serializeFileProgress
-} from "./mappers/deduplication.js"
-
-export {
-  rowToWorker,
-  isValidWorkerStatus,
-  WORKER_STATUSES,
-  type WorkerRow
-} from "./mappers/worker.js"
-
-export {
-  rowToProcessEntry,
-  type ProcessRegistryRow
-} from "./mappers/process-registry.js"
-
-export {
-  rowToMessage,
-  isValidMessageStatus,
-  type MessageRow
-} from "./mappers/message.js"
 
 export {
   rowToDoc,
@@ -528,22 +101,6 @@ export {
   isBuiltinSpecType,
   SPEC_TYPE_NAME_PATTERN,
 } from "./types/doc.js"
-
-export {
-  rowToMemoryDocument,
-  rowToMemoryDocumentWithoutEmbedding,
-  rowToMemoryLink,
-  rowToMemorySource,
-  rowToMemoryProperty,
-  isValidLinkType as isValidMemoryLinkType,
-  float32ArrayToBuffer as memoryFloat32ArrayToBuffer,
-} from "./mappers/memory.js"
-
-// =============================================================================
-// Utils
-// =============================================================================
-export { cosineSimilarity } from "./utils/math.js"
-export { parseLlmJson } from "./utils/llm-json.js"
 export { matchesGlob } from "./utils/glob.js"
 export {
   normalizePathSeparators,
@@ -591,9 +148,6 @@ export {
   type DashboardDefaultTaskView,
   type DashboardCycleStartDay,
   type DashboardCyclesConfig,
-  type ReviewDesignDocsConfig,
-  type ReviewRuntimeType,
-  type ReviewTransportType,
   type SpecDesignDocMissingTaskLinksMode,
   listTomlSections,
   DEFAULT_MISSING_SECTION_MESSAGE,
@@ -605,14 +159,13 @@ export {
   type TxConfig,
 } from "./utils/toml-config.js"
 export {
-  resolveSpecTypes,
   renderLintMessage,
+  resolveSpecTypes,
   specTypeSubdir,
   specTypeNames,
   type SpecTypeRegistry,
   type SpecTypeDefinition,
   type SpecSectionDefinition,
-  type SpecLintMessages,
 } from "./utils/spec-type-registry.js"
 export {
   lintSpecSections,
@@ -620,14 +173,6 @@ export {
   type SectionLintRule,
   type SectionLintContext,
 } from "./utils/spec-section-lint.js"
-export { normalizeClaudeDebugLogPath } from "./utils/claude-debug-log.js"
-export {
-  parseBlocks,
-  hasBlock,
-  upsertBlock,
-  removeBlock,
-  syncBlocks,
-} from "./utils/pin-file.js"
 export {
   discoverSpecTests,
   readSpecManifest,
@@ -636,63 +181,6 @@ export {
   type SpecDiscoveryMethod,
 } from "./utils/spec-discovery.js"
 
-// =============================================================================
-// Worker (PRD-018 headless worker system)
-// =============================================================================
-export {
-  type ExecutionResult,
-  type IOCapture,
-  type WorkerContext,
-  type WorkerHooks,
-  type WorkerConfig,
-  runWorker
-} from "./worker/index.js"
-
-// =============================================================================
-// Transcript Adapters (PRD-019 Execution Tracing)
-// =============================================================================
-export {
-  ClaudeCodeAdapter,
-  CodexAdapter,
-  GenericJSONLAdapter,
-  getAdapter,
-  detectAdapter,
-  registerAdapter,
-  type TranscriptAdapter,
-  type ToolCall,
-  type Message
-} from "./services/transcript-adapter.js"
-
-// =============================================================================
-// Tracing Service (PRD-019 Execution Tracing)
-// =============================================================================
-export {
-  TracingService,
-  TracingServiceLive,
-  TracingServiceNoop,
-  type SpanOptions
-} from "./services/tracing-service.js"
-
-// =============================================================================
-// Validation Service
-// =============================================================================
-export {
-  ValidationService,
-  ValidationServiceLive,
-  type ValidationSeverity,
-  type ValidationIssue,
-  type CheckResult,
-  type ValidationResult,
-  type ValidateOptions
-} from "./services/validation-service.js"
-
-// =============================================================================
-// Sync: Claude Code task writer
-// =============================================================================
-export {
-  buildClaudeTaskFiles,
-  ClaudeTaskFileSchema,
-  ClaudeSyncResultSchema,
-  type ClaudeTaskFile,
-  type ClaudeSyncResult
-} from "./sync/claude-task-writer.js"
+export * from "./layer.js"
+export * from "./services/index.js"
+export * from "./repo/index.js"

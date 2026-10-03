@@ -1,3 +1,4 @@
+import { makeMinimalLayerFromInfra } from "@jamesaphoenix/tx"
 import { describe, it, expect, beforeAll, afterEach, afterAll } from "vitest"
 import { Effect, Layer } from "effect"
 import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx/testing"
@@ -6,65 +7,22 @@ import {
   SqliteClient,
   TaskRepositoryLive,
   TaskRepository,
-  DependencyRepositoryLive,
-  AttemptRepositoryLive,
-  AttemptRepository,
-  LearningRepositoryLive,
-  LearningRepository,
-  TaskServiceLive,
   TaskService,
-  DependencyServiceLive,
   DependencyService,
-  ReadyServiceLive,
   ReadyService,
-  HierarchyServiceLive,
   HierarchyService,
-  ScoreServiceLive,
   ScoreService,
-  AutoSyncServiceNoop,
-  GuardRepositoryLive,
-  PinRepositoryLive,
-  ClaimRepositoryLive,
-  ClaimServiceLive,
-  OrchestratorStateRepositoryLive,
   StaleDataError,
   HasChildrenError
 } from "@jamesaphoenix/tx"
 import type { TaskId } from "@jamesaphoenix/tx/types"
 import type { Database } from "bun:sqlite"
 
-function makeTestLayer(db: Database) {
-  const infra = Layer.succeed(SqliteClient, db as any)
-  const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive, GuardRepositoryLive, PinRepositoryLive, ClaimRepositoryLive, OrchestratorStateRepositoryLive).pipe(
-    Layer.provide(infra)
-  )
-  // ClaimService needed by ReadyServiceLive for readyAndClaim
-  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
-  // Base services that only depend on repos, AutoSyncService, and ClaimService
-  const baseServices = Layer.mergeAll(TaskServiceLive, DependencyServiceLive, ReadyServiceLive, HierarchyServiceLive).pipe(
-    Layer.provide(Layer.mergeAll(repos, AutoSyncServiceNoop, claimService))
-  )
-  // ScoreService depends on HierarchyService, so it needs baseServices
-  const scoreService = ScoreServiceLive.pipe(
-    Layer.provide(baseServices),
-    Layer.provide(repos)
-  )
-  return Layer.mergeAll(baseServices, scoreService)
-}
+function makeTestLayer(db: Database) { return makeMinimalLayerFromInfra(Layer.succeed(SqliteClient, db as any)) }
 
 function makeRepoLayer(db: Database) {
   const infra = Layer.succeed(SqliteClient, db as any)
   return TaskRepositoryLive.pipe(Layer.provide(infra))
-}
-
-function makeAttemptRepoLayer(db: Database) {
-  const infra = Layer.succeed(SqliteClient, db as any)
-  return AttemptRepositoryLive.pipe(Layer.provide(infra))
-}
-
-function makeLearningRepoLayer(db: Database) {
-  const infra = Layer.succeed(SqliteClient, db as any)
-  return LearningRepositoryLive.pipe(Layer.provide(infra))
 }
 
 describe("Schema constraints", () => {
@@ -196,7 +154,7 @@ describe("Task CRUD", () => {
     expect(task.blockedBy).toContain(FIXTURES.TASK_LOGIN)
   })
 
-  it("update changes task fields", async () => {
+  it("task update changes task fields", async () => {
     seedFixtures({ db: shared.getDb() } as any)
     const task = await Effect.runPromise(
       Effect.gen(function* () {
@@ -209,7 +167,7 @@ describe("Task CRUD", () => {
     expect(task.score).toBe(999)
   })
 
-  it("update sets completedAt when status becomes done", async () => {
+  it("task update sets completedAt when status becomes done", async () => {
     seedFixtures({ db: shared.getDb() } as any)
     const task = await Effect.runPromise(
       Effect.gen(function* () {
@@ -286,7 +244,7 @@ describe("Task CRUD", () => {
     }
   })
 
-  it("update rejects self-referencing parentId", async () => {
+  it("task update rejects self-referencing parentId", async () => {
     seedFixtures({ db: shared.getDb() } as any)
     const result = await Effect.runPromise(
       Effect.gen(function* () {
@@ -302,7 +260,7 @@ describe("Task CRUD", () => {
     }
   })
 
-  it("update rejects direct parent-child cycle", async () => {
+  it("task update rejects direct parent-child cycle", async () => {
     seedFixtures({ db: shared.getDb() } as any)
     // TASK_AUTH is parent of TASK_JWT. Setting AUTH's parent to JWT would create a cycle.
     const result = await Effect.runPromise(
@@ -319,7 +277,7 @@ describe("Task CRUD", () => {
     }
   })
 
-  it("update rejects deep parent-child cycle", async () => {
+  it("task update rejects deep parent-child cycle", async () => {
     seedFixtures({ db: shared.getDb() } as any)
     // Hierarchy: ROOT -> AUTH -> JWT
     // Setting ROOT's parent to JWT would create ROOT->JWT->...->AUTH->...->ROOT cycle
@@ -337,7 +295,7 @@ describe("Task CRUD", () => {
     }
   })
 
-  it("update allows valid parentId change (no cycle)", async () => {
+  it("task update allows valid parentId change (no cycle)", async () => {
     seedFixtures({ db: shared.getDb() } as any)
     // Moving JWT from under AUTH to directly under ROOT is valid
     const task = await Effect.runPromise(
@@ -350,7 +308,7 @@ describe("Task CRUD", () => {
     expect(task.parentId).toBe(FIXTURES.TASK_ROOT)
   })
 
-  it("delete removes task", async () => {
+  it("task delete removes task", async () => {
     seedFixtures({ db: shared.getDb() } as any)
     const result = await Effect.runPromise(
       Effect.gen(function* () {
@@ -363,7 +321,7 @@ describe("Task CRUD", () => {
     expect(result._tag).toBe("Left")
   })
 
-  it("delete fails with HasChildrenError when task has children", async () => {
+  it("task delete fails with HasChildrenError when task has children", async () => {
     seedFixtures({ db: shared.getDb() } as any)
     const result = await Effect.runPromise(
       Effect.gen(function* () {
@@ -381,7 +339,7 @@ describe("Task CRUD", () => {
     }
   })
 
-  it("delete with cascade removes task and all descendants", async () => {
+  it("task delete with cascade removes task and all descendants", async () => {
     seedFixtures({ db: shared.getDb() } as any)
     const result = await Effect.runPromise(
       Effect.gen(function* () {
@@ -436,7 +394,7 @@ describe("Task CRUD", () => {
     }
   })
 
-  it("list returns all tasks", async () => {
+  it("task list returns all tasks", async () => {
     seedFixtures({ db: shared.getDb() } as any)
     const tasks = await Effect.runPromise(
       Effect.gen(function* () {
@@ -448,7 +406,7 @@ describe("Task CRUD", () => {
     expect(tasks.length).toBe(6) // All seeded tasks
   })
 
-  it("list filters by status", async () => {
+  it("task list filters by status", async () => {
     seedFixtures({ db: shared.getDb() } as any)
     const tasks = await Effect.runPromise(
       Effect.gen(function* () {
@@ -459,74 +417,6 @@ describe("Task CRUD", () => {
 
     expect(tasks.length).toBe(1)
     expect(tasks[0].id).toBe(FIXTURES.TASK_DONE)
-  })
-
-  it("setGroupContext rejects invisible-only content", async () => {
-    const result = await Effect.runPromise(
-      Effect.gen(function* () {
-        const svc = yield* TaskService
-        const created = yield* svc.create({ title: "Invisible context task", score: 300 })
-        return yield* svc.setGroupContext(created.id, "\u200B\u200C\u200D").pipe(Effect.either)
-      }).pipe(Effect.provide(layer))
-    )
-
-    expect(result._tag).toBe("Left")
-    if (result._tag === "Left") {
-      expect((result.left as any)._tag).toBe("ValidationError")
-      expect((result.left as any).reason).toContain("Group context is required")
-    }
-  })
-
-  it("setGroupContext strips null bytes before persisting", async () => {
-    const task = await Effect.runPromise(
-      Effect.gen(function* () {
-        const svc = yield* TaskService
-        const created = yield* svc.create({ title: "Null-byte context task", score: 300 })
-        return yield* svc.setGroupContext(created.id, "alpha\u0000beta")
-      }).pipe(Effect.provide(layer))
-    )
-
-    expect(task.groupContext).toBe("alphabeta")
-    expect(task.effectiveGroupContext).toBe("alphabeta")
-    expect(task.effectiveGroupContextSourceTaskId).toBe(task.id)
-  })
-
-  it("listWithDeps handles more than 1000 tasks with context enrichment", async () => {
-    const db = shared.getDb()
-    const now = new Date().toISOString()
-    const totalTasks = 1200
-    const taskIds: string[] = []
-    const insert = db.prepare(
-      `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, completed_at, metadata)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-
-    for (let i = 0; i < totalTasks; i++) {
-      const id = fixtureId(`listwithdeps-bulk-${i}`)
-      taskIds.push(id)
-      insert.run(id, `Bulk task ${i}`, `Bulk description ${i}`, "backlog", null, 500, now, now, null, "{}")
-    }
-
-    const contextSourceId = taskIds[0]!
-    db.prepare("UPDATE tasks SET group_context = ?, updated_at = ? WHERE id = ?").run(
-      "bulk group context",
-      now,
-      contextSourceId
-    )
-
-    const tasksWithDeps = await Effect.runPromise(
-      Effect.gen(function* () {
-        const svc = yield* TaskService
-        return yield* svc.listWithDeps({ limit: totalTasks + 10 })
-      }).pipe(Effect.provide(layer))
-    )
-
-    expect(tasksWithDeps).toHaveLength(totalTasks)
-    const contextSource = tasksWithDeps.find(task => task.id === contextSourceId)
-    expect(contextSource).toBeDefined()
-    expect(contextSource?.groupContext).toBe("bulk group context")
-    expect(contextSource?.effectiveGroupContext).toBe("bulk group context")
-    expect(contextSource?.effectiveGroupContextSourceTaskId).toBe(contextSourceId)
   })
 })
 
@@ -665,47 +555,6 @@ describe("Ready detection", () => {
     )
 
     expect(ready).toHaveLength(1)
-  })
-
-  it("excludes tasks with active claims (thundering herd prevention)", async () => {
-    seedFixtures({ db: shared.getDb() } as any)
-    const db = shared.getDb()
-
-    // Verify JWT is in the ready list before claiming
-    const readyBefore = await Effect.runPromise(
-      Effect.gen(function* () {
-        const svc = yield* ReadyService
-        return yield* svc.getReady()
-      }).pipe(Effect.provide(layer))
-    )
-    const jwtBefore = readyBefore.find(t => t.id === FIXTURES.TASK_JWT)
-    expect(jwtBefore).toBeDefined()
-
-    // Insert a worker (required by FK constraint on task_claims)
-    const now = new Date().toISOString()
-    db.prepare(
-      `INSERT INTO workers (id, name, hostname, pid, status, registered_at, last_heartbeat_at, capabilities, metadata)
-       VALUES (?, ?, ?, ?, ?, ?, ?, '[]', '{}')`
-    ).run("worker-other", "other-worker", "localhost", 99999, "idle", now, now)
-
-    // Simulate another worker claiming JWT by inserting an active claim directly
-    const leaseExpires = new Date(Date.now() + 30 * 60 * 1000).toISOString()
-    db.prepare(
-      `INSERT INTO task_claims (task_id, worker_id, claimed_at, lease_expires_at, renewed_count, status)
-       VALUES (?, ?, ?, ?, 0, 'active')`
-    ).run(FIXTURES.TASK_JWT, "worker-other", now, leaseExpires)
-
-    // getReady should now exclude the claimed task
-    const readyAfter = await Effect.runPromise(
-      Effect.gen(function* () {
-        const svc = yield* ReadyService
-        return yield* svc.getReady()
-      }).pipe(Effect.provide(layer))
-    )
-    expect(readyAfter.find(t => t.id === FIXTURES.TASK_JWT)).toBeUndefined()
-
-    // Other unclaimed tasks should still appear
-    expect(readyAfter.length).toBeGreaterThan(0)
   })
 
   it("includes tasks with released/expired claims", async () => {
@@ -1512,7 +1361,7 @@ describe("Task Repository updateMany with staleness detection", () => {
     expect(verifyTasks.find(t => t.id === FIXTURES.TASK_LOGIN)?.title).toBe("Externally modified LOGIN")
   })
 
-  it("update with expectedUpdatedAt fails with StaleDataError when task was modified externally", async () => {
+  it("task update with expectedUpdatedAt fails with StaleDataError when task was modified externally", async () => {
     seedFixtures({ db: shared.getDb() } as any)
     const db = shared.getDb()
     // Fetch the task
@@ -1562,7 +1411,7 @@ describe("Task Repository updateMany with staleness detection", () => {
     expect(verifyTask?.title).toBe("Externally modified")
   })
 
-  it("update with expectedUpdatedAt succeeds when task is not stale", async () => {
+  it("task update with expectedUpdatedAt succeeds when task is not stale", async () => {
     seedFixtures({ db: shared.getDb() } as any)
     // Fetch the task
     const task = await Effect.runPromise(
@@ -1601,7 +1450,7 @@ describe("Task Repository updateMany with staleness detection", () => {
     expect(verifyTask?.title).toBe("Legitimate update")
   })
 
-  it("update with expectedUpdatedAt fails with TaskNotFoundError for missing task", async () => {
+  it("task update with expectedUpdatedAt fails with TaskNotFoundError for missing task", async () => {
     seedFixtures({ db: shared.getDb() } as any)
 
     const result = await Effect.runPromise(
@@ -1632,7 +1481,7 @@ describe("Task Repository updateMany with staleness detection", () => {
     }
   })
 
-  it("update without expectedUpdatedAt still works (backward compatible)", async () => {
+  it("task update without expectedUpdatedAt still works (backward compatible)", async () => {
     seedFixtures({ db: shared.getDb() } as any)
     // Fetch the task
     const task = await Effect.runPromise(
@@ -1864,131 +1713,5 @@ describe("Task Repository recoverTaskStatus (atomic TOCTOU fix)", () => {
     )
 
     expect(result).toBe(false)
-  })
-})
-
-describe("Repository SQL variable limits", () => {
-  let shared: SharedTestLayerResult
-  let attemptRepoLayer: Layer.Layer<AttemptRepository, never, never>
-  let learningRepoLayer: Layer.Layer<LearningRepository, never, never>
-
-  beforeAll(async () => {
-    shared = await createSharedTestLayer()
-    attemptRepoLayer = makeAttemptRepoLayer(shared.getDb())
-    learningRepoLayer = makeLearningRepoLayer(shared.getDb())
-  })
-
-  afterEach(async () => {
-    await shared.reset()
-  })
-
-  afterAll(async () => {
-    await shared.close()
-  })
-
-  it("getFailedCountsForTasks handles more than 1000 task IDs", async () => {
-    const db = shared.getDb()
-    const now = "2026-01-01T00:00:00.000Z"
-    const taskCount = 1200
-    const taskIds: TaskId[] = []
-
-    const insertTask = db.prepare(
-      `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, completed_at, metadata)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-    const insertAttempt = db.prepare(
-      `INSERT INTO attempts (task_id, approach, outcome, reason, created_at)
-       VALUES (?, ?, ?, ?, ?)`
-    )
-
-    db.exec("BEGIN TRANSACTION")
-    try {
-      for (let i = 0; i < taskCount; i++) {
-        const id = fixtureId(`attempt-sql-limit-${i}`)
-        taskIds.push(id)
-        insertTask.run(
-          id,
-          `Task ${i}`,
-          "SQL variable limit test",
-          "backlog",
-          null,
-          500,
-          now,
-          now,
-          null,
-          "{}"
-        )
-        insertAttempt.run(id, "batch-query", "failed", null, now)
-      }
-      db.exec("COMMIT")
-    } catch (error) {
-      db.exec("ROLLBACK")
-      throw error
-    }
-
-    const failedCounts = await Effect.runPromise(
-      Effect.gen(function* () {
-        const repo = yield* AttemptRepository
-        return yield* repo.getFailedCountsForTasks(taskIds)
-      }).pipe(Effect.provide(attemptRepoLayer))
-    )
-
-    expect(failedCounts.size).toBe(taskCount)
-    expect(failedCounts.get(taskIds[0]!)).toBe(1)
-    expect(failedCounts.get(taskIds[taskCount - 1]!)).toBe(1)
-  })
-
-  it("incrementUsageMany handles more than 1000 learning IDs", async () => {
-    const db = shared.getDb()
-    const now = "2026-01-01T00:00:00.000Z"
-    const learningCount = 1200
-    const learningIds: number[] = []
-
-    const insertLearning = db.prepare(
-      `INSERT INTO learnings (content, source_type, source_ref, created_at, keywords, category)
-       VALUES (?, ?, ?, ?, ?, ?)`
-    )
-
-    db.exec("BEGIN TRANSACTION")
-    try {
-      for (let i = 0; i < learningCount; i++) {
-        const result = insertLearning.run(
-          `Learning ${i}`,
-          "manual",
-          null,
-          now,
-          JSON.stringify(["sql-limit", `item-${i}`]),
-          "testing"
-        )
-        learningIds.push(Number(result.lastInsertRowid))
-      }
-      db.exec("COMMIT")
-    } catch (error) {
-      db.exec("ROLLBACK")
-      throw error
-    }
-
-    await Effect.runPromise(
-      Effect.gen(function* () {
-        const repo = yield* LearningRepository
-        yield* repo.incrementUsageMany(learningIds)
-      }).pipe(Effect.provide(learningRepoLayer))
-    )
-
-    const usageSummary = db.prepare(
-      `SELECT COUNT(*) as touched, COALESCE(SUM(usage_count), 0) as total
-       FROM learnings
-       WHERE usage_count > 0`
-    ).get() as { touched: number; total: number }
-
-    expect(usageSummary.touched).toBe(learningCount)
-    expect(usageSummary.total).toBe(learningCount)
-
-    const firstLearning = db.prepare(
-      "SELECT usage_count, last_used_at FROM learnings WHERE id = ?"
-    ).get(learningIds[0]) as { usage_count: number; last_used_at: string | null } | undefined
-
-    expect(firstLearning?.usage_count).toBe(1)
-    expect(firstLearning?.last_used_at).toBeTruthy()
   })
 })

@@ -1,3 +1,4 @@
+const normaliseTaskCommand = (args: string[]): string[] => /^(add|list|ready|show|update|done|reset|delete|bulk|label|dep|block|unblock|children|tree)$/.test(args[0] ?? "") ? ["task", ...(/^(block|unblock|children|tree)$/.test(args[0]) ? ["dep"] : []), ...args] : args
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { spawnSync } from "node:child_process"
 import { mkdtempSync, rmSync, existsSync } from "node:fs"
@@ -17,6 +18,8 @@ interface ExecResult {
 }
 
 function runTx(args: string[], cwd: string): ExecResult {
+  args = normaliseTaskCommand(args)
+
   const runner = HAS_BUN ? BUN_BIN : process.execPath
   const runnerArgs = HAS_BUN
     ? [CLI_SRC, ...args]
@@ -226,7 +229,7 @@ describe("Decision commands (Phase 2)", () => {
     expect(pending.stdout).not.toContain("Decision A")
   })
 
-  it("list filters by --status and --source", () => {
+  it("task list filters by --status and --source", () => {
     runTx(["decision", "add", "Manual decision"], tmpDir)
 
     const listPending = runTx(

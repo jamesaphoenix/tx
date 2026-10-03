@@ -11,24 +11,14 @@ import { HttpApiBuilder } from "@effect/platform"
 import { NodeHttpServer, NodeRuntime } from "@effect/platform-node"
 import { Effect, Layer } from "effect"
 import { createServer } from "node:http"
-import { makeAppLayer, LlmServiceNoop, resolveTxDbPath } from "@jamesaphoenix/tx"
+import { makeAppLayer, resolveTxDbPath } from "@jamesaphoenix/tx"
 import { TasksLive } from "./routes/tasks.js"
 import { HealthLive } from "./routes/health.js"
-import { LearningsLive } from "./routes/learnings.js"
-import { RunsLive } from "./routes/runs.js"
 import { SyncLive } from "./routes/sync.js"
-import { MessagesLive } from "./routes/messages.js"
-import { CyclesLive } from "./routes/cycles.js"
 import { DocsLive } from "./routes/docs.js"
-import { PinsLive } from "./routes/pins.js"
-import { MemoryLive } from "./routes/memory.js"
 import { InvariantsLive } from "./routes/invariants.js"
 import { SpecTraceLive } from "./routes/spec-trace.js"
-import { GuardsLive } from "./routes/guards.js"
-import { VerifyLive } from "./routes/verify.js"
-import { ReflectLive } from "./routes/reflect.js"
 import { DecisionsLive } from "./routes/decisions.js"
-import { DecomposeLive } from "./routes/decompose.js"
 import { TxApi } from "./api.js"
 import { authMiddleware, isAuthEnabled } from "./middleware/auth.js"
 import { bodyLimitMiddleware } from "./middleware/body-limit.js"
@@ -44,21 +34,11 @@ import { getCorsConfig } from "./middleware/cors.js"
 const ApiLive = HttpApiBuilder.api(TxApi).pipe(
   Layer.provide(TasksLive),
   Layer.provide(HealthLive),
-  Layer.provide(LearningsLive),
-  Layer.provide(RunsLive),
   Layer.provide(SyncLive),
-  Layer.provide(MessagesLive),
-  Layer.provide(CyclesLive),
   Layer.provide(DocsLive),
-  Layer.provide(PinsLive),
-  Layer.provide(MemoryLive),
   Layer.provide(InvariantsLive),
   Layer.provide(SpecTraceLive),
-  Layer.provide(GuardsLive),
-  Layer.provide(VerifyLive),
-  Layer.provide(ReflectLive),
   Layer.provide(DecisionsLive),
-  Layer.provide(DecomposeLive),
 )
 
 // -----------------------------------------------------------------------------
@@ -88,7 +68,6 @@ export const makeServerLive = (options: {
     Layer.provide(HttpApiBuilder.middleware(authMiddleware)),
     Layer.provide(ApiLive),
     Layer.provide(appLayer),
-    Layer.provide(LlmServiceNoop),
     Layer.provide(NodeHttpServer.layer(() => createServer(), { port, host })),
   )
 }

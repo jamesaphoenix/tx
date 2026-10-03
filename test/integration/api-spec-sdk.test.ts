@@ -261,10 +261,33 @@ describe("API + SDK spec traceability integration", () => {
     const signoff = await tx.spec.complete({
       doc: docName,
       signedOffBy: "http-reviewer",
-      notes: "ready to ship",
+      notes: "task ready to ship",
     })
     expect(signoff.scopeType).toBe("doc")
     expect(signoff.scopeValue).toBe(docName)
     expect(signoff.signedOffBy).toBe("http-reviewer")
   })
+  it("returns identical Spec Health through CLI, REST, SDK and the MCP handler [INV-LEAN-004] [INV-REQ-LEAN-004]", async () => {
+    const httpClient = new TxClient({ apiUrl: baseUrl })
+    const direct = new TxClient({ dbPath, contentRoot: tmpProjectDir })
+    const { initRuntime, disposeRuntime } = await import("../../apps/cli/src/mcp/runtime.js")
+    const { registerSpecTraceTools } = await import("../../apps/cli/src/mcp/tools/spec-trace.js")
+    const handlers = new Map<string, () => Promise<any>>()
+    registerSpecTraceTools({ registerTool: (name: string, _config: unknown, handler: () => Promise<any>) => handlers.set(name, handler) } as any)
+    await initRuntime(dbPath)
+    try {
+      const cli = runTx(["spec", "health", "--db", dbPath, "--json"], tmpProjectDir)
+      expect(cli.status, cli.stderr).toBe(0)
+      const expected = JSON.parse(cli.stdout)
+      expect(await httpClient.spec.health()).toEqual(expected)
+      expect(await direct.spec.health()).toEqual(expected)
+      const response = await fetch(`${baseUrl}/api/spec/health`)
+      expect(response.status).toBe(200)
+      expect(await response.json()).toEqual(expected)
+      const mcp = await handlers.get("tx_spec_health")!()
+      expect(mcp.isError).toBe(false)
+      expect(JSON.parse(mcp.content[0].text)).toEqual(expected)
+    } finally { await direct.dispose(); await disposeRuntime() }
+  })
+
 })

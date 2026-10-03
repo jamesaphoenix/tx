@@ -44,6 +44,7 @@ describe("TxClient direct mode integration", () => {
     db.exec("DELETE FROM invariants")
     db.exec("DELETE FROM doc_links")
     db.exec("DELETE FROM docs")
+    db.exec("DELETE FROM tasks")
     db.exec("DELETE FROM events")
     db.exec("DELETE FROM run_heartbeat_state")
     db.exec("DELETE FROM runs")
@@ -150,70 +151,14 @@ describe("TxClient direct mode integration", () => {
     expect(signoff.scopeValue).toBe(docName)
     expect(signoff.signedOffBy).toBe("direct-reviewer")
   })
-
-  it("supports traced run inspection in direct mode", async () => {
-    process.chdir(tmpProjectDir)
-    mkdirSync(join(tmpProjectDir, ".tx", "runs"), { recursive: true })
-
-    const runId = `run-${fixtureId("agent-sdk-direct:run").slice(3)}`
-    const now = new Date().toISOString()
-    const transcriptPath = join(tmpProjectDir, ".tx", "runs", `${runId}.jsonl`)
-    const stderrPath = join(tmpProjectDir, ".tx", "runs", `${runId}.stderr`)
-
-    writeFileSync(
-      transcriptPath,
-      [
-        JSON.stringify({
-          type: "user",
-          message: { role: "user", content: "show errors" },
-          timestamp: now,
-          uuid: "direct-sdk-run-user",
-        }),
-        JSON.stringify({
-          type: "assistant",
-          message: { role: "assistant", content: [{ type: "tool_use", id: "tool-1", name: "Read", input: { file: "README.md" } }] },
-          timestamp: now,
-          uuid: "direct-sdk-run-tool",
-        }),
-        JSON.stringify({
-          type: "user",
-          message: { role: "user", content: [{ type: "tool_result", tool_use_id: "tool-1", content: "README loaded" }] },
-          timestamp: now,
-          uuid: "direct-sdk-run-tool-result",
-        }),
-      ].join("\n")
-    )
-    writeFileSync(stderrPath, "stderr line 1\nstderr line 2\n")
-
-    db.prepare(
-      `INSERT INTO runs (id, task_id, agent, started_at, ended_at, status, pid, transcript_path, stderr_path, error_message, metadata)
-       VALUES (?, NULL, 'tx-implementer', ?, ?, 'failed', NULL, ?, ?, ?, '{}')`
-    ).run(runId, now, now, transcriptPath, stderrPath, "direct run failed")
-
-    db.prepare(
-      `INSERT INTO events (timestamp, event_type, run_id, task_id, agent, content, metadata, duration_ms)
-       VALUES (?, 'span', ?, NULL, 'tx-implementer', 'DirectTransport.getRun', ?, 17)`
-    ).run(now, runId, JSON.stringify({ status: "error", error: "span exploded" }))
-
-    const tx = new TxClient({ dbPath })
-
-    const list = await tx.runs.list({ status: "failed", limit: 10 })
-    expect(list.runs.some((run) => run.id === runId)).toBe(true)
-
-    const detail = await tx.runs.get(runId)
-    expect(detail.run.id).toBe(runId)
-    expect(detail.messages.some((message) => message.type === "tool_use")).toBe(true)
-    expect(detail.logs.stderr).toContain("stderr line 1")
-
-    const transcript = await tx.runs.transcript(runId)
-    expect(transcript.some((message) => message.type === "tool_result" && message.toolName === "Read")).toBe(true)
-
-    const stderr = await tx.runs.stderr(runId, { tail: 1 })
-    expect(stderr.content.trim()).toBe("stderr line 2")
-    expect(stderr.truncated).toBe(true)
-
-    const errors = await tx.runs.errors({ hours: 24, limit: 10 })
-    expect(errors.some((entry) => entry.source === "run" && entry.runId === runId && entry.error === "direct run failed")).toBe(true)
-    expect(errors.some((entry) => entry.source === "span" && entry.runId === runId && entry.error === "span exploded")).toBe(true)
+  it("counts task stats in direct mode without retired services", async () => {
+    const tx = new TxClient({ dbPath, contentRoot: tmpProjectDir })
+    try {
+      const task = await tx.tasks.create({ title: "Retained stats" })
+      expect(await tx.stats()).toEqual({tasks: 1, done: 0, ready: 1})
+      await tx.tasks.done(task.id)
+      expect(await tx.stats()).toEqual({tasks: 1, done: 1, ready: 0})
+    } finally { await tx.dispose() }
   })
+
 })

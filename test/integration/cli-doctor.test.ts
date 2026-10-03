@@ -1,3 +1,4 @@
+const normaliseTaskCommand = (args: string[]): string[] => /^(add|list|ready|show|update|done|reset|delete|bulk|label|dep|block|unblock|children|tree)$/.test(args[0] ?? "") ? ["task", ...(/^(block|unblock|children|tree)$/.test(args[0]) ? ["dep"] : []), ...args] : args
 /**
  * CLI integration tests for tx doctor command (consolidated validate + doctor)
  *
@@ -19,7 +20,6 @@ import { mkdtempSync, rmSync, existsSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { fixtureId, createMigratedSqliteDatabase } from "@jamesaphoenix/tx/testing"
-import type { SqliteDatabase as _SqliteDatabase } from "@jamesaphoenix/tx"
 
 const CLI_SRC = resolve(__dirname, "../../apps/cli/src/cli.ts")
 
@@ -63,20 +63,6 @@ async function insertTask(
     db.close()
   }
 }
-
-// Helper to insert a learning row directly into the DB
-async function insertLearning(dbPath: string, content: string): Promise<void> {
-  const db = await createMigratedSqliteDatabase(dbPath)
-  try {
-    const now = new Date().toISOString()
-    db.prepare(
-      `INSERT INTO learnings (content, source_type, source_ref, created_at)
-       VALUES (?, ?, ?, ?)`,
-    ).run(content, "manual", null, now)
-  } finally {
-    db.close()
-  }
-}
 const CLI_TIMEOUT = Number(process.env.CLI_TEST_TIMEOUT ?? (process.env.CI ? 60000 : 30000))
 
 interface ExecResult {
@@ -86,6 +72,8 @@ interface ExecResult {
 }
 
 function runTxArgs(args: string[], dbPath: string, env?: Record<string, string>): ExecResult {
+  args = normaliseTaskCommand(args)
+
   try {
     const result = spawnSync("bun", [CLI_SRC, ...args, "--db", dbPath], {
       encoding: "utf-8",
@@ -134,63 +122,44 @@ describe("CLI doctor command (consolidated validate + diagnostics)", () => {
 
   describe("basic success cases", () => {
     it("runs all checks and reports healthy", () => {
-      const result = runTx("doctor", dbPath)
+      const result = runTx("diag doctor", dbPath)
       expect(result.status).toBe(0)
       expect(result.stdout).toContain("All checks passed.")
     })
 
     it("shows check for database connection", () => {
-      const result = runTx("doctor", dbPath)
+      const result = runTx("diag doctor", dbPath)
       expect(result.status).toBe(0)
       expect(result.stdout).toContain("Database:")
     })
 
     it("shows WAL mode check", () => {
-      const result = runTx("doctor", dbPath)
+      const result = runTx("diag doctor", dbPath)
       expect(result.status).toBe(0)
       expect(result.stdout).toContain("WAL mode:")
     })
 
     it("shows schema version check", () => {
-      const result = runTx("doctor", dbPath)
+      const result = runTx("diag doctor", dbPath)
       expect(result.status).toBe(0)
       expect(result.stdout).toMatch(/Schema: v\d+/)
     })
 
     it("shows Effect services check", () => {
-      const result = runTx("doctor", dbPath)
+      const result = runTx("diag doctor", dbPath)
       expect(result.status).toBe(0)
       expect(result.stdout).toContain("Effect services: wired correctly")
     })
 
-    it("shows claims/workers check with no stale entries", () => {
-      const result = runTx("doctor", dbPath)
-      expect(result.status).toBe(0)
-      expect(result.stdout).toContain("Claims/workers: no stale entries")
-    })
-
     it("shows task counts", () => {
-      const result = runTx("doctor", dbPath)
+      const result = runTx("diag doctor", dbPath)
       expect(result.status).toBe(0)
       expect(result.stdout).toContain("Tasks:")
       expect(result.stdout).toContain("total")
     })
 
-    it("shows learning count", () => {
-      const result = runTx("doctor", dbPath)
-      expect(result.status).toBe(0)
-      expect(result.stdout).toContain("Learnings:")
-    })
-
-    it("shows ANTHROPIC_API_KEY status", () => {
-      // Run without ANTHROPIC_API_KEY
-      const result = runTxArgs(["doctor"], dbPath, { ANTHROPIC_API_KEY: "" })
-      expect(result.status).toBe(0)
-      expect(result.stdout).toContain("ANTHROPIC_API_KEY:")
-    })
-
     it("uses pass icon for passing checks", () => {
-      const result = runTx("doctor", dbPath)
+      const result = runTx("diag doctor", dbPath)
       expect(result.status).toBe(0)
       // \u2713 = check mark
       expect(result.stdout).toContain("\u2713")
@@ -202,7 +171,7 @@ describe("CLI doctor command (consolidated validate + diagnostics)", () => {
       await insertTask(dbPath, FX.TASK_1, "Task one")
       await insertTask(dbPath, FX.TASK_2, "Task two")
 
-      const result = runTx("doctor", dbPath)
+      const result = runTx("diag doctor", dbPath)
       expect(result.status).toBe(0)
       // Should show 2 total tasks
       expect(result.stdout).toMatch(/Tasks: 2 total/)
@@ -211,7 +180,7 @@ describe("CLI doctor command (consolidated validate + diagnostics)", () => {
     it("shows ready count for ready tasks", async () => {
       await insertTask(dbPath, FX.READY, "Ready task")
 
-      const result = runTx("doctor --json", dbPath)
+      const result = runTx("diag doctor --json", dbPath)
       expect(result.status).toBe(0)
 
       const json = JSON.parse(result.stdout)
@@ -219,40 +188,27 @@ describe("CLI doctor command (consolidated validate + diagnostics)", () => {
       expect(taskCheck).toBeDefined()
       expect(taskCheck.message).toContain("ready")
     })
-
-    it("shows learning count after adding learnings", async () => {
-      await insertLearning(dbPath, "Test learning for doctor")
-
-      const result = runTx("doctor --json", dbPath)
-      expect(result.status).toBe(0)
-
-      const json = JSON.parse(result.stdout)
-      const learningCheck = json.checks.find((c: { name: string }) => c.name === "learnings")
-      expect(learningCheck).toBeDefined()
-      expect(learningCheck.message).toContain("1 total")
-    })
   })
 
   describe("verbose mode", () => {
     it("shows additional details with --verbose", () => {
       // API key warning should have details in verbose mode
-      const result = runTxArgs(["doctor", "--verbose"], dbPath, { ANTHROPIC_API_KEY: "" })
+      const result = runTxArgs(["diag", "doctor", "--verbose"], dbPath, { ANTHROPIC_API_KEY: "" })
       expect(result.status).toBe(0)
       // Verbose details for missing API key
-      expect(result.stdout).toContain("Required for:")
     })
 
     it("shows verbose task breakdown", async () => {
       await insertTask(dbPath, FX.VERBOSE, "Verbose task")
 
-      const result = runTx("doctor --verbose", dbPath)
+      const result = runTx("diag doctor --verbose", dbPath)
       expect(result.status).toBe(0)
       // Verbose details show per-status breakdown
       expect(result.stdout).toMatch(/backlog: \d+/)
     })
 
     it("does not show details without --verbose", () => {
-      const result = runTxArgs(["doctor"], dbPath, { ANTHROPIC_API_KEY: "" })
+      const result = runTxArgs(["diag", "doctor"], dbPath, { ANTHROPIC_API_KEY: "" })
       expect(result.status).toBe(0)
       // Without verbose, details should not appear
       expect(result.stdout).not.toContain("Required for:")
@@ -261,7 +217,7 @@ describe("CLI doctor command (consolidated validate + diagnostics)", () => {
 
   describe("JSON output", () => {
     it("outputs valid JSON with --json flag", () => {
-      const result = runTx("doctor --json", dbPath)
+      const result = runTx("diag doctor --json", dbPath)
       expect(result.status).toBe(0)
 
       const json = JSON.parse(result.stdout)
@@ -270,7 +226,7 @@ describe("CLI doctor command (consolidated validate + diagnostics)", () => {
     })
 
     it("JSON healthy field is true when all checks pass", () => {
-      const result = runTx("doctor --json", dbPath)
+      const result = runTx("diag doctor --json", dbPath)
       expect(result.status).toBe(0)
 
       const json = JSON.parse(result.stdout)
@@ -278,7 +234,7 @@ describe("CLI doctor command (consolidated validate + diagnostics)", () => {
     })
 
     it("JSON checks array contains validation and diagnostic checks", () => {
-      const result = runTx("doctor --json", dbPath)
+      const result = runTx("diag doctor --json", dbPath)
       expect(result.status).toBe(0)
 
       const json = JSON.parse(result.stdout)
@@ -290,16 +246,14 @@ describe("CLI doctor command (consolidated validate + diagnostics)", () => {
       expect(checkNames).toContain("wal_mode")
       expect(checkNames).toContain("schema")
       expect(checkNames).toContain("services")
-      expect(checkNames).toContain("stale_claims")
       expect(checkNames).toContain("tasks")
-      expect(checkNames).toContain("learnings")
       // Validation checks (prefixed with validate_)
       const validateChecks = checkNames.filter((n: string) => n.startsWith("validate_"))
       expect(validateChecks.length).toBeGreaterThan(0)
     })
 
     it("JSON includes validation result object", () => {
-      const result = runTx("doctor --json", dbPath)
+      const result = runTx("diag doctor --json", dbPath)
       expect(result.status).toBe(0)
 
       const json = JSON.parse(result.stdout)
@@ -310,7 +264,7 @@ describe("CLI doctor command (consolidated validate + diagnostics)", () => {
     })
 
     it("JSON checks have correct structure", () => {
-      const result = runTx("doctor --json", dbPath)
+      const result = runTx("diag doctor --json", dbPath)
       expect(result.status).toBe(0)
 
       const json = JSON.parse(result.stdout)
@@ -321,43 +275,11 @@ describe("CLI doctor command (consolidated validate + diagnostics)", () => {
         expect(["pass", "warn", "fail"]).toContain(check.status)
       }
     })
-
-    it("JSON includes api_key check", () => {
-      const result = runTx("doctor --json", dbPath)
-      expect(result.status).toBe(0)
-
-      const json = JSON.parse(result.stdout)
-      const apiKeyCheck = json.checks.find((c: { name: string }) => c.name === "api_key")
-      expect(apiKeyCheck).toBeDefined()
-      expect(["pass", "warn"]).toContain(apiKeyCheck.status)
-    })
-  })
-
-  describe("ANTHROPIC_API_KEY detection", () => {
-    it("warns when ANTHROPIC_API_KEY is not set", () => {
-      const result = runTxArgs(["doctor", "--json"], dbPath, { ANTHROPIC_API_KEY: "" })
-      expect(result.status).toBe(0)
-
-      const json = JSON.parse(result.stdout)
-      const apiKeyCheck = json.checks.find((c: { name: string }) => c.name === "api_key")
-      expect(apiKeyCheck.status).toBe("warn")
-      expect(apiKeyCheck.message).toContain("not set")
-    })
-
-    it("passes when ANTHROPIC_API_KEY is set", () => {
-      const result = runTxArgs(["doctor", "--json"], dbPath, { ANTHROPIC_API_KEY: "sk-test-key" })
-      expect(result.status).toBe(0)
-
-      const json = JSON.parse(result.stdout)
-      const apiKeyCheck = json.checks.find((c: { name: string }) => c.name === "api_key")
-      expect(apiKeyCheck.status).toBe("pass")
-      expect(apiKeyCheck.message).toContain("set")
-    })
   })
 
   describe("schema check", () => {
     it("reports schema as current after init", () => {
-      const result = runTx("doctor --json", dbPath)
+      const result = runTx("diag doctor --json", dbPath)
       expect(result.status).toBe(0)
 
       const json = JSON.parse(result.stdout)
@@ -369,7 +291,7 @@ describe("CLI doctor command (consolidated validate + diagnostics)", () => {
 
   describe("exit codes", () => {
     it("exits 0 when all checks pass or warn", () => {
-      const result = runTx("doctor", dbPath)
+      const result = runTx("diag doctor", dbPath)
       // Warns are fine, only fails cause exit 1
       expect(result.status).toBe(0)
     })
@@ -377,25 +299,25 @@ describe("CLI doctor command (consolidated validate + diagnostics)", () => {
 
   describe("validation integration", () => {
     it("runs database validation checks alongside diagnostics", () => {
-      const result = runTx("doctor", dbPath)
+      const result = runTx("diag doctor", dbPath)
       expect(result.status).toBe(0)
       expect(result.stdout).toContain("Validate:")
     })
 
     it("human output shows header banner", () => {
-      const result = runTx("doctor", dbPath)
+      const result = runTx("diag doctor", dbPath)
       expect(result.status).toBe(0)
       expect(result.stdout).toContain("tx diag doctor - System Health")
       expect(result.stdout).toContain("========")
     })
 
     it("--fix flag is accepted without error", () => {
-      const result = runTx("doctor --fix", dbPath)
+      const result = runTx("diag doctor --fix", dbPath)
       expect(result.status).toBe(0)
     })
 
     it("--fix flag is reflected in JSON validation output", () => {
-      const result = runTx("doctor --fix --json", dbPath)
+      const result = runTx("diag doctor --fix --json", dbPath)
       expect(result.status).toBe(0)
       const json = JSON.parse(result.stdout)
       expect(json.validation).toBeDefined()
@@ -404,54 +326,29 @@ describe("CLI doctor command (consolidated validate + diagnostics)", () => {
     })
   })
 
-  describe("deprecated validate alias", () => {
-    it("tx validate shows deprecation warning and runs doctor", () => {
-      const result = runTx("validate", dbPath)
-      expect(result.status).toBe(0)
-      expect(result.stderr).toContain("[deprecated]")
-      expect(result.stderr).toContain("tx diag doctor")
-      // Still runs the full doctor output
-      expect(result.stdout).toContain("tx diag doctor - System Health")
-    })
-
-    it("tx validate --json still works through the alias", () => {
-      const result = runTx("validate --json", dbPath)
-      expect(result.status).toBe(0)
-      const json = JSON.parse(result.stdout)
-      expect(json).toHaveProperty("healthy")
-      expect(json).toHaveProperty("validation")
-    })
-
-    it("tx validate --fix still works through the alias", () => {
-      const result = runTx("validate --fix", dbPath)
-      expect(result.status).toBe(0)
-      expect(result.stderr).toContain("[deprecated]")
-    })
-  })
-
   describe("verbose message accuracy", () => {
     it("does not suggest --verbose when already verbose", () => {
       // With --verbose, should never say "Run with --verbose for details"
-      const result = runTxArgs(["doctor", "--verbose"], dbPath, { ANTHROPIC_API_KEY: "" })
+      const result = runTxArgs(["diag", "doctor", "--verbose"], dbPath, { ANTHROPIC_API_KEY: "" })
       expect(result.status).toBe(0)
       expect(result.stdout).not.toContain("Run with --verbose for details")
     })
   })
 
   describe("help", () => {
-    it("doctor --help shows consolidated help with --fix", () => {
-      const result = runTx("doctor --help", dbPath)
+    it("diag doctor --help shows consolidated help with --fix", () => {
+      const result = runTx("diag doctor --help", dbPath)
       expect(result.status).toBe(0)
-      expect(result.stdout).toContain("tx doctor")
+      expect(result.stdout).toContain("tx diag doctor")
       expect(result.stdout).toContain("--verbose")
       expect(result.stdout).toContain("--json")
       expect(result.stdout).toContain("--fix")
     })
 
-    it("help doctor shows help", () => {
-      const result = runTxArgs(["help", "doctor"], dbPath)
+    it("help diag doctor shows help", () => {
+      const result = runTxArgs(["help", "diag", "doctor"], dbPath)
       expect(result.status).toBe(0)
-      expect(result.stdout).toContain("tx doctor")
+      expect(result.stdout).toContain("tx diag doctor")
     })
   })
 })

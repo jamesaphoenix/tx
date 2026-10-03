@@ -48,6 +48,7 @@ describe("resolveSpecTypes", () => {
       "decision",
       "design",
       "overview",
+      "plan",
       "prd",
       "requirement",
       "runbook",

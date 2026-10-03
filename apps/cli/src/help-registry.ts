@@ -1,19 +1,9 @@
 import { HELP_TEXT, commandHelp } from "./help.js"
 import { CliUserError, usageError } from "./cli-errors.js"
 
-export const compoundHelpParents = [
-  "dep", "msg", "diag", "auto",
-  "sync", "trace", "bulk", "doc", "spec", "memory", "utils", "pin", "skills",
-  "guard", "gate", "verify", "label", "claim", "outbox", "group-context", "ack",
-] as const
+export const compoundHelpParents = ["task", "task dep", "task bulk", "task label", "diag", "sync", "doc", "spec", "decision", "skills"] as const
 
-export const deprecatedCommandMap: Record<string, string> = {
-  block: "dep block", unblock: "dep unblock", children: "dep children", tree: "dep tree",
-  send: "msg send", inbox: "msg inbox", ack: "msg ack", outbox: "msg pending|gc",
-  stats: "diag stats", doctor: "diag doctor", validate: "diag doctor", dashboard: "diag dashboard",
-  compact: "sync compact", history: "sync history", migrate: "sync migrate",
-  guard: "auto guard", gate: "auto gate", verify: "auto verify", label: "auto label", reflect: "auto reflect",
-}
+export const deprecatedCommandMap: Record<string, string> = {}
 
 export type ParsedCliArgument = {
   name: string
@@ -251,12 +241,9 @@ function isRootCatalogEntry(entry: CommandCatalogEntry): boolean {
 
 export function resolveCommandKey(parts: string[]): string | null {
   if (parts.length === 0) return null
-  const compoundKey = parts.length >= 2 ? `${parts[0]} ${parts[1]}` : null
-  if (compoundKey && commandHelp[compoundKey]) {
-    return compoundKey
-  }
-  if (commandHelp[parts[0]]) {
-    return parts[0]
+  for (let length = parts.length; length > 0; length--) {
+    const key = parts.slice(0, length).join(" ")
+    if (commandHelp[key]) return key
   }
   return null
 }
@@ -307,7 +294,7 @@ export function buildCommandCatalog(): CommandCatalogEntry[] {
       summary: schema.summary,
       aliases: schema.aliases,
       deprecatedTo: schema.deprecatedTo,
-      parent: segments.length > 1 ? segments[0] : undefined,
+      parent: segments.length > 1 ? segments.slice(0, -1).join(" ") : undefined,
       subcommands: keys.filter((candidate) => candidate.startsWith(`${key} `)),
     }
   })

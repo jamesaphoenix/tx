@@ -1,0 +1,18 @@
+---
+title: Interfaces
+description: CLI, dashboard, REST, MCP and TypeScript
+---
+
+Install `@jamesaphoenix/tx-cli` for `tx`, `tx-api` and `tx-mcp`.
+The dashboard is available from the source checkout with
+`bun run --cwd apps/dashboard dev:all`. Use it for tasks, docs, Spec Health and cycles.
+
+```typescript
+import { TxClient } from "@jamesaphoenix/tx-agent-sdk"
+const client = new TxClient({ apiUrl: "http://localhost:3456" })
+const ready = await client.tasks.ready()
+const health = await client.spec.health()
+```
+
+Use `tx-api --help` and `tx-mcp --help` for startup options.
+Direct SDK mode accepts stateRoot and contentRoot for shared-state worktrees.

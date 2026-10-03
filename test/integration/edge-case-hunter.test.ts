@@ -1,3 +1,4 @@
+import { makeMinimalLayerFromInfra } from "@jamesaphoenix/tx"
 /**
  * Edge Case Hunter Integration Tests
  *
@@ -21,30 +22,15 @@ import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx/testing
 import { seedFixtures, FIXTURES, fixtureId } from "../fixtures.js"
 import {
   SqliteClient,
-  TaskRepositoryLive,
-  DependencyRepositoryLive,
-  TaskServiceLive,
   TaskService,
-  DependencyServiceLive,
   DependencyService,
-  ReadyServiceLive,
   ReadyService,
-  HierarchyServiceLive,
   HierarchyService,
-  ScoreServiceLive,
   ScoreService,
-  AutoSyncServiceNoop,
-  GuardRepositoryLive,
-  PinRepositoryLive,
-  ClaimRepositoryLive,
-  ClaimServiceLive,
-  OrchestratorStateRepositoryLive
 } from "@jamesaphoenix/tx"
 import {
-  raceWorkers,
   stressLoad,
   doubleComplete,
-  delayedClaim
 } from "@jamesaphoenix/tx/testing"
 import type { TaskId } from "@jamesaphoenix/tx/types"
 
@@ -52,22 +38,7 @@ import type { TaskId } from "@jamesaphoenix/tx/types"
 // Test Layer Setup
 // =============================================================================
 
-function makeTestLayer(db: TestDatabase) {
-  const infra = Layer.succeed(SqliteClient, db.db as any)
-  const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive, GuardRepositoryLive,
-  PinRepositoryLive, ClaimRepositoryLive, OrchestratorStateRepositoryLive).pipe(
-    Layer.provide(infra)
-  )
-  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
-  const baseServices = Layer.mergeAll(TaskServiceLive, DependencyServiceLive, ReadyServiceLive, HierarchyServiceLive).pipe(
-    Layer.provide(Layer.mergeAll(repos, AutoSyncServiceNoop, claimService))
-  )
-  const scoreService = ScoreServiceLive.pipe(
-    Layer.provide(baseServices),
-    Layer.provide(repos)
-  )
-  return Layer.mergeAll(baseServices, scoreService)
-}
+function makeTestLayer(db: TestDatabase) { return makeMinimalLayerFromInfra(Layer.succeed(SqliteClient, db.db as any)) }
 
 
 // =============================================================================
@@ -909,8 +880,8 @@ describe("TaskService boundary conditions", () => {
     })
   })
 
-  describe("list and count edge cases", () => {
-    it("list returns empty array for impossible filter", async () => {
+  describe("task list and count edge cases", () => {
+    it("task list returns empty array for impossible filter", async () => {
       const tasks = await Effect.runPromise(
         Effect.gen(function* () {
           const svc = yield* TaskService
@@ -1054,52 +1025,6 @@ describe("Concurrent operations", () => {
 
   afterEach(async () => {
     await Effect.runPromise(db.close())
-  })
-
-  describe("race conditions in claiming", () => {
-    it("only one worker wins when racing for same task", async () => {
-      const result = await raceWorkers({
-        count: 5,
-        taskId: FIXTURES.TASK_JWT,
-        db
-      })
-
-      // Exactly one winner
-      expect(result.successfulClaims).toBe(1)
-      expect(result.winner).not.toBeNull()
-      expect(result.losers).toHaveLength(4)
-    })
-
-    it("handles delayed claim after fast claim", async () => {
-      // First worker claims immediately
-      const now = new Date()
-      const workerId = fixtureId("fast-worker")
-
-      db.run(
-        `INSERT INTO workers (id, name, hostname, pid, status, registered_at, last_heartbeat_at, capabilities, metadata)
-         VALUES (?, 'Fast Worker', 'test', ?, 'idle', ?, ?, '[]', '{}')`,
-        [workerId, process.pid, now.toISOString(), now.toISOString()]
-      )
-
-      const leaseExpiresAt = new Date(Date.now() + 30 * 60 * 1000)
-      db.run(
-        `INSERT INTO task_claims (task_id, worker_id, claimed_at, lease_expires_at, renewed_count, status)
-         VALUES (?, ?, ?, ?, 0, 'active')`,
-        [FIXTURES.TASK_JWT, workerId, now.toISOString(), leaseExpiresAt.toISOString()]
-      )
-
-      // Delayed claim should detect the race
-      const result = await delayedClaim({
-        taskId: FIXTURES.TASK_JWT,
-        workerId: fixtureId("slow-worker"),
-        db: db,
-        delayMs: 10,
-        checkRace: true
-      })
-
-      expect(result.claimed).toBe(false)
-      expect(result.claimedBy).toBe(workerId)
-    })
   })
 
   describe("double completion", () => {

@@ -69,4 +69,18 @@ describe("DocGraph", () => {
       expect(screen.getByText("No doc graph data")).toBeInTheDocument()
     })
   })
+  it("places plans between specs and tasks [INV-LEAN-005]", async () => {
+    server.use(http.get("/api/docs/graph", () => HttpResponse.json({nodes:[
+      {id:"doc:1",label:"Design spec",kind:"design"},
+      {id:"doc:2",label:"Saved plan",kind:"plan"},
+      {id:"task:1",label:"Task step",kind:"task"},
+    ],edges:[{source:"doc:1",target:"doc:2",type:"spec_to_plan"},{source:"doc:2",target:"task:1",type:"implements"}]})))
+    renderWithProviders(<DocGraph fullPage />)
+    const plan = await screen.findByText("Saved plan")
+    const y = (label: string) => Number(screen.getByText(label).getAttribute("y"))
+    expect(y("Design spec")).toBeLessThan(Number(plan.getAttribute("y")))
+    expect(Number(plan.getAttribute("y"))).toBeLessThan(y("Task step"))
+    expect(screen.getByText("Plan")).toBeInTheDocument()
+  })
+
 })

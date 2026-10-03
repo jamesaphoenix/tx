@@ -1,37 +1,16 @@
+import { makeMinimalLayerFromInfra } from "@jamesaphoenix/tx"
 import { describe, it, expect, beforeAll, afterEach, afterAll } from "vitest"
 import { Effect, Layer } from "effect"
 import { createSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx/testing"
 import { fixtureId } from "../fixtures.js"
 import {
   SqliteClient,
-  TaskRepositoryLive,
-  DependencyRepositoryLive,
-  TaskServiceLive,
-  DependencyServiceLive,
-  ReadyServiceLive,
-  HierarchyServiceLive,
   HierarchyService,
-  AutoSyncServiceNoop,
-  GuardRepositoryLive,
-  PinRepositoryLive,
-  ClaimRepositoryLive,
-  ClaimServiceLive,
-  OrchestratorStateRepositoryLive,
 } from "@jamesaphoenix/tx"
 import type { TaskId } from "@jamesaphoenix/tx/types"
 import type { Database } from "bun:sqlite"
 
-function makeTestLayer(db: Database) {
-  const infra = Layer.succeed(SqliteClient, db as any)
-  const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive, GuardRepositoryLive,
-  PinRepositoryLive, ClaimRepositoryLive, OrchestratorStateRepositoryLive).pipe(
-    Layer.provide(infra)
-  )
-  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
-  return Layer.mergeAll(TaskServiceLive, DependencyServiceLive, ReadyServiceLive, HierarchyServiceLive).pipe(
-    Layer.provide(Layer.mergeAll(repos, AutoSyncServiceNoop, claimService))
-  )
-}
+function makeTestLayer(db: Database) { return makeMinimalLayerFromInfra(Layer.succeed(SqliteClient, db as any)) }
 
 // Helper to insert a raw task row via SQL (bypasses service validation)
 function insertRawTask(

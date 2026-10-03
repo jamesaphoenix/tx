@@ -1,22 +1,17 @@
 import { Context, Effect, Layer } from "effect"
 import { TaskRepository } from "../repo/task-repo.js"
 import { DependencyRepository } from "../repo/dep-repo.js"
-import { GuardRepository } from "../repo/guard-repo.js"
-import { PinRepository } from "../repo/pin-repo.js"
-import { ClaimRepository } from "../repo/claim-repo.js"
-import { AttemptRepository } from "../repo/attempt-repo.js"
 import { DocRepository } from "../repo/doc-repo.js"
-import { TaskNotFoundError, ValidationError, DatabaseError, GuardExceededError, StaleDataError, HasChildrenError } from "../errors.js"
+import { TaskNotFoundError, ValidationError, DatabaseError, StaleDataError, HasChildrenError } from "../errors.js"
 import { generateTaskId, isUniqueConstraintError } from "../id.js"
 import { isValidTransition, isValidStatus } from "../mappers/task.js"
-import { readTxConfig } from "../utils/toml-config.js"
-import { CASCADE_MAX_DEPTH, autoCompleteParent, checkGuards, enrichWithDeps, enrichWithDepsBatch, listGateTaskLinks } from "./task-service/internals.js"
+import { CASCADE_MAX_DEPTH, autoCompleteParent, enrichWithDeps, enrichWithDepsBatch } from "./task-service/internals.js"
 import type { Task, TaskId, TaskStatus, TaskWithDeps, TaskFilter, CreateTaskInput, UpdateTaskInput, TaskAssigneeType } from "../types/index.js"
 
 export class TaskService extends Context.Tag("TaskService")<
   TaskService,
   {
-    readonly create: (input: CreateTaskInput) => Effect.Effect<Task, ValidationError | DatabaseError | GuardExceededError>
+    readonly create: (input: CreateTaskInput) => Effect.Effect<Task, ValidationError | DatabaseError>
     readonly get: (id: TaskId) => Effect.Effect<Task, TaskNotFoundError | DatabaseError>
     readonly getWithDeps: (id: TaskId) => Effect.Effect<TaskWithDeps, TaskNotFoundError | DatabaseError>
     readonly getWithDepsBatch: (ids: readonly TaskId[]) => Effect.Effect<readonly TaskWithDeps[], DatabaseError>
@@ -25,11 +20,6 @@ export class TaskService extends Context.Tag("TaskService")<
       input: UpdateTaskInput,
       options?: { actor?: "agent" | "human" }
     ) => Effect.Effect<Task, TaskNotFoundError | ValidationError | DatabaseError | StaleDataError>
-    readonly setGroupContext: (
-      id: TaskId,
-      context: string
-    ) => Effect.Effect<TaskWithDeps, TaskNotFoundError | ValidationError | DatabaseError>
-    readonly clearGroupContext: (id: TaskId) => Effect.Effect<TaskWithDeps, TaskNotFoundError | DatabaseError>
     readonly forceStatus: (id: TaskId, status: TaskStatus) => Effect.Effect<Task, TaskNotFoundError | ValidationError | DatabaseError | StaleDataError>
     readonly remove: (id: TaskId, options?: { cascade?: boolean }) => Effect.Effect<void, TaskNotFoundError | HasChildrenError | DatabaseError>
     readonly list: (filter?: TaskFilter) => Effect.Effect<readonly Task[], DatabaseError>
@@ -61,23 +51,15 @@ const isValidAssigneeType = (
 ): assigneeType is TaskAssigneeType | null =>
   assigneeType === undefined || assigneeType === null || assigneeType === "human" || assigneeType === "agent"
 
-const GROUP_CONTEXT_MAX_CHARS = 20_000
 
 export const TaskServiceLive = Layer.effect(
   TaskService,
   Effect.gen(function* () {
     const taskRepo = yield* TaskRepository
     const depRepo = yield* DependencyRepository
-    const guardRepo = yield* GuardRepository
-    const pinRepo = yield* PinRepository
-    const claimRepoOption = yield* Effect.serviceOption(ClaimRepository)
-    const attemptRepoOption = yield* Effect.serviceOption(AttemptRepository)
     const docRepoOption = yield* Effect.serviceOption(DocRepository)
-    const claimRepo = claimRepoOption._tag === "Some" ? claimRepoOption.value : undefined
-    const attemptRepo = attemptRepoOption._tag === "Some" ? attemptRepoOption.value : undefined
     const docRepo = docRepoOption._tag === "Some" ? docRepoOption.value : undefined
-    const config = readTxConfig()
-    const enrichDeps = { taskRepo, depRepo, claimRepo, attemptRepo, docRepo }
+    const enrichDeps = { taskRepo, depRepo, docRepo }
     const reconcileDependentStatuses = (blockerId: TaskId) =>
       Effect.gen(function* () {
         const blockedTaskIds = yield* depRepo.getBlockingIds(blockerId)
@@ -117,8 +99,6 @@ export const TaskServiceLive = Layer.effect(
             }
           }
 
-          // Guard check: enforce task creation limits, collect advisory warnings
-          const guardWarnings = yield* checkGuards(guardRepo, config, input.parentId ?? null)
 
           const assigneeType = input.assigneeType ?? null
           const assigneeId = assigneeType === null ? null : (input.assigneeId ?? null)
@@ -140,9 +120,7 @@ export const TaskServiceLive = Layer.effect(
             assigneeId,
             assignedAt,
             assignedBy,
-            metadata: guardWarnings.length > 0
-              ? { ...(input.metadata ?? {}), _guardWarnings: guardWarnings }
-              : input.metadata ?? {}
+            metadata: input.metadata ?? {}
           })
 
           // Retry up to 3 times on ID collision (UNIQUE constraint)
@@ -252,14 +230,6 @@ export const TaskServiceLive = Layer.effect(
           const now = new Date()
           const actor = options?.actor ?? "agent"
           const isDone = input.status === "done" && existing.status !== "done"
-          const shouldBlockAgentDoneForPinnedTasks =
-            isDone &&
-            actor === "agent" &&
-            config.pins.blockAgentDoneWhenTaskIdPresent
-          const linkedGatePins = shouldBlockAgentDoneForPinnedTasks
-            ? yield* listGateTaskLinks(pinRepo)
-            : new Map<TaskId, readonly string[]>()
-
           if (isDone && actor === "agent") {
             const childIds = yield* taskRepo.getChildIds(id)
             if (childIds.length > 0) {
@@ -276,14 +246,6 @@ export const TaskServiceLive = Layer.effect(
             }
           }
 
-          if (shouldBlockAgentDoneForPinnedTasks) {
-            const blockingGateIds = linkedGatePins.get(id)
-            if (blockingGateIds && blockingGateIds.length > 0) {
-              return yield* Effect.fail(new ValidationError({
-                reason: `Agent cannot mark task ${id} done because it is linked by gate pin(s): ${blockingGateIds.join(", ")}`
-              }))
-            }
-          }
 
           const assigneeTypeChanged =
             input.assigneeType !== undefined && input.assigneeType !== existing.assigneeType
@@ -326,47 +288,10 @@ export const TaskServiceLive = Layer.effect(
 
           // Auto-complete parent if all children are done
           if (isDone && updated.parentId) {
-            yield* autoCompleteParent(taskRepo, updated.parentId, now, {
-              blockedTaskIds: shouldBlockAgentDoneForPinnedTasks
-                ? new Set(linkedGatePins.keys())
-                : undefined
-            })
+            yield* autoCompleteParent(taskRepo, updated.parentId, now)
           }
 
           return updated
-        }),
-
-      setGroupContext: (id, context) =>
-        Effect.gen(function* () {
-          const sanitized = stripNullBytes(context)
-          const normalized = trimVisible(sanitized)
-          if (!hasVisibleContent(sanitized)) {
-            return yield* Effect.fail(new ValidationError({
-              reason: "Group context is required"
-            }))
-          }
-          if (normalized.length > GROUP_CONTEXT_MAX_CHARS) {
-            return yield* Effect.fail(new ValidationError({
-              reason: `Group context must be at most ${GROUP_CONTEXT_MAX_CHARS} characters`
-            }))
-          }
-
-          yield* taskRepo.setGroupContext(id, normalized)
-          const task = yield* taskRepo.findById(id)
-          if (!task) {
-            return yield* Effect.fail(new TaskNotFoundError({ id }))
-          }
-          return yield* enrichWithDeps(enrichDeps, task)
-        }),
-
-      clearGroupContext: (id) =>
-        Effect.gen(function* () {
-          yield* taskRepo.clearGroupContext(id)
-          const task = yield* taskRepo.findById(id)
-          if (!task) {
-            return yield* Effect.fail(new TaskNotFoundError({ id }))
-          }
-          return yield* enrichWithDeps(enrichDeps, task)
         }),
 
       forceStatus: (id, status) =>

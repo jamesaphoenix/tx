@@ -1,3 +1,4 @@
+import { getSpecHealth } from "@jamesaphoenix/tx"
 /**
  * Spec Traceability Route Handlers
  *
@@ -145,6 +146,7 @@ const parseBatchRows = (payload: {
 
 export const SpecTraceLive = HttpApiBuilder.group(TxApi, "spec", (handlers) =>
   handlers
+    .handle("specHealth", () => getSpecHealth().pipe(Effect.mapError(mapCoreError)))
     .handle("discoverSpec", ({ payload }) =>
       Effect.gen(function* () {
         const svc = yield* SpecTraceService

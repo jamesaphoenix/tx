@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
+import { assertTaskId } from "@jamesaphoenix/tx/types"
 import { Effect, Either } from "effect"
 import {
   mkdtempSync,
@@ -8,12 +9,11 @@ import {
   readdirSync,
   rmSync,
   writeFileSync,
-  symlinkSync,
 } from "node:fs"
 import { join, resolve } from "node:path"
 import { tmpdir } from "node:os"
 import { getSharedTestLayer, type SharedTestLayerResult, fixtureId } from "@jamesaphoenix/tx/testing"
-import { SyncService, SqliteClient, PinService } from "@jamesaphoenix/tx"
+import { SyncService, SqliteClient, TaskService, ReadyService } from "@jamesaphoenix/tx"
 
 const readJsonl = (path: string): any[] => {
   if (!existsSync(path)) return []
@@ -288,7 +288,7 @@ describe("Sync stream event logs", () => {
       return yield* sync.hydrate()
     }))
 
-    expect(result.rebuilt).toBe(true)
+    expect(result.rebuilt).toBe(false)
     expect(result.appliedEvents).toBeGreaterThan(0)
     expect(await getTaskCount(taskId)).toBe(1)
   })
@@ -309,7 +309,7 @@ describe("Sync stream event logs", () => {
       const sync = yield* SyncService
       return yield* sync.hydrate()
     }))
-    expect(first.rebuilt).toBe(true)
+    expect(first.rebuilt).toBe(false)
     expect(first.appliedEvents).toBeGreaterThan(0)
     expect(await getTaskCount(taskId)).toBe(1)
     const firstLastSeq = await getStreamLastSeq(exported.streamId)
@@ -318,83 +318,11 @@ describe("Sync stream event logs", () => {
       const sync = yield* SyncService
       return yield* sync.hydrate()
     }))
-    expect(second.rebuilt).toBe(true)
+    expect(second.rebuilt).toBe(false)
     expect(second.appliedEvents).toBeGreaterThan(0)
     expect(await getTaskCount(taskId)).toBe(1)
     const secondLastSeq = await getStreamLastSeq(exported.streamId)
     expect(secondLastSeq).toBe(firstLastSeq)
-  })
-
-  it("gate pins are represented as pin.upsert events", async () => {
-    const gateJson = JSON.stringify({
-      approved: false,
-      phaseFrom: "docs_harden",
-      phaseTo: "feature_build",
-      required: true,
-      approvedBy: null,
-      approvedAt: null,
-      revokedBy: null,
-      revokedAt: null,
-      revokeReason: null,
-      note: null,
-      createdAt: new Date().toISOString(),
-    })
-
-    await run(Effect.gen(function* () {
-      const pins = yield* PinService
-      yield* pins.set("gate.docs-to-build", gateJson)
-      const sync = yield* SyncService
-      yield* sync.export()
-    }))
-
-    const stream = await run(Effect.gen(function* () {
-      const sync = yield* SyncService
-      return yield* sync.stream()
-    }))
-
-    const streamDir = resolve(".tx", "streams", stream.streamId)
-    const files = readdirSync(streamDir).filter(f => f.endsWith(".jsonl"))
-    const events = files.flatMap(f => readJsonl(resolve(streamDir, f)))
-
-    const gateEvent = events.find(ev => ev.type === "pin.upsert" && ev.entity_id === "gate.docs-to-build")
-    expect(gateEvent).toBeDefined()
-  })
-
-  it("hydrate restores gate pin state from stream events", async () => {
-    const gateJson = JSON.stringify({
-      approved: true,
-      phaseFrom: "docs_harden",
-      phaseTo: "feature_build",
-      required: true,
-      approvedBy: "james",
-      approvedAt: "2026-03-05T12:30:00Z",
-      revokedBy: null,
-      revokedAt: null,
-      revokeReason: null,
-      note: "approved to proceed",
-      createdAt: "2026-03-05T12:00:00Z",
-    })
-
-    await run(Effect.gen(function* () {
-      const pins = yield* PinService
-      yield* pins.set("gate.docs-to-build", gateJson)
-      const sync = yield* SyncService
-      yield* sync.export()
-      yield* pins.remove("gate.docs-to-build")
-    }))
-
-    await run(Effect.gen(function* () {
-      const sync = yield* SyncService
-      yield* sync.hydrate()
-    }))
-
-    const restored = await run(Effect.gen(function* () {
-      const pins = yield* PinService
-      return yield* pins.get("gate.docs-to-build")
-    }))
-
-    expect(restored).not.toBeNull()
-    expect(restored?.content).toBe(gateJson)
   })
 
   it("hydrate updates known stream progress", async () => {
@@ -596,52 +524,6 @@ describe("Sync stream event logs", () => {
 
     expect(result._tag).toBe("Left")
     expect(await getStreamLastSeq(streamId)).toBeNull()
-  })
-
-  it("does not write imported pins to escaped symlink target files", async () => {
-    const outsideDir = mkdtempSync(join(tmpdir(), "tx-sync-stream-pin-outside-"))
-    const outsideTarget = join(outsideDir, "AGENTS.md")
-    writeFileSync(outsideTarget, "# outside baseline\n", "utf-8")
-
-    const symlinkDir = resolve(".tx", "escaped-targets")
-    symlinkSync(outsideDir, symlinkDir)
-
-    await run(Effect.gen(function* () {
-      const db = yield* SqliteClient
-      db.prepare(`
-        INSERT OR REPLACE INTO pin_config (key, value)
-        VALUES ('target_files', ?)
-      `).run(JSON.stringify([".tx/escaped-targets/AGENTS.md"]))
-    }))
-
-    const streamId = "01ARZ3NDEKTSV4RRFFQ69G5FD0"
-    writeStreamEvents(streamId, [{
-      event_id: "01ARZ3NDEKTSV4RRFFQ69G5FD1",
-      stream_id: streamId,
-      seq: 1,
-      ts: "2026-03-05T13:45:00Z",
-      type: "pin.upsert",
-      entity_id: "pin-outside-attempt",
-      v: 2,
-      payload: {
-        v: 1,
-        op: "pin_upsert",
-        ts: "2026-03-05T13:45:00Z",
-        id: "pin-outside-attempt",
-        contentHash: "pin-outside-attempt-hash",
-        data: { content: "malicious overwrite attempt" },
-      },
-    }])
-
-    const result = await run(Effect.gen(function* () {
-      const sync = yield* SyncService
-      return yield* sync.import()
-    }))
-
-    expect(result.appliedEvents).toBe(1)
-    expect(readFileSync(outsideTarget, "utf-8")).toBe("# outside baseline\n")
-
-    rmSync(outsideDir, { recursive: true, force: true })
   })
 
   it("fails import on malformed JSONL event lines and leaves progress unchanged", async () => {
@@ -929,49 +811,58 @@ describe("Sync stream event logs", () => {
     }))
     expect(count).toBe(1)
   })
+  it("ignores valid retired records, counts them and preserves dormant rows [INV-LEAN-003] [INV-REQ-LEAN-003]", async () => {
+    const taskId = await insertTask("dormant-claim");
+    await run(Effect.gen(function* () {
+      const db = yield* SqliteClient;
+      db.exec("INSERT INTO context_pins (id,content) VALUES ('old-pin','historical'); INSERT INTO task_guards(scope,max_pending,enforce) VALUES('global',0,1); INSERT INTO workers(id,name,hostname,pid,status) VALUES('old-worker','Historical','localhost',1,'busy')");
+      db.prepare("INSERT INTO task_claims(task_id,worker_id,lease_expires_at) VALUES (?, 'old-worker', '2099-01-01')").run(taskId);
+      db.exec("INSERT INTO cycles(id,name,start_date,end_date) VALUES('old-cycle','Planning','2026-01-01','2026-12-31')");
+      db.prepare("INSERT INTO cycle_tasks(cycle_id,task_id) VALUES('old-cycle',?)").run(taskId);
+    }));
+    const streamId = "01ARZ3NDEKTSV4RRFFQ69G5FB2";
+    writeStreamEvents(streamId, [{event_id:"01ARZ3NDEKTSV4RRFFQ69G5FB3",stream_id:streamId,seq:1,ts:"2026-03-05T12:30:00Z",type:"pin.upsert",entity_id:"old-pin",v:2,payload:{v:1,op:"pin_upsert",ts:"2026-03-05T12:30:00Z",id:"old-pin",contentHash:"old-pin",data:{content:"must not project"}}}]);
+    const result = await run(Effect.gen(function* () { const sync = yield* SyncService; return yield* sync.hydrate(); }));
+    expect(result).toMatchObject({importedEvents:1,appliedEvents:0,ignoredEvents:1,rebuilt:false});
+    expect(await getStreamLastSeq(streamId)).toBe(1);
+    await run(Effect.gen(function* () {
+      const ready = yield* ReadyService;
+      expect((yield* ready.getReady(100)).some(t => t.id === taskId)).toBe(true);
+      const tasks = yield* TaskService;
+      const created = yield* tasks.create({title:"Guards are dormant"});
+      expect(created.title).toBe("Guards are dormant");
+      const brandedTaskId = assertTaskId(taskId);
+      yield* tasks.update(brandedTaskId,{status:"done"});
+      const db = yield* SqliteClient;
+      expect(db.prepare("SELECT content FROM context_pins WHERE id='old-pin'").get()).toEqual({content:"historical"});
+      for(const table of ["task_claims","workers","task_guards","cycles","cycle_tasks"]) expect((db.prepare("SELECT count(*) as c FROM " + table).get() as {c:number}).c).toBe(1);
+    }));
+    expect(readFileSync(resolve(".tx/streams",streamId,"events-2026-03-05.jsonl"),"utf8")).toContain("must not project");
+  });
 
-  it("exportLearnings/importLearnings round-trips >1000 learnings without truncation or duplicates", async () => {
-    const N = 1001
-    const path = resolve(".tx", "learnings-roundtrip.jsonl")
-    const result = await run(Effect.gen(function* () {
-      const db = yield* SqliteClient
-      // exportLearnings/importLearnings are internal SyncService methods (invoked
-      // by the public import()/hydrate() paths) and are not on the narrow public
-      // tag type, so cast to reach them directly for a focused round-trip test.
-      const sync = (yield* SyncService) as unknown as {
-        readonly exportLearnings: (path: string) => Effect.Effect<void, unknown, never>
-        readonly importLearnings: (path: string) => Effect.Effect<void, unknown, never>
-      }
+  it.each(["malformed", "unknown", "mismatch"])("rejects %s retired events without advancing progress [INV-LEAN-003] [INV-REQ-LEAN-003]", async mode => {
+    const streamId = "01ARZ3NDEKTSV4RRFFQ69G5FB2";
+    const event = {event_id:"01ARZ3NDEKTSV4RRFFQ69G5FB3",stream_id:streamId,seq:1,ts:"2026-03-05T12:30:00Z",type:"pin.upsert",entity_id:mode === "mismatch" ? "wrong" : "pin",v:2,payload:{v:1,op:mode === "unknown" ? "alien_upsert" : "pin_upsert",ts:"2026-03-05T12:30:00Z",id:"pin",contentHash:"pin",data:{content:mode === "malformed" ? 42 : "valid"}}};
+    writeStreamEvents(streamId,[event]);
+    const result = await run(Effect.gen(function* () { const sync = yield* SyncService; return yield* Effect.either(sync.import()); }));
+    expect(result._tag).toBe("Left");
+    expect(await getStreamLastSeq(streamId)).toBeNull();
+  });
 
-      const insert = db.prepare(
-        "INSERT INTO learnings (content, source_type, created_at) VALUES (?, 'manual', ?)"
-      )
-      const base = Date.UTC(2026, 0, 1, 0, 0, 0, 0)
-      db.exec("BEGIN")
-      for (let i = 0; i < N; i++) {
-        // Distinct content (distinct content hash) + strictly increasing
-        // created_at, so the 1001st row is exactly the one the old LIMIT-1000
-        // `findAll()` would exclude from both export and the dedup set.
-        insert.run(`roundtrip learning #${i}`, new Date(base + i * 1000).toISOString())
-      }
-      db.exec("COMMIT")
+  it.each(["import", "hydrate"] as const)("surfaces %s commit failures and rolls back progress [INV-LEAN-003] [INV-REQ-LEAN-003]", async method => {
+    const streamId = "01ARZ3NDEKTSV4RRFFQ69G5FB2", taskId=fixtureId("commit-failure");
+    writeStreamEvents(streamId,[{event_id:"01ARZ3NDEKTSV4RRFFQ69G5FB3",stream_id:streamId,seq:1,ts:"2026-03-05T12:30:00Z",type:"task.upsert",entity_id:taskId,v:2,payload:{v:1,op:"upsert",ts:"2026-03-05T12:30:00Z",id:taskId,data:{title:"Rollback",description:"",status:"backlog",score:100,parentId:null,metadata:{}}}}]);
+    await run(Effect.gen(function* () {const db=yield* SqliteClient; /* eslint-disable tx/no-inline-sql -- Deliberate deferred-constraint failure fixture, rolled back and removed below. */
+    db.exec("CREATE TABLE commit_probe(id INTEGER REFERENCES docs(id) DEFERRABLE INITIALLY DEFERRED); CREATE TRIGGER commit_probe_trigger AFTER INSERT ON sync_events BEGIN INSERT INTO commit_probe VALUES(999999999); END;");}));
+    try {
+      const result=await run(Effect.gen(function* () { const sync=yield* SyncService; return yield* Effect.either(sync[method]()); }));
+      expect(result._tag).toBe("Left");
+      expect(await getTaskCount(taskId)).toBe(0);
+      expect(await getStreamLastSeq(streamId)).toBeNull();
+    } finally {await run(Effect.gen(function* () {const db=yield* SqliteClient; db.exec("DROP TRIGGER commit_probe_trigger; DROP TABLE commit_probe;");}));}
+    /* eslint-enable tx/no-inline-sql */
+  });
 
-      const before = (db.prepare("SELECT COUNT(*) AS n FROM learnings").get() as { n: number }).n
-      yield* sync.exportLearnings(path)
-      const exportedLines = readJsonl(path).length
-      // Re-import into the SAME db; dedup must recognize all N -> no new rows.
-      yield* sync.importLearnings(path)
-      const after = (db.prepare("SELECT COUNT(*) AS n FROM learnings").get() as { n: number }).n
-      return { before, exportedLines, after }
-    }))
-
-    expect(result.before).toBe(N)
-    // Export must include every row (old code truncated at DEFAULT_QUERY_LIMIT=1000).
-    expect(result.exportedLines).toBe(N)
-    // Re-import must dedup every row (old code's 1000-capped dedup set re-inserted
-    // the rows beyond 1000, duplicating them on each sync).
-    expect(result.after).toBe(N)
-  })
 })
 
 describe("importTaskOps cycle detection", () => {
@@ -1057,4 +948,5 @@ describe("importTaskOps cycle detection", () => {
     // Valid hierarchy should succeed
     expect(Either.isRight(result)).toBe(true)
   })
+
 })

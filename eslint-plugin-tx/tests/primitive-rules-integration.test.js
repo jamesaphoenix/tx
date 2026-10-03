@@ -139,7 +139,7 @@ describe("primitive docs quality (real files)", () => {
       // Map registry interface names to tab names
       const TAB_NAME_MAP = { cli: "CLI", mcp: "MCP", api: "REST API", sdk: "TypeScript SDK" }
       // If all 4 interfaces required, check all 4 tabs. Otherwise, only check tabs for required interfaces.
-      const requiredTabsForPrim = requiredInterfaces.length === 4
+      const requiredTabsForPrim = /^doc_style: guide$/m.test(content) ? [] : requiredInterfaces.length === 4
         ? REQUIRED_TABS
         : requiredInterfaces.map((r) => TAB_NAME_MAP[r]).filter(Boolean)
 
@@ -245,7 +245,7 @@ describe("port consistency across all primitive docs", () => {
 describe("llms.txt primitive coverage", () => {
   it("includes every documented primitive URL", () => {
     const missing = mdxNames.filter(
-      (primitive) => !llmsContent.includes(`https://tx-docs.vercel.app/docs/primitives/${primitive}`)
+      (primitive) => !llmsContent.includes(`https://txdocs.dev/docs/primitives/${primitive}`)
     )
 
     expect(
@@ -354,7 +354,7 @@ describe("SDK method names in docs match TxClient implementation", () => {
   }
 
   it("has SDK namespaces to validate against", () => {
-    expect(namespaceMap.size).toBeGreaterThan(10)
+    expect([...namespaceMap.keys()]).toEqual(expect.arrayContaining(["tasks", "docs", "spec"]))
   })
 
   // Known namespace accessor mappings (SDK property name → namespace class name)

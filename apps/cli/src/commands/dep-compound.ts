@@ -1,5 +1,5 @@
 /**
- * Dependency compound command: tx dep <block|unblock|children|tree>
+ * Dependency compound command: tx task dep <block|unblock|children|tree>
  *
  * Groups dependency and hierarchy commands under a single namespace.
  */
@@ -16,14 +16,14 @@ export const dep = (pos: string[], flags: Flags) =>
     const sub = pos[0]
 
     if (!sub || sub === "help") {
-      console.log(commandHelp["dep"])
+      console.log(commandHelp["task dep"])
       return
     }
 
     // Check for --help on subcommand
     if (flag(flags, "help", "h")) {
       const helpKey = `dep ${sub}`
-      console.log(commandHelp[helpKey] ?? commandHelp["dep"])
+      console.log(commandHelp[helpKey] ?? commandHelp["task dep"])
       return
     }
 
@@ -35,10 +35,10 @@ export const dep = (pos: string[], flags: Flags) =>
     return yield* Effect.fail(unknownSubcommandError({
       command: "dep",
       subcommand: sub,
-      usage: "tx dep <block|unblock|children|tree>",
+      usage: "tx task dep <block|unblock|children|tree>",
       examples: [
-        "tx dep block tx-abc123 tx-def456",
-        "tx dep tree tx-abc123",
+        "tx task dep block tx-abc123 tx-def456",
+        "tx task dep tree tx-abc123",
       ],
     }))
   })

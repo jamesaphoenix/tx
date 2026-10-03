@@ -1,0 +1,22 @@
+---
+doc_style: guide
+title: Plans
+description: Spec -> plan -> tasks
+---
+
+Generate a plan using your normal coding agent. Save its content in a plan document:
+
+```bash
+tx doc add plan checkout-plan --title "Checkout plan"
+tx doc link checkout-design checkout-plan
+tx doc attach <task-id> checkout-plan
+```
+
+Copy the existing plan verbatim below the tx frontmatter, replacing the scaffold body.
+Keep the original file intact. When it lives elsewhere, add an adjacent
+`checkout-plan.source` symlink to its absolute path. The committed copy remains
+readable on another machine even if the source link is unavailable. Update the copy
+explicitly when revising the original, then run `tx doc sync checkout-plan`.
+
+Plans have no required section format. Requirements and invariants stay in the PRD
+and design documents. The `tx-plan` skill performs this small authoring workflow.

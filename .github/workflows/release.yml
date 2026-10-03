@@ -66,7 +66,7 @@ jobs:
           TX_CLI_VERSION: ${{ steps.version.outputs.value }}
           BUILD_ARTIFACT: ${{ matrix.artifact }}
           BUILD_TARGET: ${{ matrix.target }}
-        run: bun build ./src/cli.ts --compile --outfile "$BUILD_ARTIFACT" --target "$BUILD_TARGET" --minify --define "process.env.TX_CLI_VERSION='$TX_CLI_VERSION'" --external @anthropic-ai/sdk --external @anthropic-ai/claude-agent-sdk --external openai --external node-llama-cpp --external @node-llama-cpp/*
+        run: bun build ./src/cli.ts --compile --outfile "$BUILD_ARTIFACT" --target "$BUILD_TARGET" --minify --define "process.env.TX_CLI_VERSION='$TX_CLI_VERSION'"
 
       - name: Verify binary version
         working-directory: apps/cli

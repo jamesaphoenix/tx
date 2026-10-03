@@ -1,3 +1,4 @@
+const normaliseTaskCommand = (args: string[]): string[] => /^(add|list|ready|show|update|done|reset|delete|bulk|label|dep|block|unblock|children|tree)$/.test(args[0] ?? "") ? ["task", ...(/^(block|unblock|children|tree)$/.test(args[0]) ? ["dep"] : []), ...args] : args
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest"
 import { spawnSync, spawn, type ChildProcessByStdio } from "node:child_process"
 import { mkdtempSync, rmSync, existsSync } from "node:fs"
@@ -55,6 +56,8 @@ function getFreePort(): Promise<number> {
 }
 
 function runTx(args: string[], dbPath: string, cwd: string): ExecResult {
+  args = normaliseTaskCommand(args)
+
   const result = spawnSync("bun", [CLI_SRC, ...args, "--db", dbPath], {
     cwd,
     encoding: "utf-8",
@@ -163,28 +166,12 @@ describe("API task completion with gate-linked task pins", () => {
     }
   })
 
-  it("POST /api/tasks/:id/done rejects gate-linked tasks by default for agent callers", async () => {
-    const addTask = runTx(["add", "API done gate task", "--json"], dbPath, tmpProjectDir)
+  it("POST /api/tasks/:id/done completes tasks when x-tx-actor=human", async () => {
+    const addTask = runTx(["task", "add", "API human done gate task", "--json"], dbPath, tmpProjectDir)
     expect(addTask.status).toBe(0)
     const taskId = (JSON.parse(addTask.stdout) as { id: string }).id
 
-    expect(runTx(["update", taskId, "--status", "ready"], dbPath, tmpProjectDir).status).toBe(0)
-    expect(runTx(["gate", "create", "docs-to-build", "--task-id", taskId], dbPath, tmpProjectDir).status).toBe(0)
-
-    const response = await fetchWithTimeout(`${baseUrl}/api/tasks/${taskId}/done`, 5000, { method: "POST" })
-    expect(response.status).toBe(400)
-
-    const payload = await response.json() as { message: string }
-    expect(payload.message).toContain("linked by gate pin")
-  })
-
-  it("POST /api/tasks/:id/done completes gate-linked tasks when x-tx-actor=human", async () => {
-    const addTask = runTx(["add", "API human done gate task", "--json"], dbPath, tmpProjectDir)
-    expect(addTask.status).toBe(0)
-    const taskId = (JSON.parse(addTask.stdout) as { id: string }).id
-
-    expect(runTx(["update", taskId, "--status", "ready"], dbPath, tmpProjectDir).status).toBe(0)
-    expect(runTx(["gate", "create", "docs-to-build", "--task-id", taskId], dbPath, tmpProjectDir).status).toBe(0)
+    expect(runTx(["task", "update", taskId, "--status", "ready"], dbPath, tmpProjectDir).status).toBe(0)
 
     const response = await fetchWithTimeout(`${baseUrl}/api/tasks/${taskId}/done`, 5000, {
       method: "POST",
@@ -202,13 +189,12 @@ describe("API task completion with gate-linked task pins", () => {
     expect(Array.isArray(payload.nowReady)).toBe(true)
   })
 
-  it("PATCH /api/tasks/:id accepts status=done for gate-linked tasks when x-tx-actor=human", async () => {
-    const addTask = runTx(["add", "API patch gate task", "--json"], dbPath, tmpProjectDir)
+  it("PATCH /api/tasks/:id accepts status=done for tasks when x-tx-actor=human", async () => {
+    const addTask = runTx(["task", "add", "API patch gate task", "--json"], dbPath, tmpProjectDir)
     expect(addTask.status).toBe(0)
     const taskId = (JSON.parse(addTask.stdout) as { id: string }).id
 
-    expect(runTx(["update", taskId, "--status", "ready"], dbPath, tmpProjectDir).status).toBe(0)
-    expect(runTx(["gate", "create", "review-to-ship", "--task-id", taskId], dbPath, tmpProjectDir).status).toBe(0)
+    expect(runTx(["task", "update", taskId, "--status", "ready"], dbPath, tmpProjectDir).status).toBe(0)
 
     const response = await fetchWithTimeout(`${baseUrl}/api/tasks/${taskId}`, 5000, {
       method: "PATCH",

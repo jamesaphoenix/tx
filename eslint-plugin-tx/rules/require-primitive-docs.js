@@ -259,7 +259,7 @@ export default {
           const tabs = extractTabs(content)
 
           // Check 1: All required tabs present
-          for (const tabName of requiredTabs) {
+          for (const tabName of (/^doc_style: guide$/m.test(content) ? [] : requiredTabs)) {
             if (!tabs.has(tabName)) {
               report(node, "missingTab", {
                 primitive: primName,

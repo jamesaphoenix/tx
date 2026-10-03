@@ -1,3 +1,4 @@
+const normaliseTaskCommand = (args: string[]): string[] => /^(add|list|ready|show|update|done|reset|delete|bulk|label|dep|block|unblock|children|tree)$/.test(args[0] ?? "") ? ["task", ...(/^(block|unblock|children|tree)$/.test(args[0]) ? ["dep"] : []), ...args] : args
 /**
  * Integration tests for tx utils claude-usage and tx utils codex-usage.
  *
@@ -33,6 +34,8 @@ const hasClaudeCreds = (() => {
 const hasCodex = spawnSync("which", ["codex"], { encoding: "utf-8" }).status === 0
 
 function runTx(args: string[], env?: Record<string, string>): { stdout: string; stderr: string; status: number } {
+  args = normaliseTaskCommand(args)
+
   const result = spawnSync("bun", [CLI_SRC, ...args], {
     encoding: "utf-8",
     timeout: TIMEOUT,

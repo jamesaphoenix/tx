@@ -1,3 +1,5 @@
+const normaliseTaskCommand = (args: string[]): string[] => /^(add|list|ready|show|update|done|reset|delete|bulk|label|dep|block|unblock|children|tree)$/.test(args[0] ?? "") ? ["task", ...(/^(block|unblock|children|tree)$/.test(args[0]) ? ["dep"] : []), ...args] : args
+import { makeMinimalLayerFromInfra } from "@jamesaphoenix/tx"
 /**
  * Interface Parity Integration Tests
  *
@@ -24,31 +26,9 @@ import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx/testing
 import { seedFixtures, FIXTURES } from "../fixtures.js"
 import {
   SqliteClient,
-  TaskRepositoryLive,
-  DependencyRepositoryLive,
-  LearningRepositoryLive,
-  FileLearningRepositoryLive,
-  TaskServiceLive,
   TaskService,
-  DependencyServiceLive,
   DependencyService,
-  ReadyServiceLive,
   ReadyService,
-  HierarchyServiceLive,
-  LearningServiceLive,
-  FileLearningServiceLive,
-  EmbeddingServiceNoop,
-  AutoSyncServiceNoop,
-  QueryExpansionServiceNoop,
-  RerankerServiceNoop,
-  RetrieverServiceLive,
-  GuardRepositoryLive,
-  PinRepositoryLive,
-  DocRepositoryLive,
-  ClaimRepositoryLive,
-  ClaimServiceLive,
-  ClaimService,
-  OrchestratorStateRepositoryLive,
   deriveDocStableId
 } from "@jamesaphoenix/tx"
 import type { TaskId, TaskWithDeps } from "@jamesaphoenix/tx/types"
@@ -97,13 +77,6 @@ interface NormalizedTask {
   blocks: string[]
   children: string[]
   isReady: boolean
-  groupContext: string | null
-  effectiveGroupContext: string | null
-  effectiveGroupContextSourceTaskId: string | null
-  orchestrationStatus: string | null
-  claimedBy: string | null
-  claimExpiresAt: string | null
-  failedAttempts: number
   linkedDocs: Array<{
     docId: string
     name: string
@@ -168,6 +141,8 @@ function insertLinkedDoc(
 // =============================================================================
 
 function runTxArgs(args: string[], dbPath: string): CliExecResult {
+  args = normaliseTaskCommand(args)
+
   try {
     const result = spawnSync("bun", [CLI_SRC, ...args, "--db", dbPath], {
       encoding: "utf-8",
@@ -193,46 +168,9 @@ function runTxArgs(args: string[], dbPath: string): CliExecResult {
 // MCP Test Runtime Factory
 // =============================================================================
 
-type McpTestServices = TaskService | ReadyService | DependencyService | ClaimService
+type McpTestServices = TaskService | ReadyService | DependencyService
 
-function makeTestRuntime(db: TestDatabase): ManagedRuntime.ManagedRuntime<McpTestServices, any> {
-  const infra = Layer.succeed(SqliteClient, db.db as Database)
-
-  const repos = Layer.mergeAll(
-    TaskRepositoryLive,
-    DependencyRepositoryLive,
-    GuardRepositoryLive,
-    PinRepositoryLive,
-    DocRepositoryLive,
-    LearningRepositoryLive,
-    FileLearningRepositoryLive,
-    ClaimRepositoryLive,
-    OrchestratorStateRepositoryLive
-  ).pipe(
-    Layer.provide(infra)
-  )
-
-  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
-
-  const retrieverLayer = RetrieverServiceLive.pipe(
-    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop))
-  )
-
-  const appServices = Layer.mergeAll(
-    TaskServiceLive,
-    DependencyServiceLive,
-    ReadyServiceLive,
-    HierarchyServiceLive,
-    LearningServiceLive,
-    FileLearningServiceLive
-  ).pipe(
-    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, retrieverLayer, AutoSyncServiceNoop, claimService))
-  )
-
-  const services = Layer.mergeAll(appServices, claimService)
-
-  return ManagedRuntime.make(services)
-}
+function makeTestRuntime(db: TestDatabase): ManagedRuntime.ManagedRuntime<McpTestServices, any> { return ManagedRuntime.make(makeMinimalLayerFromInfra(Layer.succeed(SqliteClient, db.db as Database))) }
 
 // =============================================================================
 // MCP Tool Implementation (mirrors src/mcp/server.ts)
@@ -253,13 +191,6 @@ const serializeTask = (task: TaskWithDeps): Record<string, unknown> => ({
   blocks: task.blocks,
   children: task.children,
   isReady: task.isReady,
-  groupContext: task.groupContext,
-  effectiveGroupContext: task.effectiveGroupContext,
-  effectiveGroupContextSourceTaskId: task.effectiveGroupContextSourceTaskId,
-  orchestrationStatus: task.orchestrationStatus,
-  claimedBy: task.claimedBy,
-  claimExpiresAt: task.claimExpiresAt?.toISOString() ?? null,
-  failedAttempts: task.failedAttempts,
   linkedDocs: task.linkedDocs,
 })
 
@@ -382,13 +313,6 @@ interface ApiTaskWithDeps {
   blocks: string[]
   children: string[]
   isReady: boolean
-  groupContext: string | null
-  effectiveGroupContext: string | null
-  effectiveGroupContextSourceTaskId: string | null
-  orchestrationStatus: string | null
-  claimedBy: string | null
-  claimExpiresAt: string | null
-  failedAttempts: number
   linkedDocs: Array<{
     docId: string
     name: string
@@ -587,7 +511,6 @@ function createTestApiApp(db: TestDatabase) {
       const children = childrenMap.get(task.id) ?? []
       const allBlockersDone = blockedBy.every(id => statusMap.get(id) === "done")
       const isReady = workableStatuses.includes(task.status) && allBlockersDone
-      const effective = effectiveContextMap.get(task.id)
       const claim = claimsMap.get(task.id)
 
       // Derive orchestration status (mirrors core deriveOrchestrationStatus)
@@ -631,13 +554,9 @@ function createTestApiApp(db: TestDatabase) {
         blocks,
         children,
         isReady,
-        groupContext: directContextMap.get(task.id) ?? null,
-        effectiveGroupContext: effective?.context ?? null,
-        effectiveGroupContextSourceTaskId: effective?.sourceTaskId ?? null,
         orchestrationStatus,
         claimedBy,
         claimExpiresAt,
-        failedAttempts: 0,
         linkedDocs: linkedDocsMap.get(task.id) ?? [],
       }
     })
@@ -783,13 +702,6 @@ function normalizeTask(task: any): NormalizedTask {
     blocks: [...(task.blocks ?? [])].sort(),
     children: [...(task.children ?? [])].sort(),
     isReady: task.isReady,
-    groupContext: task.groupContext ?? null,
-    effectiveGroupContext: task.effectiveGroupContext ?? null,
-    effectiveGroupContextSourceTaskId: task.effectiveGroupContextSourceTaskId ?? null,
-    orchestrationStatus: task.orchestrationStatus ?? null,
-    claimedBy: task.claimedBy ?? null,
-    claimExpiresAt: task.claimExpiresAt ?? null,
-    failedAttempts: task.failedAttempts ?? 0,
     linkedDocs: [...(task.linkedDocs ?? [])]
       .map((doc: any) => ({
         docId: String(doc.docId),
@@ -824,15 +736,7 @@ function assertTasksEqual(label: string, t1: NormalizedTask, t2: NormalizedTask)
   expect(t1.blocks, `${label}: blocks`).toEqual(t2.blocks)
   expect(t1.children, `${label}: children`).toEqual(t2.children)
   expect(t1.isReady, `${label}: isReady`).toBe(t2.isReady)
-  expect(t1.groupContext, `${label}: groupContext`).toBe(t2.groupContext)
-  expect(t1.effectiveGroupContext, `${label}: effectiveGroupContext`).toBe(t2.effectiveGroupContext)
-  expect(t1.effectiveGroupContextSourceTaskId, `${label}: effectiveGroupContextSourceTaskId`).toBe(
-    t2.effectiveGroupContextSourceTaskId
-  )
-  expect(t1.orchestrationStatus, `${label}: orchestrationStatus`).toBe(t2.orchestrationStatus)
-  expect(t1.claimedBy, `${label}: claimedBy`).toBe(t2.claimedBy)
-  expect(t1.claimExpiresAt, `${label}: claimExpiresAt`).toBe(t2.claimExpiresAt)
-  expect(t1.failedAttempts, `${label}: failedAttempts`).toBe(t2.failedAttempts)
+
   expect(t1.linkedDocs, `${label}: linkedDocs`).toEqual(t2.linkedDocs)
 }
 
@@ -931,12 +835,12 @@ describe("Interface Parity", () => {
   // show / tx_show / GET /api/tasks/:id
   // ===========================================================================
 
-  describe("show / tx_show / GET /api/tasks/:id", () => {
+  describe("task show/ tx_show / GET /api/tasks/:id", () => {
     it("returns equivalent TaskWithDeps for a task without dependencies", async () => {
       const taskId = FIXTURES.TASK_JWT
 
       // CLI
-      const cliResult = runTxArgs(["show", taskId, "--json"], dbPath)
+      const cliResult = runTxArgs(["task", "show", taskId, "--json"], dbPath)
       expect(cliResult.status).toBe(0)
       const cliTask = JSON.parse(cliResult.stdout)
 
@@ -965,7 +869,7 @@ describe("Interface Parity", () => {
       const taskId = FIXTURES.TASK_BLOCKED
 
       // CLI
-      const cliResult = runTxArgs(["show", taskId, "--json"], dbPath)
+      const cliResult = runTxArgs(["task", "show", taskId, "--json"], dbPath)
       expect(cliResult.status).toBe(0)
       const cliTask = JSON.parse(cliResult.stdout)
 
@@ -999,7 +903,7 @@ describe("Interface Parity", () => {
       const taskId = FIXTURES.TASK_JWT  // Blocks TASK_BLOCKED
 
       // CLI
-      const cliResult = runTxArgs(["show", taskId, "--json"], dbPath)
+      const cliResult = runTxArgs(["task", "show", taskId, "--json"], dbPath)
       expect(cliResult.status).toBe(0)
       const cliTask = JSON.parse(cliResult.stdout)
 
@@ -1043,7 +947,7 @@ describe("Interface Parity", () => {
       cliDb.exec("PRAGMA wal_checkpoint(TRUNCATE)")
       cliDb.close()
 
-      const cliResult = runTxArgs(["show", taskId, "--json"], dbPath)
+      const cliResult = runTxArgs(["task", "show", taskId, "--json"], dbPath)
       expect(cliResult.status).toBe(0)
       const cliTask = JSON.parse(cliResult.stdout)
 
@@ -1072,7 +976,7 @@ describe("Interface Parity", () => {
       const taskId = FIXTURES.TASK_AUTH  // Has multiple children
 
       // CLI
-      const cliResult = runTxArgs(["show", taskId, "--json"], dbPath)
+      const cliResult = runTxArgs(["task", "show", taskId, "--json"], dbPath)
       expect(cliResult.status).toBe(0)
       const cliTask = JSON.parse(cliResult.stdout)
 
@@ -1100,314 +1004,6 @@ describe("Interface Parity", () => {
       assertTasksEqual("CLI vs MCP", cliNorm, mcpNorm)
       assertTasksEqual("MCP vs API", mcpNorm, apiNorm)
       assertTasksEqual("CLI vs API", cliNorm, apiNorm)
-    })
-
-    it("returns equivalent inherited group context fields", async () => {
-      const sourceTaskId = FIXTURES.TASK_AUTH
-      const targetTaskId = FIXTURES.TASK_LOGIN
-      const contextText = "Auth hierarchy rollout context"
-
-      const cliSet = runTxArgs(["group-context", "set", sourceTaskId, contextText, "--json"], dbPath)
-      expect(cliSet.status, `CLI group-context set failed: ${cliSet.stderr}`).toBe(0)
-
-      await runtime.runPromise(
-        Effect.gen(function* () {
-          const taskService = yield* TaskService
-          yield* taskService.setGroupContext(sourceTaskId as TaskId, contextText)
-        })
-      )
-
-      const cliResult = runTxArgs(["show", targetTaskId, "--json"], dbPath)
-      expect(cliResult.status).toBe(0)
-      const cliTask = JSON.parse(cliResult.stdout)
-
-      const mcpResult = await callMcpShow(runtime, targetTaskId)
-      expect(mcpResult.isError).toBeFalsy()
-      const mcpTask = JSON.parse(mcpResult.content[1].text)
-
-      const apiResponse = await apiApp.request(`/api/tasks/${targetTaskId}`)
-      expect(apiResponse.status).toBe(200)
-      const apiData = await apiResponse.json() as { task: ApiTaskWithDeps }
-      const apiTask = apiData.task
-
-      const cliNorm = normalizeTask(cliTask)
-      const mcpNorm = normalizeTask(mcpTask)
-      const apiNorm = normalizeTask(apiTask)
-
-      expect(cliNorm.groupContext).toBeNull()
-      expect(mcpNorm.groupContext).toBeNull()
-      expect(apiNorm.groupContext).toBeNull()
-
-      expect(cliNorm.effectiveGroupContext).toBe(contextText)
-      expect(mcpNorm.effectiveGroupContext).toBe(contextText)
-      expect(apiNorm.effectiveGroupContext).toBe(contextText)
-
-      expect(cliNorm.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
-      expect(mcpNorm.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
-      expect(apiNorm.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
-
-      assertTasksEqual("CLI vs MCP", cliNorm, mcpNorm)
-      assertTasksEqual("MCP vs API", mcpNorm, apiNorm)
-      assertTasksEqual("CLI vs API", cliNorm, apiNorm)
-    })
-
-    it("does not leak context to sibling tasks across interfaces", async () => {
-      const sourceTaskId = FIXTURES.TASK_LOGIN
-      const siblingTaskId = FIXTURES.TASK_JWT
-      const ancestorTaskId = FIXTURES.TASK_AUTH
-      const contextText = "Login-only context"
-
-      const cliSet = runTxArgs(["group-context", "set", sourceTaskId, contextText, "--json"], dbPath)
-      expect(cliSet.status, `CLI group-context set failed: ${cliSet.stderr}`).toBe(0)
-
-      await runtime.runPromise(
-        Effect.gen(function* () {
-          const taskService = yield* TaskService
-          yield* taskService.setGroupContext(sourceTaskId as TaskId, contextText)
-        })
-      )
-
-      const cliSibling = JSON.parse(runTxArgs(["show", siblingTaskId, "--json"], dbPath).stdout)
-      const mcpSiblingResult = await callMcpShow(runtime, siblingTaskId)
-      const mcpSibling = JSON.parse(mcpSiblingResult.content[1].text)
-      const apiSiblingResponse = await apiApp.request(`/api/tasks/${siblingTaskId}`)
-      const apiSiblingData = await apiSiblingResponse.json() as { task: ApiTaskWithDeps }
-
-      const cliSiblingNorm = normalizeTask(cliSibling)
-      const mcpSiblingNorm = normalizeTask(mcpSibling)
-      const apiSiblingNorm = normalizeTask(apiSiblingData.task)
-
-      expect(cliSiblingNorm.groupContext).toBeNull()
-      expect(mcpSiblingNorm.groupContext).toBeNull()
-      expect(apiSiblingNorm.groupContext).toBeNull()
-      expect(cliSiblingNorm.effectiveGroupContext).toBeNull()
-      expect(mcpSiblingNorm.effectiveGroupContext).toBeNull()
-      expect(apiSiblingNorm.effectiveGroupContext).toBeNull()
-      expect(cliSiblingNorm.effectiveGroupContextSourceTaskId).toBeNull()
-      expect(mcpSiblingNorm.effectiveGroupContextSourceTaskId).toBeNull()
-      expect(apiSiblingNorm.effectiveGroupContextSourceTaskId).toBeNull()
-
-      const cliAncestor = normalizeTask(JSON.parse(runTxArgs(["show", ancestorTaskId, "--json"], dbPath).stdout))
-      const mcpAncestor = normalizeTask(JSON.parse((await callMcpShow(runtime, ancestorTaskId)).content[1].text))
-      const apiAncestorResponse = await apiApp.request(`/api/tasks/${ancestorTaskId}`)
-      const apiAncestorData = await apiAncestorResponse.json() as { task: ApiTaskWithDeps }
-      const apiAncestor = normalizeTask(apiAncestorData.task)
-
-      expect(cliAncestor.effectiveGroupContext).toBe(contextText)
-      expect(mcpAncestor.effectiveGroupContext).toBe(contextText)
-      expect(apiAncestor.effectiveGroupContext).toBe(contextText)
-      expect(cliAncestor.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
-      expect(mcpAncestor.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
-      expect(apiAncestor.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
-
-      assertTasksEqual("sibling CLI vs MCP", cliSiblingNorm, mcpSiblingNorm)
-      assertTasksEqual("sibling MCP vs API", mcpSiblingNorm, apiSiblingNorm)
-    })
-
-    it("falls back to the next-best context source after clearing the current winner", async () => {
-      const sourceA = FIXTURES.TASK_LOGIN
-      const sourceB = FIXTURES.TASK_JWT
-      const targetTaskId = FIXTURES.TASK_AUTH
-      const contextA = "Fallback source A"
-      const contextB = "Fallback source B (newest)"
-
-      const cliSetA = runTxArgs(["group-context", "set", sourceA, contextA, "--json"], dbPath)
-      expect(cliSetA.status, `CLI group-context set A failed: ${cliSetA.stderr}`).toBe(0)
-      const cliSetB = runTxArgs(["group-context", "set", sourceB, contextB, "--json"], dbPath)
-      expect(cliSetB.status, `CLI group-context set B failed: ${cliSetB.stderr}`).toBe(0)
-
-      await runtime.runPromise(
-        Effect.gen(function* () {
-          const taskService = yield* TaskService
-          yield* taskService.setGroupContext(sourceA as TaskId, contextA)
-          yield* taskService.setGroupContext(sourceB as TaskId, contextB)
-        })
-      )
-
-      // Force deterministic recency ordering so sourceB is the current winner.
-      const olderUpdatedAt = "2026-01-01T00:00:01.000Z"
-      const newerUpdatedAt = "2026-01-01T00:00:02.000Z"
-      db.db.prepare("UPDATE tasks SET updated_at = ? WHERE id = ?").run(olderUpdatedAt, sourceA)
-      db.db.prepare("UPDATE tasks SET updated_at = ? WHERE id = ?").run(newerUpdatedAt, sourceB)
-      const cliDb = new Database(dbPath)
-      cliDb.prepare("UPDATE tasks SET updated_at = ? WHERE id = ?").run(olderUpdatedAt, sourceA)
-      cliDb.prepare("UPDATE tasks SET updated_at = ? WHERE id = ?").run(newerUpdatedAt, sourceB)
-      cliDb.exec("PRAGMA wal_checkpoint(TRUNCATE)")
-      cliDb.close()
-
-      const beforeClearCli = normalizeTask(JSON.parse(runTxArgs(["show", targetTaskId, "--json"], dbPath).stdout))
-      const beforeClearMcp = normalizeTask(JSON.parse((await callMcpShow(runtime, targetTaskId)).content[1].text))
-      const beforeClearApiResponse = await apiApp.request(`/api/tasks/${targetTaskId}`)
-      const beforeClearApiData = await beforeClearApiResponse.json() as { task: ApiTaskWithDeps }
-      const beforeClearApi = normalizeTask(beforeClearApiData.task)
-
-      expect(beforeClearCli.effectiveGroupContext).toBe(contextB)
-      expect(beforeClearMcp.effectiveGroupContext).toBe(contextB)
-      expect(beforeClearApi.effectiveGroupContext).toBe(contextB)
-      expect(beforeClearCli.effectiveGroupContextSourceTaskId).toBe(sourceB)
-      expect(beforeClearMcp.effectiveGroupContextSourceTaskId).toBe(sourceB)
-      expect(beforeClearApi.effectiveGroupContextSourceTaskId).toBe(sourceB)
-
-      const cliClearWinner = runTxArgs(["group-context", "clear", sourceB, "--json"], dbPath)
-      expect(cliClearWinner.status, `CLI group-context clear winner failed: ${cliClearWinner.stderr}`).toBe(0)
-
-      await runtime.runPromise(
-        Effect.gen(function* () {
-          const taskService = yield* TaskService
-          yield* taskService.clearGroupContext(sourceB as TaskId)
-        })
-      )
-
-      const afterClearCli = normalizeTask(JSON.parse(runTxArgs(["show", targetTaskId, "--json"], dbPath).stdout))
-      const afterClearMcp = normalizeTask(JSON.parse((await callMcpShow(runtime, targetTaskId)).content[1].text))
-      const afterClearApiResponse = await apiApp.request(`/api/tasks/${targetTaskId}`)
-      const afterClearApiData = await afterClearApiResponse.json() as { task: ApiTaskWithDeps }
-      const afterClearApi = normalizeTask(afterClearApiData.task)
-
-      expect(afterClearCli.effectiveGroupContext).toBe(contextA)
-      expect(afterClearMcp.effectiveGroupContext).toBe(contextA)
-      expect(afterClearApi.effectiveGroupContext).toBe(contextA)
-      expect(afterClearCli.effectiveGroupContextSourceTaskId).toBe(sourceA)
-      expect(afterClearMcp.effectiveGroupContextSourceTaskId).toBe(sourceA)
-      expect(afterClearApi.effectiveGroupContextSourceTaskId).toBe(sourceA)
-
-      assertTasksEqual("fallback CLI vs MCP", afterClearCli, afterClearMcp)
-      assertTasksEqual("fallback MCP vs API", afterClearMcp, afterClearApi)
-    })
-
-    it("applies lexicographic tie-break when distance and updated_at are equal", async () => {
-      const sourceA = FIXTURES.TASK_LOGIN
-      const sourceB = FIXTURES.TASK_JWT
-      const targetTaskId = FIXTURES.TASK_AUTH
-      const contextA = "Lexicographic source A"
-      const contextB = "Lexicographic source B"
-      const tieUpdatedAt = "2026-01-01T00:00:01.000Z"
-
-      const cliSetA = runTxArgs(["group-context", "set", sourceA, contextA, "--json"], dbPath)
-      expect(cliSetA.status, `CLI group-context set A failed: ${cliSetA.stderr}`).toBe(0)
-      const cliSetB = runTxArgs(["group-context", "set", sourceB, contextB, "--json"], dbPath)
-      expect(cliSetB.status, `CLI group-context set B failed: ${cliSetB.stderr}`).toBe(0)
-
-      await runtime.runPromise(
-        Effect.gen(function* () {
-          const taskService = yield* TaskService
-          yield* taskService.setGroupContext(sourceA as TaskId, contextA)
-          yield* taskService.setGroupContext(sourceB as TaskId, contextB)
-        })
-      )
-
-      // Force equal timestamps in both interface backends so ID ordering decides.
-      db.db.prepare("UPDATE tasks SET updated_at = ? WHERE id IN (?, ?)").run(
-        tieUpdatedAt,
-        sourceA,
-        sourceB
-      )
-
-      const cliDb = new Database(dbPath)
-      cliDb.prepare("UPDATE tasks SET updated_at = ? WHERE id IN (?, ?)").run(
-        tieUpdatedAt,
-        sourceA,
-        sourceB
-      )
-      cliDb.exec("PRAGMA wal_checkpoint(TRUNCATE)")
-      cliDb.close()
-
-      const expectedSource = [sourceA, sourceB].sort()[0]!
-      const expectedContext = expectedSource === sourceA ? contextA : contextB
-
-      const cliTask = normalizeTask(JSON.parse(runTxArgs(["show", targetTaskId, "--json"], dbPath).stdout))
-      const mcpTask = normalizeTask(JSON.parse((await callMcpShow(runtime, targetTaskId)).content[1].text))
-      const apiResponse = await apiApp.request(`/api/tasks/${targetTaskId}`)
-      const apiData = await apiResponse.json() as { task: ApiTaskWithDeps }
-      const apiTask = normalizeTask(apiData.task)
-
-      expect(cliTask.effectiveGroupContextSourceTaskId).toBe(expectedSource)
-      expect(mcpTask.effectiveGroupContextSourceTaskId).toBe(expectedSource)
-      expect(apiTask.effectiveGroupContextSourceTaskId).toBe(expectedSource)
-      expect(cliTask.effectiveGroupContext).toBe(expectedContext)
-      expect(mcpTask.effectiveGroupContext).toBe(expectedContext)
-      expect(apiTask.effectiveGroupContext).toBe(expectedContext)
-
-      assertTasksEqual("lexicographic CLI vs MCP", cliTask, mcpTask)
-      assertTasksEqual("lexicographic MCP vs API", mcpTask, apiTask)
-    })
-
-    it("API set/clear group-context endpoints maintain parity with CLI and MCP reads", async () => {
-      const sourceTaskId = FIXTURES.TASK_AUTH
-      const targetTaskId = FIXTURES.TASK_LOGIN
-      const contextText = "API endpoint parity context"
-
-      const setResponse = await apiApp.request(`/api/tasks/${sourceTaskId}/group-context`, {
-        method: "PUT",
-        headers: {
-          "content-type": "application/json"
-        },
-        body: JSON.stringify({ context: contextText })
-      })
-      expect(setResponse.status).toBe(200)
-      const setTask = normalizeTask(await setResponse.json() as ApiTaskWithDeps)
-      expect(setTask.groupContext).toBe(contextText)
-      expect(setTask.effectiveGroupContext).toBe(contextText)
-      expect(setTask.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
-
-      const cliSet = runTxArgs(["group-context", "set", sourceTaskId, contextText, "--json"], dbPath)
-      expect(cliSet.status, `CLI group-context set failed: ${cliSet.stderr}`).toBe(0)
-
-      const cliAfterSet = normalizeTask(JSON.parse(runTxArgs(["show", targetTaskId, "--json"], dbPath).stdout))
-      const mcpAfterSet = normalizeTask(JSON.parse((await callMcpShow(runtime, targetTaskId)).content[1].text))
-      const apiAfterSetResponse = await apiApp.request(`/api/tasks/${targetTaskId}`)
-      const apiAfterSetData = await apiAfterSetResponse.json() as { task: ApiTaskWithDeps }
-      const apiAfterSet = normalizeTask(apiAfterSetData.task)
-
-      expect(cliAfterSet.effectiveGroupContext).toBe(contextText)
-      expect(mcpAfterSet.effectiveGroupContext).toBe(contextText)
-      expect(apiAfterSet.effectiveGroupContext).toBe(contextText)
-      expect(cliAfterSet.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
-      expect(mcpAfterSet.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
-      expect(apiAfterSet.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
-
-      assertTasksEqual("after API set CLI vs MCP", cliAfterSet, mcpAfterSet)
-      assertTasksEqual("after API set MCP vs API", mcpAfterSet, apiAfterSet)
-
-      const clearResponse = await apiApp.request(`/api/tasks/${sourceTaskId}/group-context`, {
-        method: "DELETE"
-      })
-      expect(clearResponse.status).toBe(200)
-      const clearedTask = normalizeTask(await clearResponse.json() as ApiTaskWithDeps)
-      expect(clearedTask.groupContext).toBeNull()
-      expect(clearedTask.effectiveGroupContext).toBeNull()
-      expect(clearedTask.effectiveGroupContextSourceTaskId).toBeNull()
-
-      const cliClear = runTxArgs(["group-context", "clear", sourceTaskId, "--json"], dbPath)
-      expect(cliClear.status, `CLI group-context clear failed: ${cliClear.stderr}`).toBe(0)
-
-      const cliAfterClear = normalizeTask(JSON.parse(runTxArgs(["show", targetTaskId, "--json"], dbPath).stdout))
-      const mcpAfterClear = normalizeTask(JSON.parse((await callMcpShow(runtime, targetTaskId)).content[1].text))
-      const apiAfterClearResponse = await apiApp.request(`/api/tasks/${targetTaskId}`)
-      const apiAfterClearData = await apiAfterClearResponse.json() as { task: ApiTaskWithDeps }
-      const apiAfterClear = normalizeTask(apiAfterClearData.task)
-
-      expect(cliAfterClear.effectiveGroupContext).toBeNull()
-      expect(mcpAfterClear.effectiveGroupContext).toBeNull()
-      expect(apiAfterClear.effectiveGroupContext).toBeNull()
-      expect(cliAfterClear.effectiveGroupContextSourceTaskId).toBeNull()
-      expect(mcpAfterClear.effectiveGroupContextSourceTaskId).toBeNull()
-      expect(apiAfterClear.effectiveGroupContextSourceTaskId).toBeNull()
-
-      assertTasksEqual("after API clear CLI vs MCP", cliAfterClear, mcpAfterClear)
-      assertTasksEqual("after API clear MCP vs API", mcpAfterClear, apiAfterClear)
-    })
-
-    it("API set group-context endpoint rejects oversized payloads", async () => {
-      const response = await apiApp.request(`/api/tasks/${FIXTURES.TASK_AUTH}/group-context`, {
-        method: "PUT",
-        headers: {
-          "content-type": "application/json"
-        },
-        body: JSON.stringify({ context: "x".repeat(20001) })
-      })
-
-      expect(response.status).toBe(400)
     })
 
     it("API /api/tasks/:id uses one dependency snapshot query shape", async () => {
@@ -1438,81 +1034,16 @@ describe("Interface Parity", () => {
         prepareSpy.mockRestore()
       }
     })
-
-    it("returns equivalent orchestrationStatus when a task is claimed", async () => {
-      const taskId = FIXTURES.TASK_JWT
-      const workerId = "parity-worker-1"
-      const leaseMinutes = 30
-      const leaseExpiresAt = new Date(Date.now() + leaseMinutes * 60 * 1000)
-
-      // Insert worker + claim into MCP/API shared DB
-      db.db.prepare(
-        `INSERT OR IGNORE INTO workers (id, name, hostname, pid, status, registered_at, last_heartbeat_at)
-         VALUES (?, ?, 'localhost', 1, 'idle', datetime('now'), datetime('now'))`
-      ).run(workerId, workerId)
-
-      // Create claim via MCP runtime (exercises real ClaimService)
-      await runtime.runPromise(
-        Effect.gen(function* () {
-          const claimService = yield* ClaimService
-          yield* claimService.claim(taskId as TaskId, workerId, leaseMinutes)
-        })
-      )
-
-      // Create equivalent claim in CLI DB
-      const cliDb = new Database(dbPath)
-      cliDb.prepare(
-        `INSERT OR IGNORE INTO workers (id, name, hostname, pid, status, registered_at, last_heartbeat_at)
-         VALUES (?, ?, 'localhost', 1, 'idle', datetime('now'), datetime('now'))`
-      ).run(workerId, workerId)
-      cliDb.prepare(
-        `INSERT INTO task_claims (task_id, worker_id, claimed_at, lease_expires_at, renewed_count, status)
-         VALUES (?, ?, ?, ?, 0, 'active')`
-      ).run(taskId, workerId, new Date().toISOString(), leaseExpiresAt.toISOString())
-      cliDb.exec("PRAGMA wal_checkpoint(TRUNCATE)")
-      cliDb.close()
-
-      // CLI
-      const cliResult = runTxArgs(["show", taskId, "--json"], dbPath)
-      expect(cliResult.status, `CLI failed: ${cliResult.stderr}`).toBe(0)
-      const cliTask = JSON.parse(cliResult.stdout)
-
-      // MCP
-      const mcpResult = await callMcpShow(runtime, taskId)
-      expect(mcpResult.isError).toBeFalsy()
-      const mcpTask = JSON.parse(mcpResult.content[1].text)
-
-      // API
-      const apiResponse = await apiApp.request(`/api/tasks/${taskId}`)
-      expect(apiResponse.status).toBe(200)
-      const apiData = await apiResponse.json() as { task: ApiTaskWithDeps }
-      const apiTask = apiData.task
-
-      // All interfaces should report "claimed" orchestration status
-      expect(cliTask.orchestrationStatus, "CLI: orchestrationStatus").toBe("claimed")
-      expect(mcpTask.orchestrationStatus, "MCP: orchestrationStatus").toBe("claimed")
-      expect(apiTask.orchestrationStatus, "API: orchestrationStatus").toBe("claimed")
-
-      // All interfaces should report the correct worker
-      expect(cliTask.claimedBy, "CLI: claimedBy").toBe(workerId)
-      expect(mcpTask.claimedBy, "MCP: claimedBy").toBe(workerId)
-      expect(apiTask.claimedBy, "API: claimedBy").toBe(workerId)
-
-      // All interfaces should have non-null claimExpiresAt
-      expect(cliTask.claimExpiresAt, "CLI: claimExpiresAt").not.toBeNull()
-      expect(mcpTask.claimExpiresAt, "MCP: claimExpiresAt").not.toBeNull()
-      expect(apiTask.claimExpiresAt, "API: claimExpiresAt").not.toBeNull()
-    })
   })
 
   // ===========================================================================
   // ready / tx_ready / GET /api/tasks/ready
   // ===========================================================================
 
-  describe("ready / tx_ready / GET /api/tasks/ready", () => {
-    it("returns equivalent ready task lists", async () => {
+  describe("task ready/ tx_ready / GET /api/tasks/ready", () => {
+    it("returns equivalent ready task list s", async () => {
       // CLI
-      const cliResult = runTxArgs(["ready", "--json", "--limit", "100"], dbPath)
+      const cliResult = runTxArgs(["task", "ready", "--json", "--limit", "100"], dbPath)
       expect(cliResult.status).toBe(0)
       const cliTasks = JSON.parse(cliResult.stdout) as unknown[]
 
@@ -1548,7 +1079,7 @@ describe("Interface Parity", () => {
       assertTaskListsEqual("CLI vs API", cliNorm, apiNorm)
     })
 
-    it("returns equivalent linkedDocs in ready task lists", async () => {
+    it("returns equivalent linkedDocs in ready task list s", async () => {
       const expected = insertLinkedDoc(db.db, FIXTURES.TASK_JWT, {
         docId: "doc-555555555555",
         name: "ready-linked-design",
@@ -1563,7 +1094,7 @@ describe("Interface Parity", () => {
       cliDb.exec("PRAGMA wal_checkpoint(TRUNCATE)")
       cliDb.close()
 
-      const cliResult = runTxArgs(["ready", "--json", "--limit", "100"], dbPath)
+      const cliResult = runTxArgs(["task", "ready", "--json", "--limit", "100"], dbPath)
       expect(cliResult.status).toBe(0)
       const cliTasks = (JSON.parse(cliResult.stdout) as unknown[]).map(normalizeTask)
 
@@ -1593,7 +1124,7 @@ describe("Interface Parity", () => {
       const limit = 2
 
       // CLI
-      const cliResult = runTxArgs(["ready", "--json", "--limit", String(limit)], dbPath)
+      const cliResult = runTxArgs(["task", "ready", "--json", "--limit", String(limit)], dbPath)
       expect(cliResult.status, `CLI failed: stdout=${cliResult.stdout}, stderr=${cliResult.stderr}`).toBe(0)
       const cliTasks = JSON.parse(cliResult.stdout) as unknown[]
 
@@ -1621,49 +1152,6 @@ describe("Interface Parity", () => {
       assertTaskListsEqual("CLI vs MCP", cliNorm, mcpNorm)
       assertTaskListsEqual("MCP vs API", mcpNorm, apiNorm)
       assertTaskListsEqual("CLI vs API", cliNorm, apiNorm)
-    })
-
-    it("returns equivalent inherited group context fields in ready responses", async () => {
-      const sourceTaskId = FIXTURES.TASK_AUTH
-      const targetTaskId = FIXTURES.TASK_LOGIN
-      const contextText = "Ready inherited context parity"
-
-      const cliSet = runTxArgs(["group-context", "set", sourceTaskId, contextText, "--json"], dbPath)
-      expect(cliSet.status, `CLI group-context set failed: ${cliSet.stderr}`).toBe(0)
-
-      await runtime.runPromise(
-        Effect.gen(function* () {
-          const taskService = yield* TaskService
-          yield* taskService.setGroupContext(sourceTaskId as TaskId, contextText)
-        })
-      )
-
-      const cliTasks = (JSON.parse(runTxArgs(["ready", "--json", "--limit", "100"], dbPath).stdout) as unknown[]).map(normalizeTask)
-      const mcpTasks = (JSON.parse((await callMcpReady(runtime, 100)).content[1].text) as unknown[]).map(normalizeTask)
-      const apiReadyResponse = await apiApp.request("/api/tasks/ready?limit=100")
-      const apiReadyData = await apiReadyResponse.json() as { tasks: ApiTaskWithDeps[] }
-      const apiTasks = apiReadyData.tasks.map(normalizeTask)
-
-      const cliTarget = cliTasks.find(task => task.id === targetTaskId)
-      const mcpTarget = mcpTasks.find(task => task.id === targetTaskId)
-      const apiTarget = apiTasks.find(task => task.id === targetTaskId)
-
-      expect(cliTarget).toBeDefined()
-      expect(mcpTarget).toBeDefined()
-      expect(apiTarget).toBeDefined()
-
-      expect(cliTarget?.groupContext).toBeNull()
-      expect(mcpTarget?.groupContext).toBeNull()
-      expect(apiTarget?.groupContext).toBeNull()
-      expect(cliTarget?.effectiveGroupContext).toBe(contextText)
-      expect(mcpTarget?.effectiveGroupContext).toBe(contextText)
-      expect(apiTarget?.effectiveGroupContext).toBe(contextText)
-      expect(cliTarget?.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
-      expect(mcpTarget?.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
-      expect(apiTarget?.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
-
-      assertTasksEqual("ready inherited CLI vs MCP", cliTarget!, mcpTarget!)
-      assertTasksEqual("ready inherited MCP vs API", mcpTarget!, apiTarget!)
     })
 
     it("API /api/tasks/ready uses one dependency snapshot query shape", async () => {
@@ -1703,10 +1191,10 @@ describe("Interface Parity", () => {
   // list / tx_list / GET /api/tasks
   // ===========================================================================
 
-  describe("list / tx_list / GET /api/tasks", () => {
-    it("returns equivalent task lists", async () => {
+  describe("task list/ tx_list / GET /api/tasks", () => {
+    it("returns equivalent task list s", async () => {
       // CLI
-      const cliResult = runTxArgs(["list", "--json", "--limit", "100"], dbPath)
+      const cliResult = runTxArgs(["task", "list", "--json", "--limit", "100"], dbPath)
       expect(cliResult.status).toBe(0)
       const cliTasks = JSON.parse(cliResult.stdout) as unknown[]
 
@@ -1735,7 +1223,7 @@ describe("Interface Parity", () => {
       const status = "ready"
 
       // CLI
-      const cliResult = runTxArgs(["list", "--json", "--status", status], dbPath)
+      const cliResult = runTxArgs(["task", "list", "--json", "--status", status], dbPath)
       expect(cliResult.status, `CLI failed: stdout=${cliResult.stdout}, stderr=${cliResult.stderr}`).toBe(0)
       const cliTasks = JSON.parse(cliResult.stdout) as unknown[]
 
@@ -1769,46 +1257,6 @@ describe("Interface Parity", () => {
       assertTaskListsEqual("CLI vs MCP", cliNorm, mcpNorm)
       assertTaskListsEqual("MCP vs API", mcpNorm, apiNorm)
       assertTaskListsEqual("CLI vs API", cliNorm, apiNorm)
-    })
-
-    it("returns equivalent inherited group context fields in list responses", async () => {
-      const sourceTaskId = FIXTURES.TASK_AUTH
-      const targetTaskId = FIXTURES.TASK_LOGIN
-      const contextText = "List inherited context parity"
-
-      const cliSet = runTxArgs(["group-context", "set", sourceTaskId, contextText, "--json"], dbPath)
-      expect(cliSet.status, `CLI group-context set failed: ${cliSet.stderr}`).toBe(0)
-
-      await runtime.runPromise(
-        Effect.gen(function* () {
-          const taskService = yield* TaskService
-          yield* taskService.setGroupContext(sourceTaskId as TaskId, contextText)
-        })
-      )
-
-      const cliTasks = (JSON.parse(runTxArgs(["list", "--json", "--limit", "100"], dbPath).stdout) as unknown[]).map(normalizeTask)
-      const mcpTasks = (JSON.parse((await callMcpList(runtime, { limit: 100 })).content[1].text) as unknown[]).map(normalizeTask)
-      const apiListResponse = await apiApp.request("/api/tasks?limit=100")
-      const apiListData = await apiListResponse.json() as { tasks: ApiTaskWithDeps[] }
-      const apiTasks = apiListData.tasks.map(normalizeTask)
-
-      const cliTarget = cliTasks.find(task => task.id === targetTaskId)
-      const mcpTarget = mcpTasks.find(task => task.id === targetTaskId)
-      const apiTarget = apiTasks.find(task => task.id === targetTaskId)
-
-      expect(cliTarget).toBeDefined()
-      expect(mcpTarget).toBeDefined()
-      expect(apiTarget).toBeDefined()
-
-      expect(cliTarget?.effectiveGroupContext).toBe(contextText)
-      expect(mcpTarget?.effectiveGroupContext).toBe(contextText)
-      expect(apiTarget?.effectiveGroupContext).toBe(contextText)
-      expect(cliTarget?.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
-      expect(mcpTarget?.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
-      expect(apiTarget?.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
-
-      assertTasksEqual("list inherited CLI vs MCP", cliTarget!, mcpTarget!)
-      assertTasksEqual("list inherited MCP vs API", mcpTarget!, apiTarget!)
     })
 
     it("API /api/tasks uses one dependency snapshot query shape", async () => {
@@ -1848,50 +1296,12 @@ describe("Interface Parity", () => {
   // ===========================================================================
 
   describe("TaskWithDeps field verification (Rule 1 compliance)", () => {
-    it("all interfaces include dependency and group-context fields", async () => {
-      const taskId = FIXTURES.TASK_AUTH
-
-      // CLI
-      const cliResult = runTxArgs(["show", taskId, "--json"], dbPath)
-      expect(cliResult.status, `CLI failed: stdout=${cliResult.stdout}, stderr=${cliResult.stderr}`).toBe(0)
-      const cliTask = JSON.parse(cliResult.stdout)
-
-      // MCP
-      const mcpResult = await callMcpShow(runtime, taskId)
-      const mcpTask = JSON.parse(mcpResult.content[1].text)
-
-      // API
-      const apiResponse = await apiApp.request(`/api/tasks/${taskId}`)
-      const apiData = await apiResponse.json() as { task: ApiTaskWithDeps }
-      const apiTask = apiData.task
-
-      // Verify all TaskWithDeps fields exist
-      for (const [name, task] of [["CLI", cliTask], ["MCP", mcpTask], ["API", apiTask]] as const) {
-        expect(task, `${name}: task exists`).toBeDefined()
-        expect(task.blockedBy, `${name}: blockedBy exists`).toBeDefined()
-        expect(Array.isArray(task.blockedBy), `${name}: blockedBy is array`).toBe(true)
-        expect(task.blocks, `${name}: blocks exists`).toBeDefined()
-        expect(Array.isArray(task.blocks), `${name}: blocks is array`).toBe(true)
-        expect(task.children, `${name}: children exists`).toBeDefined()
-        expect(Array.isArray(task.children), `${name}: children is array`).toBe(true)
-        expect(typeof task.isReady, `${name}: isReady is boolean`).toBe("boolean")
-        expect(task.groupContext === null || typeof task.groupContext === "string", `${name}: groupContext type`).toBe(true)
-        expect(
-          task.effectiveGroupContext === null || typeof task.effectiveGroupContext === "string",
-          `${name}: effectiveGroupContext type`
-        ).toBe(true)
-        expect(
-          task.effectiveGroupContextSourceTaskId === null || typeof task.effectiveGroupContextSourceTaskId === "string",
-          `${name}: effectiveGroupContextSourceTaskId type`
-        ).toBe(true)
-      }
-    })
 
     it("all interfaces return non-empty blockedBy for blocked tasks", async () => {
       const taskId = FIXTURES.TASK_BLOCKED
 
       // CLI
-      const cliResult = runTxArgs(["show", taskId, "--json"], dbPath)
+      const cliResult = runTxArgs(["task", "show", taskId, "--json"], dbPath)
       expect(cliResult.status, `CLI failed: stdout=${cliResult.stdout}, stderr=${cliResult.stderr}`).toBe(0)
       const cliTask = JSON.parse(cliResult.stdout)
 
@@ -1919,7 +1329,7 @@ describe("Interface Parity", () => {
       const taskId = FIXTURES.TASK_JWT  // Blocks TASK_BLOCKED
 
       // CLI
-      const cliResult = runTxArgs(["show", taskId, "--json"], dbPath)
+      const cliResult = runTxArgs(["task", "show", taskId, "--json"], dbPath)
       expect(cliResult.status, `CLI failed: stdout=${cliResult.stdout}, stderr=${cliResult.stderr}`).toBe(0)
       const cliTask = JSON.parse(cliResult.stdout)
 
@@ -1942,7 +1352,7 @@ describe("Interface Parity", () => {
       const taskId = FIXTURES.TASK_AUTH  // Parent of multiple tasks
 
       // CLI
-      const cliResult = runTxArgs(["show", taskId, "--json"], dbPath)
+      const cliResult = runTxArgs(["task", "show", taskId, "--json"], dbPath)
       expect(cliResult.status, `CLI failed: stdout=${cliResult.stdout}, stderr=${cliResult.stderr}`).toBe(0)
       const cliTask = JSON.parse(cliResult.stdout)
 

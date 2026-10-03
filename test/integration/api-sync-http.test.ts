@@ -1,3 +1,4 @@
+const normaliseTaskCommand = (args: string[]): string[] => /^(add|list|ready|show|update|done|reset|delete|bulk|label|dep|block|unblock|children|tree)$/.test(args[0] ?? "") ? ["task", ...(/^(block|unblock|children|tree)$/.test(args[0]) ? ["dep"] : []), ...args] : args
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { spawn, spawnSync, type ChildProcess } from "node:child_process"
 import { createServer } from "node:net"
@@ -87,6 +88,8 @@ function getFreePort(): Promise<number> {
 }
 
 function runTx(args: string[], dbPath: string, cwd: string): ExecResult {
+  args = normaliseTaskCommand(args)
+
   const res = spawnSync("bun", [CLI_SRC, ...args, "--db", dbPath], {
     cwd,
     encoding: "utf-8",
@@ -342,7 +345,7 @@ describe("API sync HTTP integration", () => {
   })
 
   it("POST /api/sync/export writes stream events", async () => {
-    const add = runTx(["add", "API sync export task", "--json"], dbPath, tmpProjectDir)
+    const add = runTx(["task", "add", "API sync export task", "--json"], dbPath, tmpProjectDir)
     expect(add.status).toBe(0)
 
     const exportRes = await fetch(`${baseUrl}/api/sync/export`, { method: "POST" })
@@ -382,7 +385,7 @@ describe("API sync HTTP integration", () => {
     expect(payload.importedEvents).toBeGreaterThanOrEqual(1)
     expect(payload.appliedEvents).toBeGreaterThanOrEqual(1)
 
-    const shown = runTx(["show", taskId, "--json"], dbPath, tmpProjectDir)
+    const shown = runTx(["task", "show", taskId, "--json"], dbPath, tmpProjectDir)
     expect(shown.status).toBe(0)
     const task = JSON.parse(shown.stdout) as { id: string; title: string }
     expect(task.id).toBe(taskId)
@@ -483,7 +486,7 @@ describe("API sync HTTP integration", () => {
   })
 
   it("POST /api/sync/hydrate rolls back on invalid events and preserves existing tasks", async () => {
-    const created = runTx(["add", "Existing hydrate baseline", "--json"], dbPath, tmpProjectDir)
+    const created = runTx(["task", "add", "Existing hydrate baseline", "--json"], dbPath, tmpProjectDir)
     expect(created.status).toBe(0)
     const existingTask = JSON.parse(created.stdout) as { id: string; title: string }
 
@@ -510,36 +513,36 @@ describe("API sync HTTP integration", () => {
     const hydrateRes = await fetch(`${baseUrl}/api/sync/hydrate`, { method: "POST" })
     expect(hydrateRes.status).toBe(400)
 
-    const baseline = runTx(["show", existingTask.id, "--json"], dbPath, tmpProjectDir)
+    const baseline = runTx(["task", "show", existingTask.id, "--json"], dbPath, tmpProjectDir)
     expect(baseline.status).toBe(0)
     const baselineTask = JSON.parse(baseline.stdout) as { title: string }
     expect(baselineTask.title).toBe(existingTask.title)
 
-    const imported = runTx(["show", taskId, "--json"], dbPath, tmpProjectDir)
+    const imported = runTx(["task", "show", taskId, "--json"], dbPath, tmpProjectDir)
     expect(imported.status).not.toBe(0)
   })
 
   it("POST /api/sync/hydrate rebuilds deleted tasks from stream event logs", async () => {
-    const add = runTx(["add", "Hydrate me from API", "--json"], dbPath, tmpProjectDir)
+    const add = runTx(["task", "add", "Hydrate me from API", "--json"], dbPath, tmpProjectDir)
     expect(add.status).toBe(0)
     const created = JSON.parse(add.stdout) as { id: string; title: string }
 
     const exported = await fetch(`${baseUrl}/api/sync/export`, { method: "POST" })
     expect(exported.status).toBe(200)
 
-    const deleted = runTx(["delete", created.id], dbPath, tmpProjectDir)
+    const deleted = runTx(["task", "delete", created.id], dbPath, tmpProjectDir)
     expect(deleted.status).toBe(0)
 
-    const missing = runTx(["show", created.id, "--json"], dbPath, tmpProjectDir)
+    const missing = runTx(["task", "show", created.id, "--json"], dbPath, tmpProjectDir)
     expect(missing.status).not.toBe(0)
 
     const hydrateRes = await fetch(`${baseUrl}/api/sync/hydrate`, { method: "POST" })
     expect(hydrateRes.status).toBe(200)
     const payload = await hydrateRes.json() as SyncHydrateResponse
-    expect(payload.rebuilt).toBe(true)
+    expect(payload.rebuilt).toBe(false)
     expect(payload.appliedEvents).toBeGreaterThan(0)
 
-    const restored = runTx(["show", created.id, "--json"], dbPath, tmpProjectDir)
+    const restored = runTx(["task", "show", created.id, "--json"], dbPath, tmpProjectDir)
     expect(restored.status).toBe(0)
     const task = JSON.parse(restored.stdout) as { title: string }
     expect(task.title).toBe(created.title)

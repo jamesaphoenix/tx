@@ -5,7 +5,7 @@
  * and runs the tx binary with bun. Validates:
  * - Shebang is #!/usr/bin/env bun (not node)
  * - Published packages don't have "bun" export condition (which points to missing src/ files)
- * - The binary actually runs: tx help, tx init, tx add
+ * - The binary actually runs: tx help, tx init, tx task add
  *
  * IMPORTANT: Bun vitest workers (--bun flag + fork pool) inject loader hooks
  * that break npm subprocesses with "BuildMessage {}" errors. The heavy setup
@@ -121,7 +121,7 @@ describe("CLI npm binary distribution", () => {
     expect(result.stdout).toMatch(/\d+\.\d+\.\d+/)
   }, TIMEOUT)
 
-  it("tx init + tx add works in isolated install", () => {
+  it("tx init + tx task add works in isolated install", () => {
     const txBin = join(
       tmpDir,
       "node_modules/@jamesaphoenix/tx-cli/dist/cli.js"

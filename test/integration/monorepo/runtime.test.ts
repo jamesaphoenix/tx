@@ -25,7 +25,6 @@ import {
   TaskService,
   ReadyService,
   DependencyService,
-  LearningService,
   SyncService,
   fixtureId as coreFixtureId,
 } from "@jamesaphoenix/tx"
@@ -145,23 +144,6 @@ describe("Runtime Integration: @tx/core", () => {
     )
   })
 
-  it("can run LearningService.create through layer", async () => {
-    const { layer } = await getSharedTestLayer()
-    const learning = await Effect.runPromise(
-      Effect.gen(function* () {
-        const svc = yield* LearningService
-        return yield* svc.create({
-          content: "Test learning from monorepo integration test",
-          sourceType: "manual",
-        })
-      }).pipe(Effect.provide(layer))
-    )
-
-    expect(learning.id).toBeDefined()
-    expect(learning.content).toBe("Test learning from monorepo integration test")
-    expect(learning.sourceType).toBe("manual")
-  })
-
   it("can run SyncService export through layer", async () => {
     const { layer } = await getSharedTestLayer()
     const result = await Effect.runPromise(
@@ -275,22 +257,18 @@ describe("Runtime Integration: @jamesaphoenix/tx-cli/api", () => {
   })
 
   it("exports all route handler layers", async () => {
-    const { TasksLive, HealthLive, LearningsLive, RunsLive, SyncLive } =
+    const { TasksLive, HealthLive, SyncLive } =
       await import("@jamesaphoenix/tx-cli/api")
     expect(TasksLive).toBeDefined()
     expect(HealthLive).toBeDefined()
-    expect(LearningsLive).toBeDefined()
-    expect(RunsLive).toBeDefined()
     expect(SyncLive).toBeDefined()
   })
 
   it("exports all API group definitions", async () => {
-    const { HealthGroup, TasksGroup, LearningsGroup, RunsGroup, SyncGroup } =
+    const { HealthGroup, TasksGroup, SyncGroup } =
       await import("@jamesaphoenix/tx-cli/api")
     expect(HealthGroup).toBeDefined()
     expect(TasksGroup).toBeDefined()
-    expect(LearningsGroup).toBeDefined()
-    expect(RunsGroup).toBeDefined()
     expect(SyncGroup).toBeDefined()
   })
 
@@ -333,8 +311,6 @@ describe("Runtime Integration: @jamesaphoenix/tx-cli/api", () => {
     const internal = mapCoreError({ _tag: "DatabaseError", message: "DB error" })
     expect(internal._tag).toBe("InternalError")
 
-    const unavailable = mapCoreError({ _tag: "EmbeddingUnavailableError", message: "No model" })
-    expect(unavailable._tag).toBe("ServiceUnavailable")
   })
 
   it("makeServerLive creates a Layer with options", async () => {
@@ -357,8 +333,6 @@ describe("Runtime Integration: @jamesaphoenix/tx-agent-sdk", () => {
     const client = new TxClient({ dbPath: ":memory:" })
     expect(client).toBeDefined()
     expect(client.tasks).toBeDefined()
-    expect(client.learnings).toBeDefined()
-    expect(client.context).toBeDefined()
   })
 
   it("TxClient.tasks.create works with direct DB access", async () => {
@@ -404,20 +378,6 @@ describe("Runtime Integration: @jamesaphoenix/tx-agent-sdk", () => {
 
     expect(result.task.status).toBe("done")
     expect(result.task.completedAt).toBeDefined()
-  })
-
-  it("TxClient.learnings.add works with direct DB access", async () => {
-    const { TxClient } = await import("@jamesaphoenix/tx-agent-sdk")
-
-    const client = new TxClient({ dbPath: ":memory:" })
-
-    const learning = await client.learnings.add({
-      content: "SDK test learning",
-      sourceType: "manual",
-    })
-
-    expect(learning.id).toBeDefined()
-    expect(learning.content).toBe("SDK test learning")
   })
 
   it("utility functions work correctly", async () => {
@@ -505,8 +465,6 @@ describe("Cross-Package Integration", () => {
     // Both should have the same task statuses
     expect(types.TASK_STATUSES).toEqual(sdk.TASK_STATUSES)
     expect(types.VALID_TRANSITIONS).toEqual(sdk.VALID_TRANSITIONS)
-    expect(types.LEARNING_SOURCE_TYPES).toEqual(sdk.LEARNING_SOURCE_TYPES)
-    expect(types.ATTEMPT_OUTCOMES).toEqual(sdk.ATTEMPT_OUTCOMES)
   })
 
   it("fixture IDs are deterministic across packages", async () => {

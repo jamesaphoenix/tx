@@ -52,6 +52,10 @@ function isDividerOrIndexPage(page) {
 
 function primitiveRegex(primitive) {
   switch (primitive) {
+    case "label": return /\btx\s+task\s+label\b/i
+    case "tasks": return /\btx\s+task\b/i
+    case "plans": return /\btx\s+doc\s+add\s+plan\b/i
+    case "spec-health": return /\btx\s+spec\s+health\b/i
     case "docs":
       return /\btx\s+doc\b/i
     case "invariants":
@@ -67,6 +71,10 @@ function primitiveRegex(primitive) {
 
 function expectedCommand(primitive) {
   switch (primitive) {
+    case "tasks": return "tx task"
+    case "plans": return "tx doc add plan"
+    case "label": return "tx task label"
+    case "spec-health": return "tx spec health"
     case "docs":
       return "tx doc"
     case "invariants":

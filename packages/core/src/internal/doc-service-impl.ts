@@ -68,6 +68,7 @@ const inferLinkType = (
   if (fromKind === "overview" && toKind === "prd") return "overview_to_prd"
   if (fromKind === "overview" && toKind === "design")
     return "overview_to_design"
+  if (["prd", "design", "overview", "requirement", "system_design"].includes(fromKind) && toKind === "plan") return "spec_to_plan"
   if (fromKind === "prd" && toKind === "design") return "prd_to_design"
   if (fromKind === "requirement" && toKind === "prd") return "requirement_to_prd"
   if (fromKind === "requirement" && toKind === "design") return "requirement_to_design"
@@ -934,6 +935,10 @@ export const makeDocServiceLive = (
           search_keywords: aggregateSearchKeywords(),
           requirements: requirementDocs,
           prds,
+          plans: allDocs.filter(d => d.kind === "plan").map(d => {
+            const metadata = indexMetadataByDocId.get(d.id)
+            return { name: d.name, title: d.title, description: metadata?.description ?? "", search_keywords: [...(metadata?.searchKeywords ?? [])], status: d.status }
+          }),
           design_docs: designDocs,
           system_designs: systemDesignDocs,
           links,
@@ -1557,7 +1562,16 @@ export const makeDocServiceLive = (
 
           const taskLinks = yield* docRepo.getTaskLinksForDoc(doc.id)
           if (taskLinks.length === 0 && doc.kind === "design") {
-            warnings.push(`Design doc '${doc.name}' has no linked tasks`)
+            // @spec INV-LEAN-005 Tasks can implement a design through its saved plan.
+            const planLinks = (yield* docRepo.getLinksFrom(doc.id)).filter(link => link.linkType === "spec_to_plan")
+            let hasPlanTasks = false
+            for (const link of planLinks) {
+              if ((yield* docRepo.getTaskLinksForDoc(link.toDocId)).length > 0) {
+                hasPlanTasks = true
+                break
+              }
+            }
+            if (!hasPlanTasks) warnings.push(`Design doc '${doc.name}' has no linked tasks`)
           }
           return warnings
         }),

@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { Context, Effect, Exit, Layer, Schema } from "effect";
 import { writeFile, rename, readFile, mkdir, access, appendFile, readdir, rm, stat } from "node:fs/promises";
-import { readFileSync, writeFileSync, mkdirSync, renameSync, unlinkSync } from "node:fs";
+import { readFileSync, } from "node:fs";
 import { createHash } from "node:crypto";
 import { dirname, resolve, basename } from "node:path";
 import { DatabaseError, ValidationError } from "../../errors.js";
@@ -10,22 +10,13 @@ import { SqliteClient } from "../../db.js";
 import { TaskService } from "../../services/task-service.js";
 import { StreamService } from "../../services/stream-service.js";
 import { DependencyRepository } from "../../repo/dep-repo.js";
-import { LearningRepository } from "../../repo/learning-repo.js";
-import { FileLearningRepository } from "../../repo/file-learning-repo.js";
-import { AttemptRepository } from "../../repo/attempt-repo.js";
-import { PinRepository } from "../../repo/pin-repo.js";
-import { syncBlocks } from "../../utils/pin-file.js";
-import { resolvePathWithin } from "../../utils/file-path.js";
-import { AnchorRepository } from "../../repo/anchor-repo.js";
-import { EdgeRepository } from "../../repo/edge-repo.js";
 import { DocRepository } from "../../repo/doc-repo.js";
-import { LearningUpsertOp as LearningUpsertOpSchema, FileLearningUpsertOp as FileLearningUpsertOpSchema, AttemptUpsertOp as AttemptUpsertOpSchema, PinUpsertOp as PinUpsertOpSchema, AnchorUpsertOp as AnchorUpsertOpSchema, EdgeUpsertOp as EdgeUpsertOpSchema, DocUpsertOp as DocUpsertOpSchema, DocLinkUpsertOp as DocLinkUpsertOpSchema, TaskDocLinkUpsertOp as TaskDocLinkUpsertOpSchema, InvariantUpsertOp as InvariantUpsertOpSchema, LabelUpsertOp as LabelUpsertOpSchema, LabelAssignmentUpsertOp as LabelAssignmentUpsertOpSchema, TaskSyncOperation as TaskSyncOperationSchema } from "../../schemas/sync.js";
+import { DocUpsertOp as DocUpsertOpSchema, DocLinkUpsertOp as DocLinkUpsertOpSchema, TaskDocLinkUpsertOp as TaskDocLinkUpsertOpSchema, InvariantUpsertOp as InvariantUpsertOpSchema, LabelUpsertOp as LabelUpsertOpSchema, LabelAssignmentUpsertOp as LabelAssignmentUpsertOpSchema, AnySyncOperation as AnySyncOperationSchema, TaskSyncOperation as TaskSyncOperationSchema } from "../../schemas/sync.js";
 import { SyncEventEnvelopeSchema } from "../../schemas/sync-events.js";
 import { generateUlid } from "../../utils/ulid.js";
 import type { EntityImportResult, ImportResult, LegacySyncExportResult, SyncCompactResult, SyncExportResult, SyncHydrateResult, SyncImportResult, SyncStatus, SyncStreamInfoResult } from "../../services/sync/types.js";
 import { applyEntityImportContract } from "../../services/sync/entity-import.js";
 import { applyEntityExportContract } from "../../services/sync/entity-export.js";
-import { importEntityJsonl } from "../../services/sync/file-utils.js";
 import { deriveDocStableId } from "../../id.js";
 /**
  * SyncService provides stream-event export/import for git-tracked task syncing.
@@ -54,13 +45,10 @@ export class SyncService extends Context.Tag("SyncService")<
     }
 >() {
 }
+/** Historical streams remain readable but retired entities have no runtime projection. */
+const RETIRED_OPS = new Set(["learning_upsert", "learning_delete", "file_learning_upsert", "file_learning_delete", "attempt_upsert", "pin_upsert", "pin_delete", "anchor_upsert", "anchor_delete", "edge_upsert", "edge_delete"]);
+const ignoredEventCount = (events) => events.filter(event => RETIRED_OPS.has(event.payload.op)).length;
 const DEFAULT_JSONL_PATH = ".tx/tasks.jsonl";
-const DEFAULT_LEARNINGS_JSONL_PATH = ".tx/learnings.jsonl";
-const DEFAULT_FILE_LEARNINGS_JSONL_PATH = ".tx/file-learnings.jsonl";
-const DEFAULT_ATTEMPTS_JSONL_PATH = ".tx/attempts.jsonl";
-const DEFAULT_PINS_JSONL_PATH = ".tx/pins.jsonl";
-const DEFAULT_ANCHORS_JSONL_PATH = ".tx/anchors.jsonl";
-const DEFAULT_EDGES_JSONL_PATH = ".tx/edges.jsonl";
 const DEFAULT_DOCS_JSONL_PATH = ".tx/docs.jsonl";
 const DEFAULT_LABELS_JSONL_PATH = ".tx/labels.jsonl";
 const DEFAULT_STREAMS_DIR = ".tx/streams";
@@ -219,12 +207,6 @@ const EMPTY_IMPORT_RESULT = {
 };
 const emptyV1Buckets = () => ({
     tasks: [],
-    learnings: [],
-    fileLearnings: [],
-    attempts: [],
-    pins: [],
-    anchors: [],
-    edges: [],
     docs: [],
     labels: [],
     decisions: [],
@@ -232,19 +214,7 @@ const emptyV1Buckets = () => ({
 const bucketForOp = (opName) => {
     if (opName === "upsert" || opName === "delete" || opName === "dep_add" || opName === "dep_remove")
         return "tasks";
-    if (opName === "learning_upsert" || opName === "learning_delete")
-        return "learnings";
-    if (opName === "file_learning_upsert" || opName === "file_learning_delete")
-        return "fileLearnings";
-    if (opName === "attempt_upsert")
-        return "attempts";
-    if (opName === "pin_upsert" || opName === "pin_delete")
-        return "pins";
-    if (opName === "anchor_upsert" || opName === "anchor_delete")
-        return "anchors";
-    if (opName === "edge_upsert" || opName === "edge_delete")
-        return "edges";
-    if (opName === "doc_upsert" || opName === "doc_delete" || opName === "doc_link_upsert" || opName === "task_doc_link_upsert" || opName === "invariant_upsert")
+                            if (opName === "doc_upsert" || opName === "doc_delete" || opName === "doc_link_upsert" || opName === "task_doc_link_upsert" || opName === "invariant_upsert")
         return "docs";
     if (opName === "label_upsert" || opName === "label_assignment_upsert")
         return "labels";
@@ -456,113 +426,6 @@ const depToAddOp = (dep) => ({
     blockedId: dep.blockedId
 });
 /**
- * Convert a Learning to a LearningUpsertOp for JSONL export.
- */
-const learningToUpsertOp = (learning) => ({
-    v: 1,
-    op: "learning_upsert",
-    ts: learning.createdAt.toISOString(),
-    id: learning.id,
-    contentHash: contentHash(learning.content, learning.sourceType),
-    data: {
-        content: learning.content,
-        sourceType: learning.sourceType,
-        sourceRef: learning.sourceRef,
-        keywords: [...learning.keywords],
-        category: learning.category
-    }
-});
-/**
- * Convert a FileLearning to a FileLearningUpsertOp for JSONL export.
- */
-const fileLearningToUpsertOp = (fl) => ({
-    v: 1,
-    op: "file_learning_upsert",
-    ts: fl.createdAt.toISOString(),
-    id: fl.id,
-    contentHash: contentHash(fl.filePattern, fl.note),
-    data: {
-        filePattern: fl.filePattern,
-        note: fl.note,
-        taskId: fl.taskId
-    }
-});
-/**
- * Convert an Attempt to an AttemptUpsertOp for JSONL export.
- */
-const attemptToUpsertOp = (attempt) => ({
-    v: 1,
-    op: "attempt_upsert",
-    ts: attempt.createdAt.toISOString(),
-    id: attempt.id,
-    contentHash: contentHash(attempt.taskId, attempt.approach),
-    data: {
-        taskId: attempt.taskId,
-        approach: attempt.approach,
-        outcome: attempt.outcome,
-        reason: attempt.reason
-    }
-});
-/**
- * Convert a Pin to a PinUpsertOp for JSONL export.
- */
-const pinToUpsertOp = (pin) => ({
-    v: 1,
-    op: "pin_upsert",
-    ts: new Date(pin.updatedAt).toISOString(),
-    id: pin.id,
-    contentHash: contentHash(pin.id, pin.content),
-    data: {
-        content: pin.content
-    }
-});
-/**
- * Convert an Anchor to an AnchorUpsertOp for JSONL export.
- * Uses the learning's content hash (looked up from learningHashMap) as stable reference.
- */
-const anchorToUpsertOp = (anchor, learningHashMap) => {
-    const learningContentHash = learningHashMap.get(anchor.learningId) ?? "";
-    return {
-        v: 1,
-        op: "anchor_upsert",
-        ts: anchor.createdAt.toISOString(),
-        id: anchor.id,
-        contentHash: contentHash(learningContentHash, anchor.filePath, anchor.anchorType, anchor.anchorValue),
-        data: {
-            learningContentHash,
-            anchorType: anchor.anchorType,
-            anchorValue: anchor.anchorValue,
-            filePath: anchor.filePath,
-            symbolFqname: anchor.symbolFqname,
-            lineStart: anchor.lineStart,
-            lineEnd: anchor.lineEnd,
-            contentHash: anchor.contentHash,
-            contentPreview: anchor.contentPreview,
-            status: anchor.status,
-            pinned: anchor.pinned
-        }
-    };
-};
-/**
- * Convert an Edge to an EdgeUpsertOp for JSONL export.
- */
-const edgeToUpsertOp = (edge) => ({
-    v: 1,
-    op: "edge_upsert",
-    ts: edge.createdAt.toISOString(),
-    id: edge.id,
-    contentHash: contentHash(edge.edgeType, edge.sourceType, edge.sourceId, edge.targetType, edge.targetId),
-    data: {
-        edgeType: edge.edgeType,
-        sourceType: edge.sourceType,
-        sourceId: edge.sourceId,
-        targetType: edge.targetType,
-        targetId: edge.targetId,
-        weight: edge.weight,
-        metadata: edge.metadata
-    }
-});
-/**
  * Convert a Doc to a DocUpsertOp for JSONL export.
  */
 const docToUpsertOp = (doc, parentDocKeyMap) => ({
@@ -758,12 +621,6 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
     const streamService = yield* StreamService;
     const depRepo = yield* DependencyRepository;
     const db = yield* SqliteClient;
-    const learningRepo = yield* LearningRepository;
-    const fileLearningRepo = yield* FileLearningRepository;
-    const attemptRepo = yield* AttemptRepository;
-    const pinRepo = yield* PinRepository;
-    const anchorRepo = yield* AnchorRepository;
-    const edgeRepo = yield* EdgeRepository;
     const docRepo = yield* DocRepository;
     // Helper: Get config value from sync_config table
     const getConfig = (key) => Effect.try({
@@ -862,6 +719,14 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
                         try: () => Schema.decodeUnknownSync(SyncEventEnvelopeSchema)(line),
                         catch: (cause) => new ValidationError({ reason: `Schema validation failed: ${cause}` })
                     });
+                    // @spec INV-LEAN-003 Validate ignored events too; never advance past malformed data.
+                    const payload = yield* Effect.try({
+                        try: () => Schema.decodeUnknownSync(AnySyncOperationSchema)(normalizeLegacyTaskStatusInSyncOp(event.payload)),
+                        catch: (cause) => new ValidationError({ reason: `Invalid sync payload: ${cause}` })
+                    });
+                    if (V1_TO_SYNC_TYPE[payload.op] !== event.type || entityIdFromV1Op(payload) !== event.entity_id) {
+                        return yield* Effect.fail(new ValidationError({ reason: "Envelope and payload identity do not match" }));
+                    }
                     if (event.stream_id !== streamId) {
                         return yield* Effect.fail(new ValidationError({
                             reason: `Event stream mismatch in ${basename(filePath)}: expected ${streamId}, got ${event.stream_id}`
@@ -897,6 +762,7 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
             const base = syncEventToV1Op(event);
             if (!base)
                 continue;
+            if (RETIRED_OPS.has(base.op)) continue;
             const op = { ...base, eventId: event.event_id };
             const name = typeof op.op === "string" ? op.op : "";
             const bucket = bucketForOp(name);
@@ -906,12 +772,6 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
         }
         const sortByTs = (ops) => ops.sort(compareOpOrder);
         sortByTs(buckets.tasks);
-        sortByTs(buckets.learnings);
-        sortByTs(buckets.fileLearnings);
-        sortByTs(buckets.attempts);
-        sortByTs(buckets.pins);
-        sortByTs(buckets.anchors);
-        sortByTs(buckets.edges);
         sortByTs(buckets.docs);
         sortByTs(buckets.labels);
         sortByTs(buckets.decisions);
@@ -935,51 +795,16 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
             return filePath;
         });
         const tasksPath = yield* writeBucket("tasks.jsonl", buckets.tasks);
-        const learningsPath = yield* writeBucket("learnings.jsonl", buckets.learnings);
-        const fileLearningsPath = yield* writeBucket("file-learnings.jsonl", buckets.fileLearnings);
-        const attemptsPath = yield* writeBucket("attempts.jsonl", buckets.attempts);
-        const pinsPath = yield* writeBucket("pins.jsonl", buckets.pins);
-        const anchorsPath = yield* writeBucket("anchors.jsonl", buckets.anchors);
-        const edgesPath = yield* writeBucket("edges.jsonl", buckets.edges);
         const docsPath = yield* writeBucket("docs.jsonl", buckets.docs);
         const labelsPath = yield* writeBucket("labels.jsonl", buckets.labels);
         const decisionsPath = yield* writeBucket("decisions.jsonl", buckets.decisions);
         return {
             dir,
             tasksPath,
-            learningsPath,
-            fileLearningsPath,
-            attemptsPath,
-            pinsPath,
-            anchorsPath,
-            edgesPath,
             docsPath,
             labelsPath,
             decisionsPath,
         };
-    });
-    const clearMaterializedTables = () => Effect.try({
-        try: () => {
-            withWriteTransaction(() => {
-                db.prepare("DELETE FROM decisions").run();
-                db.prepare("DELETE FROM task_label_assignments").run();
-                db.prepare("DELETE FROM task_labels").run();
-                db.prepare("DELETE FROM invariant_checks").run();
-                db.prepare("DELETE FROM invariants").run();
-                db.prepare("DELETE FROM task_doc_links").run();
-                db.prepare("DELETE FROM doc_links").run();
-                db.prepare("DELETE FROM docs").run();
-                db.prepare("DELETE FROM learning_edges").run();
-                db.prepare("DELETE FROM learning_anchors").run();
-                db.prepare("DELETE FROM context_pins").run();
-                db.prepare("DELETE FROM attempts").run();
-                db.prepare("DELETE FROM file_learnings").run();
-                db.prepare("DELETE FROM learnings").run();
-                db.prepare("DELETE FROM task_dependencies").run();
-                db.prepare("DELETE FROM tasks").run();
-            });
-        },
-        catch: (cause) => new DatabaseError({ cause })
     });
     const cleanupTempDir = (dir) => Effect.promise(() => rm(dir, { recursive: true, force: true }).then(() => undefined).catch(() => undefined));
     const collectCurrentOpsForSync = () => Effect.gen(function* () {
@@ -987,24 +812,6 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
         const deps = yield* depRepo.getAll(FULL_EXPORT_LIMIT);
         const taskOps = tasks.map(taskToUpsertOp);
         const depOps = deps.map(depToAddOp);
-        const learnings = yield* learningRepo.findAll(FULL_EXPORT_LIMIT);
-        const learningOps = learnings.map(learningToUpsertOp);
-        const learningHashMap = new Map();
-        for (const l of learnings) {
-            learningHashMap.set(l.id, contentHash(l.content, l.sourceType));
-        }
-        const fileLearnings = yield* fileLearningRepo.findAll(FULL_EXPORT_LIMIT);
-        const fileLearningOps = fileLearnings.map(fileLearningToUpsertOp);
-        const attempts = yield* attemptRepo.findAll();
-        const attemptOps = attempts.map(attemptToUpsertOp);
-        const pins = yield* pinRepo.findAll();
-        const pinOps = [...pins].map(pinToUpsertOp);
-        const anchors = yield* anchorRepo.findAll(FULL_EXPORT_LIMIT);
-        const anchorOps = anchors.map(anchor => anchorToUpsertOp(anchor, learningHashMap));
-        const edges = yield* edgeRepo.findAll(FULL_EXPORT_LIMIT);
-        const edgeOps = edges
-            .filter(edge => edge.invalidatedAt === null)
-            .map(edgeToUpsertOp);
         const docs = yield* docRepo.findAll();
         const docKeyMap = new Map();
         for (const d of docs) {
@@ -1070,12 +877,6 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
         const all = [
             ...taskOps,
             ...depOps,
-            ...learningOps,
-            ...fileLearningOps,
-            ...attemptOps,
-            ...pinOps,
-            ...anchorOps,
-            ...edgeOps,
             ...docOps,
             ...docLinkOps,
             ...taskDocLinkOps,
@@ -1095,48 +896,6 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
         const all = [...taskOps, ...depOps];
         all.sort(compareOpOrder);
         return all;
-    });
-    const syncPinsToTargetFiles = () => Effect.gen(function* () {
-        const allPins = yield* pinRepo.findAll();
-        const targetFiles = yield* pinRepo.getTargetFiles();
-        const pinMap = new Map();
-        for (const pin of allPins) {
-            pinMap.set(pin.id, pin.content);
-        }
-        yield* Effect.try({
-            try: () => {
-                for (const targetFile of targetFiles) {
-                    const projectRoot = process.cwd();
-                    const resolvedPath = resolvePathWithin(projectRoot, targetFile, {
-                        useRealpath: true
-                    });
-                    if (!resolvedPath)
-                        continue;
-                    let fileContent = "";
-                    try {
-                        fileContent = readFileSync(resolvedPath, "utf-8");
-                    }
-                    catch { /* file doesn't exist yet */ }
-                    const updated = syncBlocks(fileContent, pinMap);
-                    if (updated !== fileContent) {
-                        const dir = dirname(resolvedPath);
-                        mkdirSync(dir, { recursive: true });
-                        const tempPath = `${resolvedPath}.tmp.${Date.now()}.${process.pid}`;
-                        try {
-                            writeFileSync(tempPath, updated, "utf-8");
-                            renameSync(tempPath, resolvedPath);
-                        }
-                        finally {
-                            try {
-                                unlinkSync(tempPath);
-                            }
-                            catch { /* ignore cleanup error */ }
-                        }
-                    }
-                }
-            },
-            catch: (cause) => new DatabaseError({ cause })
-        });
     });
     const syncService = applyEntityImportContract(applyEntityExportContract({
         importTaskOps: (path) => Effect.gen(function* () {
@@ -1443,199 +1202,6 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
         isAutoSyncEnabled: () => Effect.gen(function* () {
             const value = yield* getConfig("auto_sync");
             return value === "true";
-        }),
-        exportLearnings: (path) => Effect.gen(function* () {
-            const filePath = resolve(path ?? DEFAULT_LEARNINGS_JSONL_PATH);
-            const learnings = yield* learningRepo.findAll(FULL_EXPORT_LIMIT);
-            const ops = learnings.map(learningToUpsertOp);
-            ops.sort((a, b) => a.ts.localeCompare(b.ts));
-            const jsonl = ops.map(op => JSON.stringify(op)).join("\n");
-            yield* atomicWrite(filePath, jsonl + (jsonl.length > 0 ? "\n" : ""));
-            return { opCount: ops.length, path: filePath };
-        }),
-        importLearnings: (path) => Effect.gen(function* () {
-            const filePath = resolve(path ?? DEFAULT_LEARNINGS_JSONL_PATH);
-            const existing = yield* learningRepo.findAll(FULL_EXPORT_LIMIT);
-            const existingHashes = new Set(existing.map(l => contentHash(l.content, l.sourceType)));
-            const insertStmt = db.prepare("INSERT INTO learnings (content, source_type, source_ref, created_at, keywords, category) VALUES (?, ?, ?, ?, ?, ?)");
-            return yield* importEntityJsonl(filePath, LearningUpsertOpSchema, existingHashes, (ops) => {
-                return withWriteTransaction(() => {
-                    let count = 0;
-                    for (const op of ops) {
-                        insertStmt.run(op.data.content, op.data.sourceType, op.data.sourceRef, op.ts, JSON.stringify(op.data.keywords), op.data.category);
-                        count++;
-                    }
-                    return count;
-                });
-            });
-        }),
-        exportFileLearnings: (path) => Effect.gen(function* () {
-            const filePath = resolve(path ?? DEFAULT_FILE_LEARNINGS_JSONL_PATH);
-            const fileLearnings = yield* fileLearningRepo.findAll(FULL_EXPORT_LIMIT);
-            const ops = fileLearnings.map(fileLearningToUpsertOp);
-            ops.sort((a, b) => a.ts.localeCompare(b.ts));
-            const jsonl = ops.map(op => JSON.stringify(op)).join("\n");
-            yield* atomicWrite(filePath, jsonl + (jsonl.length > 0 ? "\n" : ""));
-            return { opCount: ops.length, path: filePath };
-        }),
-        importFileLearnings: (path) => Effect.gen(function* () {
-            const filePath = resolve(path ?? DEFAULT_FILE_LEARNINGS_JSONL_PATH);
-            const existing = yield* fileLearningRepo.findAll(FULL_EXPORT_LIMIT);
-            const existingHashes = new Set(existing.map(fl => contentHash(fl.filePattern, fl.note)));
-            const insertStmt = db.prepare("INSERT INTO file_learnings (file_pattern, note, task_id, created_at) VALUES (?, ?, ?, ?)");
-            return yield* importEntityJsonl(filePath, FileLearningUpsertOpSchema, existingHashes, (ops) => {
-                return withWriteTransaction(() => {
-                    let count = 0;
-                    for (const op of ops) {
-                        insertStmt.run(op.data.filePattern, op.data.note, op.data.taskId, op.ts);
-                        count++;
-                    }
-                    return count;
-                });
-            });
-        }),
-        exportAttempts: (path) => Effect.gen(function* () {
-            const filePath = resolve(path ?? DEFAULT_ATTEMPTS_JSONL_PATH);
-            const attempts = yield* attemptRepo.findAll();
-            const ops = attempts.map(attemptToUpsertOp);
-            ops.sort((a, b) => a.ts.localeCompare(b.ts));
-            const jsonl = ops.map(op => JSON.stringify(op)).join("\n");
-            yield* atomicWrite(filePath, jsonl + (jsonl.length > 0 ? "\n" : ""));
-            return { opCount: ops.length, path: filePath };
-        }),
-        importAttempts: (path) => Effect.gen(function* () {
-            const filePath = resolve(path ?? DEFAULT_ATTEMPTS_JSONL_PATH);
-            const existing = yield* attemptRepo.findAll();
-            const existingHashes = new Set(existing.map(a => contentHash(a.taskId, a.approach)));
-            const insertStmt = db.prepare("INSERT INTO attempts (task_id, approach, outcome, reason, created_at) VALUES (?, ?, ?, ?, ?)");
-            return yield* importEntityJsonl(filePath, AttemptUpsertOpSchema, existingHashes, (ops) => {
-                return withWriteTransaction(() => {
-                    let count = 0;
-                    for (const op of ops) {
-                        insertStmt.run(op.data.taskId, op.data.approach, op.data.outcome, op.data.reason, op.ts);
-                        count++;
-                    }
-                    return count;
-                });
-            });
-        }),
-        exportPins: (path) => Effect.gen(function* () {
-            const filePath = resolve(path ?? DEFAULT_PINS_JSONL_PATH);
-            const pins = yield* pinRepo.findAll();
-            const ops = [...pins].map(pinToUpsertOp);
-            ops.sort((a, b) => a.ts.localeCompare(b.ts));
-            const jsonl = ops.map(op => JSON.stringify(op)).join("\n");
-            yield* atomicWrite(filePath, jsonl + (jsonl.length > 0 ? "\n" : ""));
-            return { opCount: ops.length, path: filePath };
-        }),
-        importPins: (path) => Effect.gen(function* () {
-            const filePath = resolve(path ?? DEFAULT_PINS_JSONL_PATH);
-            const existing = yield* pinRepo.findAll();
-            const existingHashes = new Set([...existing].map(p => contentHash(p.id, p.content)));
-            const upsertStmt = db.prepare(`INSERT INTO context_pins (id, content, created_at, updated_at)
-             VALUES (?, ?, ?, ?)
-             ON CONFLICT(id) DO UPDATE SET
-               content = excluded.content,
-               updated_at = excluded.updated_at`);
-            const result = yield* importEntityJsonl(filePath, PinUpsertOpSchema, existingHashes, (ops) => {
-                return withWriteTransaction(() => {
-                    let count = 0;
-                    for (const op of ops) {
-                        upsertStmt.run(op.id, op.data.content, op.ts, op.ts);
-                        count++;
-                    }
-                    return count;
-                });
-            });
-            // Avoid blocking DB transactions with filesystem writes.
-            if (result.imported > 0 && !db.inTransaction) {
-                yield* syncPinsToTargetFiles();
-            }
-            return result;
-        }),
-        exportAnchors: (path) => Effect.gen(function* () {
-            const filePath = resolve(path ?? DEFAULT_ANCHORS_JSONL_PATH);
-            const anchors = yield* anchorRepo.findAll(FULL_EXPORT_LIMIT);
-            // Build learning ID → content hash map for stable references
-            const learnings = yield* learningRepo.findAll(FULL_EXPORT_LIMIT);
-            const learningHashMap = new Map();
-            for (const l of learnings) {
-                learningHashMap.set(l.id, contentHash(l.content, l.sourceType));
-            }
-            const ops = anchors.map(a => anchorToUpsertOp(a, learningHashMap));
-            ops.sort((a, b) => a.ts.localeCompare(b.ts));
-            const jsonl = ops.map(op => JSON.stringify(op)).join("\n");
-            yield* atomicWrite(filePath, jsonl + (jsonl.length > 0 ? "\n" : ""));
-            return { opCount: ops.length, path: filePath };
-        }),
-        importAnchors: (path) => Effect.gen(function* () {
-            const filePath = resolve(path ?? DEFAULT_ANCHORS_JSONL_PATH);
-            // Build existing anchor content hashes
-            const existingAnchors = yield* anchorRepo.findAll(FULL_EXPORT_LIMIT);
-            const existingLearnings = yield* learningRepo.findAll(FULL_EXPORT_LIMIT);
-            const learningHashMap = new Map();
-            for (const l of existingLearnings) {
-                learningHashMap.set(l.id, contentHash(l.content, l.sourceType));
-            }
-            const existingHashes = new Set(existingAnchors.map(a => {
-                const lHash = learningHashMap.get(a.learningId) ?? "";
-                return contentHash(lHash, a.filePath, a.anchorType, a.anchorValue);
-            }));
-            // Build reverse map: learning content hash → learning ID (for resolving references)
-            const hashToLearningId = new Map();
-            for (const l of existingLearnings) {
-                hashToLearningId.set(contentHash(l.content, l.sourceType), l.id);
-            }
-            const insertStmt = db.prepare(`INSERT INTO learning_anchors
-              (learning_id, anchor_type, anchor_value, file_path, symbol_fqname,
-               line_start, line_end, content_hash, content_preview, status, pinned, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-            let orphanedCount = 0;
-            const result = yield* importEntityJsonl(filePath, AnchorUpsertOpSchema, existingHashes, (ops) => {
-                return withWriteTransaction(() => {
-                    let count = 0;
-                    for (const op of ops) {
-                        const learningId = hashToLearningId.get(op.data.learningContentHash);
-                        if (learningId === undefined) {
-                            orphanedCount++;
-                            continue;
-                        }
-                        insertStmt.run(learningId, op.data.anchorType, op.data.anchorValue, op.data.filePath, op.data.symbolFqname, op.data.lineStart, op.data.lineEnd, op.data.contentHash, op.data.contentPreview, op.data.status, op.data.pinned ? 1 : 0, op.ts);
-                        count++;
-                    }
-                    return count;
-                });
-            });
-            return { imported: result.imported, skipped: result.skipped + orphanedCount };
-        }),
-        exportEdges: (path) => Effect.gen(function* () {
-            const filePath = resolve(path ?? DEFAULT_EDGES_JSONL_PATH);
-            const edges = yield* edgeRepo.findAll(FULL_EXPORT_LIMIT);
-            // Only export active (non-invalidated) edges
-            const activeEdges = edges.filter(e => e.invalidatedAt === null);
-            const ops = activeEdges.map(edgeToUpsertOp);
-            ops.sort((a, b) => a.ts.localeCompare(b.ts));
-            const jsonl = ops.map(op => JSON.stringify(op)).join("\n");
-            yield* atomicWrite(filePath, jsonl + (jsonl.length > 0 ? "\n" : ""));
-            return { opCount: ops.length, path: filePath };
-        }),
-        importEdges: (path) => Effect.gen(function* () {
-            const filePath = resolve(path ?? DEFAULT_EDGES_JSONL_PATH);
-            const existingEdges = yield* edgeRepo.findAll(FULL_EXPORT_LIMIT);
-            const existingHashes = new Set(existingEdges.map(e => contentHash(e.edgeType, e.sourceType, e.sourceId, e.targetType, e.targetId)));
-            const insertStmt = db.prepare(`INSERT INTO learning_edges
-              (edge_type, source_type, source_id, target_type, target_id, weight, metadata, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
-            return yield* importEntityJsonl(filePath, EdgeUpsertOpSchema, existingHashes, (ops) => {
-                return withWriteTransaction(() => {
-                    let count = 0;
-                    for (const op of ops) {
-                        insertStmt.run(op.data.edgeType, op.data.sourceType, op.data.sourceId, op.data.targetType, op.data.targetId, op.data.weight, JSON.stringify(op.data.metadata), op.ts);
-                        count++;
-                    }
-                    return count;
-                });
-            });
         }),
         exportDocs: (path) => Effect.gen(function* () {
             const filePath = resolve(path ?? DEFAULT_DOCS_JSONL_PATH);
@@ -2214,31 +1780,16 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
             }
             const loaded = yield* loadEventsFromStreams("incremental");
             if (loaded.events.length === 0) {
-                return { importedEvents: 0, appliedEvents: 0, streamCount: loaded.streamCount };
+                return { importedEvents: 0, appliedEvents: 0, ignoredEvents: 0, streamCount: loaded.streamCount };
             }
             const buckets = bucketEventsToV1Ops(loaded.events);
             const tempFiles = yield* writeBucketsToTempFiles(buckets);
-            let shouldSyncPinsToTargets = false;
             yield* Effect.acquireUseRelease(Effect.try({
                 try: () => db.exec("BEGIN"),
                 catch: (cause) => new DatabaseError({ cause })
             }), () => Effect.gen(function* () {
                 if (buckets.tasks.length > 0)
                     yield* syncService.importTaskOps(tempFiles.tasksPath);
-                if (buckets.learnings.length > 0)
-                    yield* syncService.importLearnings(tempFiles.learningsPath);
-                if (buckets.fileLearnings.length > 0)
-                    yield* syncService.importFileLearnings(tempFiles.fileLearningsPath);
-                if (buckets.attempts.length > 0)
-                    yield* syncService.importAttempts(tempFiles.attemptsPath);
-                if (buckets.pins.length > 0) {
-                    const pinImportResult = yield* syncService.importPins(tempFiles.pinsPath);
-                    shouldSyncPinsToTargets = shouldSyncPinsToTargets || pinImportResult.imported > 0;
-                }
-                if (buckets.anchors.length > 0)
-                    yield* syncService.importAnchors(tempFiles.anchorsPath);
-                if (buckets.edges.length > 0)
-                    yield* syncService.importEdges(tempFiles.edgesPath);
                 if (buckets.docs.length > 0)
                     yield* syncService.importDocs(tempFiles.docsPath);
                 if (buckets.labels.length > 0)
@@ -2269,42 +1820,32 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
                 });
                 yield* setWatermark(DEFAULT_SYNC_WATERMARK_KEY, new Date().toISOString());
                 yield* setConfig("last_import", new Date().toISOString());
+                // A failed commit is an import failure, never a successful result.
+                yield* Effect.try({
+                    try: () => db.exec("COMMIT"),
+                    catch: (cause) => new DatabaseError({ cause })
+                });
             }), (_acquire, exit) => Effect.sync(() => {
-                if (Exit.isSuccess(exit)) {
-                    try {
-                        db.exec("COMMIT");
-                    }
-                    catch {
-                        try {
-                            db.exec("ROLLBACK");
-                        }
-                        catch { /* ignore */ }
-                    }
-                }
-                else {
-                    try {
-                        db.exec("ROLLBACK");
-                    }
-                    catch { /* ignore */ }
+                if (Exit.isFailure(exit)) {
+                    try { db.exec("ROLLBACK"); }
+                    catch { /* The original error remains authoritative. */ }
                 }
             })).pipe(Effect.ensuring(cleanupTempDir(tempFiles.dir)));
-            if (shouldSyncPinsToTargets) {
-                yield* syncPinsToTargetFiles();
-            }
+
             return {
                 importedEvents: loaded.events.length,
-                appliedEvents: loaded.events.length,
+                appliedEvents: loaded.events.length - ignoredEventCount(loaded.events),
+                ignoredEvents: ignoredEventCount(loaded.events),
                 streamCount: loaded.streamCount,
             };
         }),
         hydrate: () => Effect.gen(function* () {
             const loaded = yield* loadEventsFromStreams("all");
             if (loaded.events.length === 0) {
-                return { importedEvents: 0, appliedEvents: 0, streamCount: loaded.streamCount, rebuilt: true };
+                return { importedEvents: 0, appliedEvents: 0, ignoredEvents: 0, streamCount: loaded.streamCount, rebuilt: false };
             }
             const buckets = bucketEventsToV1Ops(loaded.events);
             const tempFiles = yield* writeBucketsToTempFiles(buckets);
-            let shouldSyncPinsToTargets = false;
             yield* Effect.acquireUseRelease(Effect.try({
                 try: () => db.exec("BEGIN"),
                 catch: (cause) => new DatabaseError({ cause })
@@ -2319,23 +1860,9 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
                     },
                     catch: (cause) => new DatabaseError({ cause })
                 });
-                yield* clearMaterializedTables();
+
                 if (buckets.tasks.length > 0)
                     yield* syncService.importTaskOps(tempFiles.tasksPath);
-                if (buckets.learnings.length > 0)
-                    yield* syncService.importLearnings(tempFiles.learningsPath);
-                if (buckets.fileLearnings.length > 0)
-                    yield* syncService.importFileLearnings(tempFiles.fileLearningsPath);
-                if (buckets.attempts.length > 0)
-                    yield* syncService.importAttempts(tempFiles.attemptsPath);
-                if (buckets.pins.length > 0) {
-                    const pinImportResult = yield* syncService.importPins(tempFiles.pinsPath);
-                    shouldSyncPinsToTargets = shouldSyncPinsToTargets || pinImportResult.imported > 0;
-                }
-                if (buckets.anchors.length > 0)
-                    yield* syncService.importAnchors(tempFiles.anchorsPath);
-                if (buckets.edges.length > 0)
-                    yield* syncService.importEdges(tempFiles.edgesPath);
                 if (buckets.docs.length > 0)
                     yield* syncService.importDocs(tempFiles.docsPath);
                 if (buckets.labels.length > 0)
@@ -2356,33 +1883,24 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
                 });
                 yield* setWatermark(DEFAULT_SYNC_WATERMARK_KEY, new Date().toISOString());
                 yield* setConfig("last_import", new Date().toISOString());
+                // A failed commit is an import failure, never a successful result.
+                yield* Effect.try({
+                    try: () => db.exec("COMMIT"),
+                    catch: (cause) => new DatabaseError({ cause })
+                });
             }), (_acquire, exit) => Effect.sync(() => {
-                if (Exit.isSuccess(exit)) {
-                    try {
-                        db.exec("COMMIT");
-                    }
-                    catch {
-                        try {
-                            db.exec("ROLLBACK");
-                        }
-                        catch { /* ignore */ }
-                    }
-                }
-                else {
-                    try {
-                        db.exec("ROLLBACK");
-                    }
-                    catch { /* ignore */ }
+                if (Exit.isFailure(exit)) {
+                    try { db.exec("ROLLBACK"); }
+                    catch { /* The original error remains authoritative. */ }
                 }
             })).pipe(Effect.ensuring(cleanupTempDir(tempFiles.dir)));
-            if (shouldSyncPinsToTargets) {
-                yield* syncPinsToTargetFiles();
-            }
+
             return {
                 importedEvents: loaded.events.length,
-                appliedEvents: loaded.events.length,
+                appliedEvents: loaded.events.length - ignoredEventCount(loaded.events),
+                ignoredEvents: ignoredEventCount(loaded.events),
                 streamCount: loaded.streamCount,
-                rebuilt: true
+                rebuilt: false
             };
         }),
         compact: (path) => Effect.gen(function* () {

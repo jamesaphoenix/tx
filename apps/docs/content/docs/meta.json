@@ -1,12 +1,11 @@
 {
   "title": "Documentation",
+  "root": true,
   "pages": [
     "index",
     "getting-started",
-    "ralph-loop",
     "primitives",
-    "headful",
-    "watchdog-runbook"
-  ],
-  "root": true
+    "interfaces",
+    "migration"
+  ]
 }

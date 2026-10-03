@@ -106,7 +106,7 @@ describe("Chaos: JSONL Replay Determinism", () => {
       expect(task.score).toBe(200)
     })
 
-    it("respects timestamp ordering for same task updates", () => {
+    it("respects timestamp ordering for same task update s", () => {
       const jsonl = [
         // Later timestamp first in file
         `{"v":1,"op":"upsert","ts":"2024-01-03T00:00:00Z","id":"${FIXTURES.TASK_1}","data":{"title":"Latest","status":"done","score":999,"description":"","parentId":null,"metadata":{}}}`,

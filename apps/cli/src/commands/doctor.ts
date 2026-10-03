@@ -261,48 +261,6 @@ export const doctor = (_pos: string[], flags: Flags) =>
       message: "Effect services: wired correctly",
     })
 
-    // 5. Check for stale claims/workers
-    try {
-      const now = new Date().toISOString()
-      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString()
-
-      const staleClaims = db.prepare<{ count: number }>(
-        `SELECT COUNT(*) as count FROM task_claims
-         WHERE status = 'active' AND lease_expires_at < ?`
-      ).get(now)
-      const staleClaimCount = staleClaims?.count ?? 0
-
-      const deadWorkers = db.prepare<{ count: number }>(
-        `SELECT COUNT(*) as count FROM workers
-         WHERE status NOT IN ('dead', 'stopping') AND last_heartbeat_at < ?`
-      ).get(fiveMinutesAgo)
-      const deadWorkerCount = deadWorkers?.count ?? 0
-
-      if (staleClaimCount > 0 || deadWorkerCount > 0) {
-        const parts: string[] = []
-        if (staleClaimCount > 0) parts.push(`${staleClaimCount} expired claim(s)`)
-        if (deadWorkerCount > 0) parts.push(`${deadWorkerCount} stale worker(s)`)
-        checks.push({
-          name: "stale_claims",
-          status: "warn",
-          message: `Stale claims/workers: ${parts.join(", ")}`,
-          details: "Run tx coordinator reconcile to clean up.",
-        })
-      } else {
-        checks.push({
-          name: "stale_claims",
-          status: "pass",
-          message: "Claims/workers: no stale entries",
-        })
-      }
-    } catch {
-      checks.push({
-        name: "stale_claims",
-        status: "pass",
-        message: "Claims/workers: no stale entries",
-      })
-    }
-
     // 6. Report database size and task counts
     const taskCounts = db.prepare<{ status: string; count: number }>(
       "SELECT status, COUNT(*) as count FROM tasks GROUP BY status"
@@ -311,10 +269,6 @@ export const doctor = (_pos: string[], flags: Flags) =>
     const readyCount = taskCounts.find(r => r.status === "ready")?.count ?? 0
     const doneCount = taskCounts.find(r => r.status === "done")?.count ?? 0
 
-    const learningCount = db.prepare<{ count: number }>(
-      "SELECT COUNT(*) as count FROM learnings"
-    ).get()
-
     checks.push({
       name: "tasks",
       status: "pass",
@@ -322,23 +276,6 @@ export const doctor = (_pos: string[], flags: Flags) =>
       details: verbose
         ? taskCounts.map(r => `${r.status}: ${r.count}`).join(", ")
         : undefined,
-    })
-
-    checks.push({
-      name: "learnings",
-      status: "pass",
-      message: `Learnings: ${learningCount?.count ?? 0} total`,
-    })
-
-    // 7. Verify ANTHROPIC_API_KEY for LLM features
-    const hasApiKey = !!process.env.ANTHROPIC_API_KEY
-    checks.push({
-      name: "api_key",
-      status: hasApiKey ? "pass" : "warn",
-      message: hasApiKey
-        ? "ANTHROPIC_API_KEY: set"
-        : "ANTHROPIC_API_KEY: not set (LLM features unavailable)",
-      details: hasApiKey ? undefined : "Required for: tx compact, tx dedupe, tx reprioritize",
     })
 
     const healthy = checks.every(c => c.status !== "fail") && validationResult.valid

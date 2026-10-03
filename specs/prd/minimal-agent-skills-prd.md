@@ -22,7 +22,7 @@ last_reviewed_at: 2026-10-03
 ---
 
 # Summary
-Ship three small portable guides: tx-tasks, tx-docs and verify-invariants.
+Ship four small portable guides: tx-tasks, tx-docs, tx-plan and verify-invariants.
 Task guidance creates tasks; feature documentation creates paired PRD/design docs.
 Invariant guidance maps declared IDs to enforcement sites and assertions, then records
 actual verification evidence. Tags alone never mean a check passed.
@@ -32,15 +32,14 @@ A large command catalogue and shipped agent/loop scaffolding add ceremony to pro
 that only need creation guidance and traceability.
 
 # Scope
-Default skill onboarding and explicit skill sync. Existing repository runners and
-opt-in watchdog integrations remain independently maintained.
+Default skill onboarding and explicit skill sync. Runner and watchdog integrations are retired in v0.20.0.
 
 # Requirements
 ```yaml
 ears_requirements:
   - id: REQ-MINIMAL-001
     kind: ubiquitous
-    statement: the default bundle shall install exactly three guides without agents, rules, hooks or Ralph
+    statement: the default bundle shall install exactly four guides without agents, rules, hooks or Ralph
     priority: must
     rationale: keep onboarding small and portable
   - id: REQ-MINIMAL-002
@@ -65,13 +64,13 @@ ears_requirements:
 ```yaml
 acceptance_criteria:
   - id: AC-MINIMAL-001
-    statement: default init emits three SKILL.md files and a manifest per selected host
+    statement: default init emits four SKILL.md files and a manifest per selected host
   - id: AC-MINIMAL-002
     statement: malformed manifests and destination links fail before removal; repeated sync is unchanged
   - id: AC-MINIMAL-003
     statement: changing project templates changes live doc previews without regenerating guides
   - id: AC-MINIMAL-004
-    statement: binary and built built npm CLI generation succeeds from an unrelated directory
+    statement: binary and built npm CLI generation succeeds from an unrelated directory
 ```
 
 # Non-goals

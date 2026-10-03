@@ -4,7 +4,7 @@
 import { Schema } from "effect"
 import {
   TASK_STATUSES, TaskAssigneeTypeSchema,
-  ANCHOR_TYPES, EDGE_TYPES, NODE_TYPES,
+
   DOC_STATUSES, DOC_LINK_TYPES, DOC_STABLE_ID_PATTERN, TASK_DOC_LINK_TYPES,
   INVARIANT_ENFORCEMENT_TYPES, INVARIANT_STATUSES,
   DECISION_STATUSES, DECISION_SOURCES,
@@ -265,7 +265,7 @@ export type PinSyncOperation = typeof PinSyncOperationSchema.Type
 // ----- Anchor Sync Operations -----
 
 // Anchor type schema
-export const AnchorTypeSchema = Schema.Literal(...ANCHOR_TYPES)
+export const AnchorTypeSchema = Schema.Literal("glob", "hash", "symbol", "line_range")
 
 // Anchor status schema
 export const AnchorStatusSchema = Schema.Literal("valid", "drifted", "invalid")
@@ -320,10 +320,10 @@ export type AnchorSyncOperation = typeof AnchorSyncOperationSchema.Type
 // ----- Edge Sync Operations -----
 
 // Edge type schema
-export const SyncEdgeTypeSchema = Schema.Literal(...EDGE_TYPES)
+export const SyncEdgeTypeSchema = Schema.Literal("ANCHORED_TO", "DERIVED_FROM", "IMPORTS", "CO_CHANGES_WITH", "SIMILAR_TO", "LINKS_TO", "USED_IN_RUN", "INVALIDATED_BY")
 
 // Node type schema (for source/target)
-export const SyncNodeTypeSchema = Schema.Literal(...NODE_TYPES)
+export const SyncNodeTypeSchema = Schema.Literal("learning", "file", "task", "run", "memory")
 
 // Edge data embedded in upsert operations
 export const EdgeDataSchema = Schema.Struct({

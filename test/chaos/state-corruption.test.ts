@@ -1,3 +1,4 @@
+import { makeMinimalLayer } from "@jamesaphoenix/tx"
 /**
  * Chaos Engineering: State Corruption and Recovery Tests
  *
@@ -10,7 +11,7 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest"
-import { Effect, Layer } from "effect"
+import { Effect, } from "effect"
 import type { TaskId } from "@jamesaphoenix/tx/types"
 import {
   createTestDatabase,
@@ -34,50 +35,7 @@ const FIXTURES = {
 // Test Layer Factory
 // =============================================================================
 
-async function makeTestLayer() {
-  const {
-    SqliteClientLive,
-    TaskRepositoryLive,
-    DependencyRepositoryLive,
-    LearningRepositoryLive,
-    FileLearningRepositoryLive,
-    AttemptRepositoryLive,
-    TaskServiceLive,
-    DependencyServiceLive,
-    ReadyServiceLive,
-    HierarchyServiceLive,
-    AutoSyncServiceNoop,
-    GuardRepositoryLive,
-    PinRepositoryLive,
-    ClaimRepositoryLive,
-    ClaimServiceLive,
-    OrchestratorStateRepositoryLive
-  } = await import("@jamesaphoenix/tx")
-
-  const infra = SqliteClientLive(":memory:")
-  const repos = Layer.mergeAll(
-    TaskRepositoryLive,
-    DependencyRepositoryLive,
-    GuardRepositoryLive,
-    PinRepositoryLive,
-    LearningRepositoryLive,
-    FileLearningRepositoryLive,
-    AttemptRepositoryLive,
-    ClaimRepositoryLive,
-    OrchestratorStateRepositoryLive
-  ).pipe(Layer.provide(infra))
-
-  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
-
-  const services = Layer.mergeAll(
-    TaskServiceLive,
-    DependencyServiceLive,
-    ReadyServiceLive,
-    HierarchyServiceLive
-  ).pipe(Layer.provide(Layer.mergeAll(repos, AutoSyncServiceNoop, claimService)))
-
-  return Layer.mergeAll(services, repos)
-}
+async function makeTestLayer() { return makeMinimalLayer(":memory:") }
 
 // =============================================================================
 // INVARIANT: System handles invalid data gracefully

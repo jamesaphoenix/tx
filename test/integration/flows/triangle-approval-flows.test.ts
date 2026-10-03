@@ -182,7 +182,7 @@ const addPrd = (cwd: string, dbPath: string, name: string, title: string): void 
 
 const createApprovedDecision = (cwd: string, dbPath: string, taskTitle: string, content: string): string => {
   const task = parseJson<{ id: string }>(
-    expectOk(runTx(cwd, dbPath, ["add", taskTitle, "--json"]), `tx add ${taskTitle}`),
+    expectOk(runTx(cwd, dbPath, ["task", "add", taskTitle, "--json"]), `tx task add ${taskTitle}`),
   )
   const decision = parseJson<{ id: string }>(
     expectOk(
@@ -201,7 +201,7 @@ const createApprovedDecision = (cwd: string, dbPath: string, taskTitle: string, 
 
 const createPendingDecision = (cwd: string, dbPath: string, taskTitle: string, content: string): string => {
   const task = parseJson<{ id: string }>(
-    expectOk(runTx(cwd, dbPath, ["add", taskTitle, "--json"]), `tx add ${taskTitle}`),
+    expectOk(runTx(cwd, dbPath, ["task", "add", taskTitle, "--json"]), `tx task add ${taskTitle}`),
   )
   const decision = parseJson<{ id: string }>(
     expectOk(

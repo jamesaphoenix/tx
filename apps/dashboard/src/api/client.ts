@@ -1,3 +1,4 @@
+import type { SpecHealth } from "@jamesaphoenix/tx"
 // API client using Effect for type-safe fetching
 import { Effect, Data } from "effect"
 
@@ -80,13 +81,6 @@ export interface TaskWithDeps extends TaskRow {
   blocks: string[]
   children: string[]
   isReady: boolean
-  groupContext: string | null
-  effectiveGroupContext: string | null
-  effectiveGroupContextSourceTaskId: string | null
-  orchestrationStatus: OrchestrationStatus | null
-  claimedBy: string | null
-  claimExpiresAt: string | null
-  failedAttempts: number
 }
 
 export interface TasksResponse {
@@ -112,80 +106,11 @@ export interface ReadyResponse {
   tasks: TaskWithDeps[]
 }
 
-export interface RalphActivity {
-  timestamp: string
-  iteration: number
-  task: string
-  taskTitle: string
-  agent: string
-  status: "started" | "completed" | "failed"
-}
-
-export interface RalphResponse {
-  running: boolean
-  pid: number | null
-  currentIteration: number
-  currentTask: string | null
-  recentActivity: RalphActivity[]
-}
-
 export interface StatsResponse {
   tasks: number
   done: number
   ready: number
-  learnings: number
-  runsRunning?: number
-  runsTotal?: number
-}
-
-// Run types
-export interface Run {
-  id: string
-  taskId: string | null
-  agent: string
-  startedAt: string
-  endedAt: string | null
-  status: string
-  exitCode: number | null
-  pid: number | null
-  transcriptPath: string | null
-  stderrPath: string | null
-  stdoutPath: string | null
-  contextInjected: string | null
-  summary: string | null
-  errorMessage: string | null
-  metadata: Record<string, unknown>
-  taskTitle?: string | null
-}
-
-export interface RunsResponse {
-  runs: Run[]
-}
-
-export interface PaginatedRunsResponse {
-  runs: Run[]
-  nextCursor: string | null
-  hasMore: boolean
-}
-
-export interface ChatMessage {
-  role: "user" | "assistant" | "system"
-  content: string | unknown
-  type?: "tool_use" | "tool_result" | "text"
-  tool_name?: string
-  timestamp?: string
-}
-
-export interface RunDetailResponse {
-  run: Run
-  messages: ChatMessage[]
-  logs: {
-    stdout: string | null
-    stderr: string | null
-    stdoutTruncated: boolean
-    stderrTruncated: boolean
   }
-}
 
 export interface TaskDetailResponse {
   task: TaskWithDeps
@@ -385,10 +310,7 @@ export const api = {
       },
       catch: (e) => new ApiError({ message: String(e) }),
     }),
-  getRalph: () => fetchJson<RalphResponse>("/api/ralph"),
   getStats: () => fetchJson<StatsResponse>("/api/stats"),
-  getRuns: () => fetchJson<RunsResponse>("/api/runs"),
-  getRunDetail: (id: string) => fetchJson<RunDetailResponse>(`/api/runs/${id}`),
 }
 
 // Cycle types
@@ -463,7 +385,7 @@ export interface DocSerialized {
   id: number
   docId: string
   hash: string
-  kind: "overview" | "prd" | "design" | "requirement" | "system_design" | "runbook" | "decision"
+  kind: "overview" | "prd" | "design" | "requirement" | "system_design" | "runbook" | "decision" | "plan"
   name: string
   title: string
   version: number
@@ -477,7 +399,7 @@ export interface DocSerialized {
 export interface DocGraphNode {
   id: string
   label: string
-  kind: "overview" | "prd" | "design" | "requirement" | "system_design" | "runbook" | "decision" | "task"
+  kind: "overview" | "prd" | "design" | "requirement" | "system_design" | "runbook" | "decision" | "plan" | "task"
   status?: string
 }
 
@@ -533,6 +455,7 @@ export interface DocHealthResponse {
 
 // Promise-based wrappers for TanStack Query
 export const fetchers = {
+  specHealth: (): Promise<SpecHealth> => Effect.runPromise(fetchJson<SpecHealth>("/api/spec/health")),
   tasks: () => Effect.runPromise(api.getTasks()),
   ready: () => Effect.runPromise(api.getReady()),
   taskDetail: (id: string, options?: { signal?: AbortSignal }) => Effect.runPromise(api.getTaskDetail(id, options)),
@@ -552,10 +475,7 @@ export const fetchers = {
     Effect.runPromise(api.assignTaskLabel(taskId, payload)),
   unassignTaskLabel: (taskId: string, labelId: number) =>
     Effect.runPromise(api.unassignTaskLabel(taskId, labelId)),
-  ralph: () => Effect.runPromise(api.getRalph()),
   stats: () => Effect.runPromise(api.getStats()),
-  runs: () => Effect.runPromise(api.getRuns()),
-  runDetail: (id: string) => Effect.runPromise(api.getRunDetail(id)),
   cycles: async (): Promise<CyclesResponse> => {
     const res = await fetch("/api/cycles")
     if (!res.ok) throw new Error(`HTTP ${res.status}`)

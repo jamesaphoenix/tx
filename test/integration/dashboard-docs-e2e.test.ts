@@ -1,3 +1,4 @@
+const normaliseTaskCommand = (args: string[]): string[] => /^(add|list|ready|show|update|done|reset|delete|bulk|label|dep|block|unblock|children|tree)$/.test(args[0] ?? "") ? ["task", ...(/^(block|unblock|children|tree)$/.test(args[0]) ? ["dep"] : []), ...args] : args
 import { describe, it, expect, afterEach } from "vitest"
 import { spawn, spawnSync } from "node:child_process"
 import { mkdtempSync, rmSync } from "node:fs"
@@ -14,6 +15,8 @@ interface ExecResult {
 }
 
 function runTx(args: string[], cwd: string): ExecResult {
+  args = normaliseTaskCommand(args)
+
   const res = spawnSync("bun", [CLI_SRC, ...args], {
     cwd,
     encoding: "utf-8",
@@ -91,7 +94,7 @@ describe.sequential("dashboard docs e2e", () => {
     )
     expect(link.status).toBe(0)
 
-    proc = spawn("bun", [CLI_SRC, "dashboard", "--no-open", "--port", String(apiPort)], {
+    proc = spawn("bun", [CLI_SRC, "diag", "dashboard", "--no-open", "--port", String(apiPort)], {
       cwd: tmpProjectDir,
       stdio: "pipe",
     })
@@ -180,7 +183,7 @@ describe.sequential("dashboard docs e2e", () => {
     const designDoc = JSON.parse(designShow.stdout) as { docId: string; kind: string; name: string }
     expect(prdDoc.docId).not.toBe(designDoc.docId)
 
-    proc = spawn("bun", [CLI_SRC, "dashboard", "--no-open", "--port", String(apiPort)], {
+    proc = spawn("bun", [CLI_SRC, "diag", "dashboard", "--no-open", "--port", String(apiPort)], {
       cwd: tmpProjectDir,
       stdio: "pipe",
     })

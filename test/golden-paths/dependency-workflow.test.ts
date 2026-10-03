@@ -1,3 +1,4 @@
+import { makeMinimalLayerFromInfra } from "@jamesaphoenix/tx"
 /**
  * Golden Path: Dependency Workflow Integration Tests
  *
@@ -15,57 +16,18 @@ import { describe, it, expect, beforeEach } from "vitest"
 import { Effect, Layer } from "effect"
 import {
   SqliteClient,
-  TaskRepositoryLive,
-  DependencyRepositoryLive,
-  TaskServiceLive,
   TaskService,
-  DependencyServiceLive,
   DependencyService,
-  ReadyServiceLive,
   ReadyService,
-  HierarchyServiceLive,
-  AutoSyncServiceNoop,
-  GuardRepositoryLive,
-  PinRepositoryLive,
-  ClaimRepositoryLive,
-  ClaimServiceLive,
-  OrchestratorStateRepositoryLive
 } from "@jamesaphoenix/tx"
-import { fixtureId, createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx/testing"
+import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx/testing"
 import { seedFixtures, FIXTURES } from "../fixtures.js"
 
 // =============================================================================
 // Test Layer Factory
 // =============================================================================
 
-function makeTestLayer(db: TestDatabase) {
-  const infra = Layer.succeed(SqliteClient, db.db as any)
-  const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive, GuardRepositoryLive,
-  PinRepositoryLive, ClaimRepositoryLive, OrchestratorStateRepositoryLive).pipe(
-    Layer.provide(infra)
-  )
-  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
-  const services = Layer.mergeAll(
-    TaskServiceLive,
-    DependencyServiceLive,
-    ReadyServiceLive,
-    HierarchyServiceLive
-  ).pipe(
-    Layer.provide(Layer.mergeAll(repos, AutoSyncServiceNoop, claimService))
-  )
-  return services
-}
-
-// =============================================================================
-// Golden Path Fixture IDs
-// =============================================================================
-
-const _DEP_FIXTURES = {
-  TASK_A: fixtureId("dep-workflow:task-a"),
-  TASK_B: fixtureId("dep-workflow:task-b"),
-  TASK_C: fixtureId("dep-workflow:task-c"),
-  TASK_D: fixtureId("dep-workflow:task-d"),
-} as const
+function makeTestLayer(db: TestDatabase) { return makeMinimalLayerFromInfra(Layer.succeed(SqliteClient, db.db as any)) }
 
 // =============================================================================
 // Golden Path: Dependency Chain
@@ -171,7 +133,7 @@ describe("Golden Path: Dependency Chain", () => {
     expect(result.taskC.id).toBeDefined()
   })
 
-  it("unblock removes dependency", async () => {
+  it("task dep unblock removes dependency", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const taskSvc = yield* TaskService
@@ -387,7 +349,7 @@ describe("Golden Path: Blocks vs BlockedBy", () => {
     expect(result.blockedWithDeps.blockedBy.length).toBe(2)
   })
 
-  it("ready list only includes tasks with no open blockers", async () => {
+  it("task ready list only includes tasks with no open blockers", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const readySvc = yield* ReadyService

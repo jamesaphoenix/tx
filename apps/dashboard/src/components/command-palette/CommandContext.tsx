@@ -55,6 +55,9 @@ export function useCommands(commands: Command[]) {
   const { setPageCommands } = useCommandContext()
   const prevKeyRef = useRef("")
 
+  // A page leaving must not keep keyboard handlers that target unmounted state.
+  useLayoutEffect(() => () => setPageCommands([]), [setPageCommands])
+
   useLayoutEffect(() => {
     const key = commands
       .map((c) => `${c.id}|${c.label}|${c.sublabel ?? ""}|${c.shortcut ?? ""}|${c.group ?? ""}|${String(c.allowInInput)}`)

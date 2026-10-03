@@ -1,3 +1,4 @@
+import { makeMinimalLayerFromInfra } from "@jamesaphoenix/tx"
 /**
  * State Corruption Recovery Integration Tests
  *
@@ -24,21 +25,9 @@ import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx/testing
 import { seedFixtures, FIXTURES } from "../fixtures.js"
 import {
   SqliteClient,
-  TaskRepositoryLive,
-  DependencyRepositoryLive,
-  TaskServiceLive,
   TaskService,
-  DependencyServiceLive,
-  ReadyServiceLive,
   ReadyService,
-  HierarchyServiceLive,
   HierarchyService,
-  AutoSyncServiceNoop,
-  GuardRepositoryLive,
-  PinRepositoryLive,
-  ClaimRepositoryLive,
-  ClaimServiceLive,
-  OrchestratorStateRepositoryLive
 } from "@jamesaphoenix/tx"
 import {
   corruptState,
@@ -49,18 +38,7 @@ import {
 import type { TaskId } from "@jamesaphoenix/tx/types"
 
 // Create test layer for services
-function makeTestLayer(db: TestDatabase) {
-  const infra = Layer.succeed(SqliteClient, db.db as any)
-  const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive, GuardRepositoryLive,
-  PinRepositoryLive, ClaimRepositoryLive, OrchestratorStateRepositoryLive).pipe(
-    Layer.provide(infra)
-  )
-  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
-  const baseServices = Layer.mergeAll(TaskServiceLive, DependencyServiceLive, ReadyServiceLive, HierarchyServiceLive).pipe(
-    Layer.provide(Layer.mergeAll(repos, AutoSyncServiceNoop, claimService))
-  )
-  return baseServices
-}
+function makeTestLayer(db: TestDatabase) { return makeMinimalLayerFromInfra(Layer.succeed(SqliteClient, db.db as any)) }
 
 describe("State Corruption Recovery", () => {
   let db: TestDatabase
@@ -113,7 +91,7 @@ describe("State Corruption Recovery", () => {
       expect(result._tag).toBe("Left")
     })
 
-    it("ready detection fails with DatabaseError when invalid status task exists", async () => {
+    it("task ready detection fails with DatabaseError when invalid status task exists", async () => {
       // Inject invalid status
       corruptState({
         table: "tasks",
@@ -190,7 +168,7 @@ describe("State Corruption Recovery", () => {
       expect(task.metadata._corruptionError).toMatch(/SyntaxError/)
     })
 
-    it("list operation succeeds even when a task has invalid JSON metadata", async () => {
+    it("task list operation succeeds even when a task has invalid JSON metadata", async () => {
       // Inject invalid JSON into one task
       corruptState({
         table: "tasks",
@@ -234,7 +212,7 @@ describe("State Corruption Recovery", () => {
       expect(deps.length).toBe(1)
     })
 
-    it("ready detection handles orphaned dependencies gracefully", async () => {
+    it("task ready detection handles orphaned dependencies gracefully", async () => {
       // Inject orphaned dependency pointing to AUTH
       corruptState({
         table: "task_dependencies",
@@ -361,7 +339,7 @@ describe("State Corruption Recovery", () => {
       expect(task.score).toBe(-1000)
     })
 
-    it("ready detection works with negative scores", async () => {
+    it("task ready detection works with negative scores", async () => {
       // Inject negative score
       corruptState({
         table: "tasks",
@@ -727,7 +705,7 @@ not valid json at all
       expect(result).toBeDefined()
     })
 
-    it("list operation fails when any task has invalid status", async () => {
+    it("task list operation fails when any task has invalid status", async () => {
       // Corrupt tasks — invalid_status causes rowToTask to throw
       corruptState({ table: "tasks", type: "invalid_status", db: db, rowId: FIXTURES.TASK_JWT })
       corruptState({ table: "tasks", type: "negative_score", db: db, rowId: FIXTURES.TASK_LOGIN })
@@ -819,7 +797,7 @@ not valid json at all
       }
     })
 
-    it("update operations on corrupted tasks work", async () => {
+    it("task update operations on corrupted tasks work", async () => {
       // Corrupt a task with negative score (doesn't break JSON parsing)
       corruptState({
         table: "tasks",

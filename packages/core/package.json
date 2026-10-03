@@ -1,7 +1,7 @@
 {
   "name": "@jamesaphoenix/tx",
-  "version": "0.19.0",
-  "description": "Headless, local infra for AI agents - tasks, memory, specs, and orchestration primitives (types + core + test utilities)",
+  "version": "0.20.0",
+  "description": "Tasks, specifications, plans and verification evidence for coding agents and humans",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -50,7 +50,8 @@
   "files": [
     "dist",
     "migrations",
-    "README.md"
+    "README.md",
+    "!dist/**/*.test.*"
   ],
   "scripts": {
     "prebuild": "node ../../scripts/bundle-migrations.js",
@@ -65,13 +66,9 @@
     "fast-xml-parser": "^5.2.0"
   },
   "peerDependencies": {
-    "@anthropic-ai/sdk": "^0.52.0",
     "vitest": "^4.0.18"
   },
   "peerDependenciesMeta": {
-    "@anthropic-ai/sdk": {
-      "optional": true
-    },
     "vitest": {
       "optional": true
     }
@@ -87,5 +84,13 @@
     "directory": "packages/core"
   },
   "author": "James Phoenix",
-  "license": "MIT"
+  "license": "MIT",
+  "keywords": [
+    "tasks",
+    "spec-driven-development",
+    "plans",
+    "invariants",
+    "cli",
+    "mcp"
+  ]
 }

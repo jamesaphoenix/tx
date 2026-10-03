@@ -19,7 +19,7 @@ import { DatabaseError } from "../errors.js"
 /**
  * Entity types that can trigger auto-sync
  */
-export type AutoSyncEntity = "tasks" | "learnings" | "file-learnings" | "attempts"
+export type AutoSyncEntity = "tasks"
 
 export class AutoSyncService extends Context.Tag("AutoSyncService")<
   AutoSyncService,
@@ -29,24 +29,6 @@ export class AutoSyncService extends Context.Tag("AutoSyncService")<
      * Non-blocking - runs export in background if auto-sync is enabled.
      */
     readonly afterTaskMutation: () => Effect.Effect<void, never>
-
-    /**
-     * Trigger auto-sync after a learning mutation.
-     * Non-blocking - runs export in background if auto-sync is enabled.
-     */
-    readonly afterLearningMutation: () => Effect.Effect<void, never>
-
-    /**
-     * Trigger auto-sync after a file-learning mutation.
-     * Non-blocking - runs export in background if auto-sync is enabled.
-     */
-    readonly afterFileLearningMutation: () => Effect.Effect<void, never>
-
-    /**
-     * Trigger auto-sync after an attempt mutation.
-     * Non-blocking - runs export in background if auto-sync is enabled.
-     */
-    readonly afterAttemptMutation: () => Effect.Effect<void, never>
 
     /**
      * Trigger auto-sync for all entities.
@@ -127,15 +109,6 @@ export const AutoSyncServiceLive = Layer.effect(
       afterTaskMutation: () =>
         runInBackground(syncService.export()),
 
-      afterLearningMutation: () =>
-        runInBackground(syncService.export()),
-
-      afterFileLearningMutation: () =>
-        runInBackground(syncService.export()),
-
-      afterAttemptMutation: () =>
-        runInBackground(syncService.export()),
-
       afterAnyMutation: () =>
         runInBackground(syncService.export())
     }
@@ -150,9 +123,6 @@ export const AutoSyncServiceNoop = Layer.succeed(
   AutoSyncService,
   AutoSyncService.of({
     afterTaskMutation: () => Effect.void,
-    afterLearningMutation: () => Effect.void,
-    afterFileLearningMutation: () => Effect.void,
-    afterAttemptMutation: () => Effect.void,
     afterAnyMutation: () => Effect.void
   })
 )

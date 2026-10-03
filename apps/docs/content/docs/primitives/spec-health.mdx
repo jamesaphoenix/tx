@@ -1,0 +1,18 @@
+---
+doc_style: guide
+title: Spec Health
+description: Inspect mappings, test evidence, drift and decisions
+---
+
+Run `tx spec health --json`, call `GET /api/spec/health`, use MCP `tx_spec_health`,
+or call `client.spec.health()`. The dashboard uses the same core calculation.
+
+Spec Health shows uncovered invariants, missing and failing test evidence, document
+drift, pending decisions and spec phases. Mapping code or tests does not record a
+passing result. Test evidence and human sign-off are separate. Failed evidence reads
+return an error rather than a healthy fallback. An empty workspace displays that no
+specifications have been created.
+
+```bash
+tx spec health --json
+```

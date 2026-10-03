@@ -23,6 +23,7 @@ const STATUS_DOT: Record<string, string> = {
 }
 
 const KIND_LABELS: Record<DocSerialized["kind"], string> = {
+  plan: "Plans",
   overview: "OV",
   prd: "PRD",
   design: "DD",

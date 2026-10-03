@@ -1,9 +1,10 @@
+const normaliseTaskCommand = (args: string[]): string[] => /^(add|list|ready|show|update|done|reset|delete|bulk|label|dep|block|unblock|children|tree)$/.test(args[0] ?? "") ? ["task", ...(/^(block|unblock|children|tree)$/.test(args[0]) ? ["dep"] : []), ...args] : args
 /**
  * CLI E2E Tests for tx md-export command
  *
  * Tests the following critical flows:
  * - One-shot export to markdown file
- * - Task ordering by score (highest first) — structural heading validation
+ * - Task ordering by score (highest first) - structural heading validation
  * - Summary table with correct counts
  * - Recently completed tasks section with correct dates
  * - Filter modes: ready, all, specific status names, invalid values
@@ -46,6 +47,8 @@ interface ExecResult {
 }
 
 function runTxArgs(args: string[], dbPath: string): ExecResult {
+  args = normaliseTaskCommand(args)
+
   try {
     const result = spawnSync("bun", [CLI_SRC, ...args, "--db", dbPath], {
       encoding: "utf-8",
@@ -100,9 +103,9 @@ describe("CLI md-export command", { timeout: SUITE_TIMEOUT }, () => {
 
   describe("basic export", () => {
     it("exports ready tasks to markdown file", () => {
-      runTxArgs(["add", "Task Alpha", "--score", "800", "--json"], dbPath)
+      runTxArgs(["task", "add", "Task Alpha", "--score", "800", "--json"], dbPath)
       walCheckpoint(dbPath)
-      runTxArgs(["add", "Task Beta", "--score", "600", "--json"], dbPath)
+      runTxArgs(["task", "add", "Task Beta", "--score", "600", "--json"], dbPath)
       walCheckpoint(dbPath)
 
       const mdPath = join(tmpDir, "tasks.md")
@@ -123,12 +126,12 @@ describe("CLI md-export command", { timeout: SUITE_TIMEOUT }, () => {
       expect(content).toContain("Task Beta")
     })
 
-    it("sorts ready tasks by score highest first — verified via heading structure", () => {
-      runTxArgs(["add", "Low Priority", "--score", "100", "--json"], dbPath)
+    it("sorts ready tasks by score highest first - verified via heading structure", () => {
+      runTxArgs(["task", "add", "Low Priority", "--score", "100", "--json"], dbPath)
       walCheckpoint(dbPath)
-      runTxArgs(["add", "High Priority", "--score", "900", "--json"], dbPath)
+      runTxArgs(["task", "add", "High Priority", "--score", "900", "--json"], dbPath)
       walCheckpoint(dbPath)
-      runTxArgs(["add", "Medium Priority", "--score", "500", "--json"], dbPath)
+      runTxArgs(["task", "add", "Medium Priority", "--score", "500", "--json"], dbPath)
       walCheckpoint(dbPath)
 
       const mdPath = join(tmpDir, "tasks.md")
@@ -137,7 +140,7 @@ describe("CLI md-export command", { timeout: SUITE_TIMEOUT }, () => {
 
       const content = readFileSync(mdPath, "utf-8")
 
-      // Verify ordering via heading lines — most reliable structural check
+      // Verify ordering via heading lines - most reliable structural check
       const headings = content.split("\n").filter(l => l.startsWith("### "))
       expect(headings.length).toBe(3)
       expect(headings[0]).toContain("High Priority")
@@ -151,14 +154,14 @@ describe("CLI md-export command", { timeout: SUITE_TIMEOUT }, () => {
     })
 
     it("shows correct summary counts", () => {
-      const t1 = runTxArgs(["add", "Ready Task", "--json"], dbPath)
+      const t1 = runTxArgs(["task", "add", "Ready Task", "--json"], dbPath)
       walCheckpoint(dbPath)
       const t1Id = JSON.parse(t1.stdout).id
 
-      runTxArgs(["add", "Another Ready Task", "--json"], dbPath)
+      runTxArgs(["task", "add", "Another Ready Task", "--json"], dbPath)
       walCheckpoint(dbPath)
 
-      runTxArgs(["done", t1Id], dbPath)
+      runTxArgs(["task", "done", t1Id], dbPath)
       walCheckpoint(dbPath)
 
       const mdPath = join(tmpDir, "tasks.md")
@@ -199,15 +202,15 @@ describe("CLI md-export command", { timeout: SUITE_TIMEOUT }, () => {
 
   describe("dependency handling", () => {
     it("only exports ready (unblocked) tasks when using default filter", () => {
-      const blocker = runTxArgs(["add", "Blocker Task", "--score", "800", "--json"], dbPath)
+      const blocker = runTxArgs(["task", "add", "Blocker Task", "--score", "800", "--json"], dbPath)
       walCheckpoint(dbPath)
       const blockerId = JSON.parse(blocker.stdout).id
 
-      const blocked = runTxArgs(["add", "Blocked Task", "--score", "900", "--json"], dbPath)
+      const blocked = runTxArgs(["task", "add", "Blocked Task", "--score", "900", "--json"], dbPath)
       walCheckpoint(dbPath)
       const blockedId = JSON.parse(blocked.stdout).id
 
-      runTxArgs(["block", blockedId, blockerId], dbPath)
+      runTxArgs(["task", "dep", "block", blockedId, blockerId], dbPath)
       walCheckpoint(dbPath)
 
       const mdPath = join(tmpDir, "tasks.md")
@@ -221,15 +224,15 @@ describe("CLI md-export command", { timeout: SUITE_TIMEOUT }, () => {
     })
 
     it("shows blocked tasks with --filter all including blockedBy info", () => {
-      const blocker = runTxArgs(["add", "Auth Blocker", "--score", "800", "--json"], dbPath)
+      const blocker = runTxArgs(["task", "add", "Auth Blocker", "--score", "800", "--json"], dbPath)
       walCheckpoint(dbPath)
       const blockerId = JSON.parse(blocker.stdout).id
 
-      const blocked = runTxArgs(["add", "Blocked Auth", "--score", "900", "--json"], dbPath)
+      const blocked = runTxArgs(["task", "add", "Blocked Auth", "--score", "900", "--json"], dbPath)
       walCheckpoint(dbPath)
       const blockedId = JSON.parse(blocked.stdout).id
 
-      runTxArgs(["block", blockedId, blockerId], dbPath)
+      runTxArgs(["task", "dep", "block", blockedId, blockerId], dbPath)
       walCheckpoint(dbPath)
 
       const mdPath = join(tmpDir, "tasks.md")
@@ -251,20 +254,20 @@ describe("CLI md-export command", { timeout: SUITE_TIMEOUT }, () => {
 
   describe("--include-done", () => {
     it("includes recently completed tasks with correct checkbox format and date", () => {
-      const t1 = runTxArgs(["add", "Done Task One", "--json"], dbPath)
+      const t1 = runTxArgs(["task", "add", "Done Task One", "--json"], dbPath)
       walCheckpoint(dbPath)
       const t1Id = JSON.parse(t1.stdout).id
 
-      const t2 = runTxArgs(["add", "Done Task Two", "--json"], dbPath)
+      const t2 = runTxArgs(["task", "add", "Done Task Two", "--json"], dbPath)
       walCheckpoint(dbPath)
       const t2Id = JSON.parse(t2.stdout).id
 
-      runTxArgs(["add", "Still Ready Task", "--json"], dbPath)
+      runTxArgs(["task", "add", "Still Ready Task", "--json"], dbPath)
       walCheckpoint(dbPath)
 
-      runTxArgs(["done", t1Id], dbPath)
+      runTxArgs(["task", "done", t1Id], dbPath)
       walCheckpoint(dbPath)
-      runTxArgs(["done", t2Id], dbPath)
+      runTxArgs(["task", "done", t2Id], dbPath)
       walCheckpoint(dbPath)
 
       const mdPath = join(tmpDir, "tasks.md")
@@ -276,22 +279,22 @@ describe("CLI md-export command", { timeout: SUITE_TIMEOUT }, () => {
       expect(content).toContain("Done Task One")
       expect(content).toContain("Done Task Two")
 
-      // Verify checkbox format: - [x] <id> — <title> (<date>)
+      // Verify checkbox format: - [x] <id> - <title> (<date>)
       const today = new Date().toISOString().split("T")[0]
-      expect(content).toMatch(new RegExp(`- \\[x\\] ${t1Id} — Done Task One \\(${today}\\)`))
-      expect(content).toMatch(new RegExp(`- \\[x\\] ${t2Id} — Done Task Two \\(${today}\\)`))
+      expect(content).toMatch(new RegExp(`- \\[x\\] ${t1Id} - Done Task One \\(${today}\\)`))
+      expect(content).toMatch(new RegExp(`- \\[x\\] ${t2Id} - Done Task Two \\(${today}\\)`))
     })
 
     it("limits completed tasks to specified count", { timeout: CLI_TIMEOUT }, () => {
       for (let i = 1; i <= 3; i++) {
-        const t = runTxArgs(["add", `Completed ${i}`, "--json"], dbPath)
+        const t = runTxArgs(["task", "add", `Completed ${i}`, "--json"], dbPath)
         walCheckpoint(dbPath)
         const id = JSON.parse(t.stdout).id
-        runTxArgs(["done", id], dbPath)
+        runTxArgs(["task", "done", id], dbPath)
         walCheckpoint(dbPath)
       }
 
-      runTxArgs(["add", "Ready Task", "--json"], dbPath)
+      runTxArgs(["task", "add", "Ready Task", "--json"], dbPath)
       walCheckpoint(dbPath)
 
       const mdPath = join(tmpDir, "tasks.md")
@@ -306,13 +309,13 @@ describe("CLI md-export command", { timeout: SUITE_TIMEOUT }, () => {
     })
 
     it("excludes completed section when --include-done 0", () => {
-      const t = runTxArgs(["add", "Done Task", "--json"], dbPath)
+      const t = runTxArgs(["task", "add", "Done Task", "--json"], dbPath)
       walCheckpoint(dbPath)
       const tId = JSON.parse(t.stdout).id
-      runTxArgs(["done", tId], dbPath)
+      runTxArgs(["task", "done", tId], dbPath)
       walCheckpoint(dbPath)
 
-      runTxArgs(["add", "Ready Task", "--json"], dbPath)
+      runTxArgs(["task", "add", "Ready Task", "--json"], dbPath)
       walCheckpoint(dbPath)
 
       const mdPath = join(tmpDir, "tasks.md")
@@ -324,13 +327,13 @@ describe("CLI md-export command", { timeout: SUITE_TIMEOUT }, () => {
     })
 
     it("treats negative --include-done the same as 0 (no completed section)", () => {
-      const t = runTxArgs(["add", "Done Task", "--json"], dbPath)
+      const t = runTxArgs(["task", "add", "Done Task", "--json"], dbPath)
       walCheckpoint(dbPath)
       const tId = JSON.parse(t.stdout).id
-      runTxArgs(["done", tId], dbPath)
+      runTxArgs(["task", "done", tId], dbPath)
       walCheckpoint(dbPath)
 
-      runTxArgs(["add", "Ready Task", "--json"], dbPath)
+      runTxArgs(["task", "add", "Ready Task", "--json"], dbPath)
       walCheckpoint(dbPath)
 
       const mdPath = join(tmpDir, "tasks.md")
@@ -348,7 +351,7 @@ describe("CLI md-export command", { timeout: SUITE_TIMEOUT }, () => {
 
   describe("--path", () => {
     it("writes to custom path", () => {
-      runTxArgs(["add", "Test Task", "--json"], dbPath)
+      runTxArgs(["task", "add", "Test Task", "--json"], dbPath)
       walCheckpoint(dbPath)
 
       const customPath = join(tmpDir, "custom", "output.md")
@@ -362,7 +365,7 @@ describe("CLI md-export command", { timeout: SUITE_TIMEOUT }, () => {
     })
 
     it("creates parent directories if they do not exist", () => {
-      runTxArgs(["add", "Test Task", "--json"], dbPath)
+      runTxArgs(["task", "add", "Test Task", "--json"], dbPath)
       walCheckpoint(dbPath)
 
       const deepPath = join(tmpDir, "deep", "nested", "dir", "tasks.md")
@@ -374,12 +377,12 @@ describe("CLI md-export command", { timeout: SUITE_TIMEOUT }, () => {
   })
 
   // ---------------------------------------------------------------------------
-  // 6. JSON output (--json) — validated schema
+  // 6. JSON output (--json) - validated schema
   // ---------------------------------------------------------------------------
 
   describe("--json output", () => {
     it("outputs valid JSON with correct metadata", () => {
-      runTxArgs(["add", "JSON Test Task", "--json"], dbPath)
+      runTxArgs(["task", "add", "JSON Test Task", "--json"], dbPath)
       walCheckpoint(dbPath)
 
       const mdPath = join(tmpDir, "tasks.md")
@@ -410,15 +413,15 @@ describe("CLI md-export command", { timeout: SUITE_TIMEOUT }, () => {
     })
 
     it("reports actual ready count separately from exported count for open filter JSON", () => {
-      const blocker = runTxArgs(["add", "JSON Open Blocker", "--json"], dbPath)
+      const blocker = runTxArgs(["task", "add", "JSON Open Blocker", "--json"], dbPath)
       walCheckpoint(dbPath)
       const blockerId = JSON.parse(blocker.stdout).id
 
-      const blocked = runTxArgs(["add", "JSON Still Open", "--json"], dbPath)
+      const blocked = runTxArgs(["task", "add", "JSON Still Open", "--json"], dbPath)
       walCheckpoint(dbPath)
       const blockedId = JSON.parse(blocked.stdout).id
 
-      runTxArgs(["block", blockedId, blockerId], dbPath)
+      runTxArgs(["task", "dep", "block", blockedId, blockerId], dbPath)
       walCheckpoint(dbPath)
 
       const mdPath = join(tmpDir, "tasks.md")
@@ -433,19 +436,19 @@ describe("CLI md-export command", { timeout: SUITE_TIMEOUT }, () => {
   })
 
   // ---------------------------------------------------------------------------
-  // 7. Filter modes — comprehensive
+  // 7. Filter modes - comprehensive
   // ---------------------------------------------------------------------------
 
   describe("--filter", () => {
     it("filters by all shows every task regardless of status", () => {
-      const t1 = runTxArgs(["add", "Task One", "--json"], dbPath)
+      const t1 = runTxArgs(["task", "add", "Task One", "--json"], dbPath)
       walCheckpoint(dbPath)
       const t1Id = JSON.parse(t1.stdout).id
 
-      runTxArgs(["add", "Task Two", "--json"], dbPath)
+      runTxArgs(["task", "add", "Task Two", "--json"], dbPath)
       walCheckpoint(dbPath)
 
-      runTxArgs(["done", t1Id], dbPath)
+      runTxArgs(["task", "done", t1Id], dbPath)
       walCheckpoint(dbPath)
 
       const mdPath = join(tmpDir, "tasks.md")
@@ -464,21 +467,21 @@ describe("CLI md-export command", { timeout: SUITE_TIMEOUT }, () => {
     })
 
     it("filters by open shows all non-done tasks in the main section", () => {
-      const blocker = runTxArgs(["add", "Open Blocker", "--json"], dbPath)
+      const blocker = runTxArgs(["task", "add", "Open Blocker", "--json"], dbPath)
       walCheckpoint(dbPath)
       const blockerId = JSON.parse(blocker.stdout).id
 
-      const blocked = runTxArgs(["add", "Still Open", "--json"], dbPath)
+      const blocked = runTxArgs(["task", "add", "Still Open", "--json"], dbPath)
       walCheckpoint(dbPath)
       const blockedId = JSON.parse(blocked.stdout).id
 
-      const doneTask = runTxArgs(["add", "Already Done", "--json"], dbPath)
+      const doneTask = runTxArgs(["task", "add", "Already Done", "--json"], dbPath)
       walCheckpoint(dbPath)
       const doneTaskId = JSON.parse(doneTask.stdout).id
 
-      runTxArgs(["block", blockedId, blockerId], dbPath)
+      runTxArgs(["task", "dep", "block", blockedId, blockerId], dbPath)
       walCheckpoint(dbPath)
-      runTxArgs(["done", doneTaskId], dbPath)
+      runTxArgs(["task", "done", doneTaskId], dbPath)
       walCheckpoint(dbPath)
 
       const mdPath = join(tmpDir, "tasks.md")
@@ -495,7 +498,7 @@ describe("CLI md-export command", { timeout: SUITE_TIMEOUT }, () => {
     })
 
     it("filters by specific status name (backlog)", () => {
-      runTxArgs(["add", "Backlog Task", "--json"], dbPath)
+      runTxArgs(["task", "add", "Backlog Task", "--json"], dbPath)
       walCheckpoint(dbPath)
 
       const mdPath = join(tmpDir, "tasks.md")
@@ -507,14 +510,14 @@ describe("CLI md-export command", { timeout: SUITE_TIMEOUT }, () => {
     })
 
     it("filters by done status shows only done tasks in main section", () => {
-      const t1 = runTxArgs(["add", "Will Be Done", "--json"], dbPath)
+      const t1 = runTxArgs(["task", "add", "Will Be Done", "--json"], dbPath)
       walCheckpoint(dbPath)
       const t1Id = JSON.parse(t1.stdout).id
 
-      runTxArgs(["add", "Still Ready", "--json"], dbPath)
+      runTxArgs(["task", "add", "Still Ready", "--json"], dbPath)
       walCheckpoint(dbPath)
 
-      runTxArgs(["done", t1Id], dbPath)
+      runTxArgs(["task", "done", t1Id], dbPath)
       walCheckpoint(dbPath)
 
       const mdPath = join(tmpDir, "tasks.md")
@@ -539,14 +542,14 @@ describe("CLI md-export command", { timeout: SUITE_TIMEOUT }, () => {
     })
 
     it("--filter with --include-done are independent", () => {
-      const t1 = runTxArgs(["add", "Done Task", "--json"], dbPath)
+      const t1 = runTxArgs(["task", "add", "Done Task", "--json"], dbPath)
       walCheckpoint(dbPath)
       const t1Id = JSON.parse(t1.stdout).id
 
-      runTxArgs(["add", "Ready Task", "--json"], dbPath)
+      runTxArgs(["task", "add", "Ready Task", "--json"], dbPath)
       walCheckpoint(dbPath)
 
-      runTxArgs(["done", t1Id], dbPath)
+      runTxArgs(["task", "done", t1Id], dbPath)
       walCheckpoint(dbPath)
 
       const mdPath = join(tmpDir, "tasks.md")
@@ -571,7 +574,7 @@ describe("CLI md-export command", { timeout: SUITE_TIMEOUT }, () => {
 
   describe("task details", () => {
     it("includes score, status, and description in markdown", () => {
-      runTxArgs(["add", "Detailed Task", "--score", "750", "--description", "A task with a description", "--json"], dbPath)
+      runTxArgs(["task", "add", "Detailed Task", "--score", "750", "--description", "A task with a description", "--json"], dbPath)
       walCheckpoint(dbPath)
 
       const mdPath = join(tmpDir, "tasks.md")
@@ -584,15 +587,15 @@ describe("CLI md-export command", { timeout: SUITE_TIMEOUT }, () => {
     })
 
     it("includes blocking relationship with actual task IDs", () => {
-      const t1 = runTxArgs(["add", "Blocker Task", "--json"], dbPath)
+      const t1 = runTxArgs(["task", "add", "Blocker Task", "--json"], dbPath)
       walCheckpoint(dbPath)
       const blockerId = JSON.parse(t1.stdout).id
 
-      const t2 = runTxArgs(["add", "Other Task", "--json"], dbPath)
+      const t2 = runTxArgs(["task", "add", "Other Task", "--json"], dbPath)
       walCheckpoint(dbPath)
       const otherId = JSON.parse(t2.stdout).id
 
-      runTxArgs(["block", otherId, blockerId], dbPath)
+      runTxArgs(["task", "dep", "block", otherId, blockerId], dbPath)
       walCheckpoint(dbPath)
 
       const mdPath = join(tmpDir, "tasks.md")
@@ -605,7 +608,7 @@ describe("CLI md-export command", { timeout: SUITE_TIMEOUT }, () => {
     })
 
     it("includes linked docs when a task is attached to a spec", () => {
-      const task = runTxArgs(["add", "Implement Auth Flow", "--json"], dbPath)
+      const task = runTxArgs(["task", "add", "Implement Auth Flow", "--json"], dbPath)
       walCheckpoint(dbPath)
       const taskId = JSON.parse(task.stdout).id
 
@@ -647,7 +650,6 @@ describe("CLI md-export command", { timeout: SUITE_TIMEOUT }, () => {
       expect(result.stdout).toContain("--path")
       expect(result.stdout).toContain("--filter")
       expect(result.stdout).toContain("--watch")
-      expect(result.stdout).toContain("--include-context")
       expect(result.stdout).toContain("--include-done")
       expect(result.stdout).toContain("--interval")
     })
@@ -665,16 +667,16 @@ describe("CLI md-export command", { timeout: SUITE_TIMEOUT }, () => {
 
   describe("markdown structure", () => {
     it("produces well-formed markdown with all sections", () => {
-      const t1 = runTxArgs(["add", "Completed Task", "--score", "500", "--json"], dbPath)
+      const t1 = runTxArgs(["task", "add", "Completed Task", "--score", "500", "--json"], dbPath)
       walCheckpoint(dbPath)
       const t1Id = JSON.parse(t1.stdout).id
 
-      runTxArgs(["add", "Ready Task A", "--score", "800", "--json"], dbPath)
+      runTxArgs(["task", "add", "Ready Task A", "--score", "800", "--json"], dbPath)
       walCheckpoint(dbPath)
-      runTxArgs(["add", "Ready Task B", "--score", "600", "--json"], dbPath)
+      runTxArgs(["task", "add", "Ready Task B", "--score", "600", "--json"], dbPath)
       walCheckpoint(dbPath)
 
-      runTxArgs(["done", t1Id], dbPath)
+      runTxArgs(["task", "done", t1Id], dbPath)
       walCheckpoint(dbPath)
 
       const mdPath = join(tmpDir, "tasks.md")
@@ -701,7 +703,7 @@ describe("CLI md-export command", { timeout: SUITE_TIMEOUT }, () => {
     })
 
     it("does not produce trailing separator when no completed tasks", () => {
-      runTxArgs(["add", "Only Task", "--json"], dbPath)
+      runTxArgs(["task", "add", "Only Task", "--json"], dbPath)
       walCheckpoint(dbPath)
 
       const mdPath = join(tmpDir, "tasks.md")
@@ -734,11 +736,11 @@ describe("CLI md-export command", { timeout: SUITE_TIMEOUT }, () => {
 
   describe("children", () => {
     it("includes children in task detail when children exist", () => {
-      const parent = runTxArgs(["add", "Parent Task", "--json"], dbPath)
+      const parent = runTxArgs(["task", "add", "Parent Task", "--json"], dbPath)
       walCheckpoint(dbPath)
       const parentId = JSON.parse(parent.stdout).id
 
-      runTxArgs(["add", "Child Task", "--parent", parentId, "--json"], dbPath)
+      runTxArgs(["task", "add", "Child Task", "--parent", parentId, "--json"], dbPath)
       walCheckpoint(dbPath)
 
       const mdPath = join(tmpDir, "tasks.md")
@@ -756,7 +758,7 @@ describe("CLI md-export command", { timeout: SUITE_TIMEOUT }, () => {
 
   describe("special character escaping", () => {
     it("escapes special markdown characters in task titles", () => {
-      runTxArgs(["add", "Fix `core` [alpha] module", "--json"], dbPath)
+      runTxArgs(["task", "add", "Fix `core` [alpha] module", "--json"], dbPath)
       walCheckpoint(dbPath)
 
       const mdPath = join(tmpDir, "tasks.md")
@@ -777,7 +779,7 @@ describe("CLI md-export command", { timeout: SUITE_TIMEOUT }, () => {
 
   describe("filter section title", () => {
     it("shows 'All Tasks' heading when --filter all", () => {
-      runTxArgs(["add", "Some Task", "--json"], dbPath)
+      runTxArgs(["task", "add", "Some Task", "--json"], dbPath)
       walCheckpoint(dbPath)
 
       const mdPath = join(tmpDir, "tasks.md")
@@ -790,13 +792,13 @@ describe("CLI md-export command", { timeout: SUITE_TIMEOUT }, () => {
 
     it("shows correct ready count in summary when --filter all", () => {
       // Create one ready task and one done task
-      runTxArgs(["add", "Ready Task", "--json"], dbPath)
+      runTxArgs(["task", "add", "Ready Task", "--json"], dbPath)
       walCheckpoint(dbPath)
 
-      const t2 = runTxArgs(["add", "Done Task", "--json"], dbPath)
+      const t2 = runTxArgs(["task", "add", "Done Task", "--json"], dbPath)
       walCheckpoint(dbPath)
       const t2Id = JSON.parse(t2.stdout).id
-      runTxArgs(["done", t2Id], dbPath)
+      runTxArgs(["task", "done", t2Id], dbPath)
       walCheckpoint(dbPath)
 
       const mdPath = join(tmpDir, "tasks.md")

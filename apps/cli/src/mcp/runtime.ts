@@ -12,20 +12,8 @@ import {
   ReadyService,
   DependencyService,
   HierarchyService,
-  LearningService,
-  FileLearningService,
   SyncService,
-  MessageService,
   DocService,
-  RunHeartbeatService,
-  PinService,
-  ClaimService,
-  MemoryService,
-  MemoryRetrieverService,
-  GuardService,
-  VerifyService,
-  ReflectService,
-  DecomposeService,
   SpecTraceService,
   DecisionService,
   LabelRepository,
@@ -42,20 +30,8 @@ export type McpServices =
   | ReadyService
   | DependencyService
   | HierarchyService
-  | LearningService
-  | FileLearningService
   | SyncService
-  | MessageService
   | DocService
-  | RunHeartbeatService
-  | PinService
-  | ClaimService
-  | MemoryService
-  | MemoryRetrieverService
-  | GuardService
-  | VerifyService
-  | ReflectService
-  | DecomposeService
   | SpecTraceService
   | DecisionService
   | LabelRepository

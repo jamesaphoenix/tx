@@ -22,12 +22,14 @@ export const DOC_KINDS = [
   "system_design",
   "runbook",
   "decision",
+  "plan",
 ] as const
 export const DOC_STATUSES = ["changing", "locked"] as const
 export const DOC_LINK_TYPES = [
   "overview_to_prd",
   "overview_to_design",
   "prd_to_design",
+  "spec_to_plan",
   "design_patch",
   "requirement_to_prd",
   "requirement_to_design",
@@ -43,7 +45,7 @@ export const INVARIANT_ENFORCEMENT_TYPES = [
 export const INVARIANT_STATUSES = ["active", "deprecated"] as const
 export const INVARIANT_SOURCES = ["explicit", "goals", "decision", "constraint"] as const
 export const MD_DOC_KINDS = ["spec", "task"] as const
-export const MD_SPEC_TYPES = ["prd", "design", "overview", "runbook", "decision"] as const
+export const MD_SPEC_TYPES = ["prd", "design", "overview", "runbook", "decision", "plan"] as const
 export const MD_SPEC_STATUSES = ["active", "draft", "deprecated", "archived"] as const
 export const MD_EARS_REQUIREMENT_KINDS = [
   "ubiquitous",
@@ -64,6 +66,7 @@ export const MD_VERIFICATION_TEST_TYPES = [
 export const MD_INTERFACE_TYPES = ["http", "queue", "event", "rpc", "cron"] as const
 export const MD_INVARIANT_SEVERITIES = ["low", "medium", "high", "critical"] as const
 export const MD_REQUIRED_SECTIONS_BY_SPEC_TYPE = {
+  plan: [],
   prd: ["Summary", "Problem", "Scope", "Requirements", "Acceptance Criteria"],
   design: [
     "Summary",

@@ -2,14 +2,12 @@
  * Sync commands: export, import, stream, hydrate, status, auto, compact, history, migrate
  */
 
-import { Effect } from "effect"
 import { SyncService } from "@jamesaphoenix/tx"
+import { Effect } from "effect"
 import { toJson } from "../output.js"
 import { commandHelp } from "../help.js"
 import { type Flags, flag, opt } from "../utils/parse.js"
 import { unknownSubcommandError, usageError } from "../cli-errors.js"
-import { syncClaude, syncCodex } from "./sync-platform.js"
-import { compact, history } from "./compact.js"
 import { migrate } from "./migrate.js"
 
 export const sync = (pos: string[], flags: Flags) =>
@@ -31,23 +29,9 @@ export const sync = (pos: string[], flags: Flags) =>
     }
 
     // Platform sync subcommands (don't need SyncService)
-    if (subcommand === "claude") {
-      return yield* syncClaude(pos.slice(1), flags)
-    } else if (subcommand === "codex") {
-      return yield* syncCodex(pos.slice(1), flags)
-    }
-
-    // Absorbed commands: compact, history, migrate
-    if (subcommand === "compact") {
-      return yield* compact(pos.slice(1), flags)
-    } else if (subcommand === "history") {
-      return yield* history(pos.slice(1), flags)
-    } else if (subcommand === "migrate") {
-      return yield* migrate(pos.slice(1), flags)
-    }
+    if (subcommand === "migrate") return yield* migrate(pos.slice(1), flags)
 
     const syncSvc = yield* SyncService
-
     if (subcommand === "export") {
       if (opt(flags, "path") || flag(flags, "tasks-only")) {
         return yield* Effect.fail(usageError({
@@ -164,7 +148,7 @@ export const sync = (pos: string[], flags: Flags) =>
       return yield* Effect.fail(unknownSubcommandError({
         command: "sync",
         subcommand,
-        usage: "tx sync <export|import|stream|hydrate|status|auto|claude|codex|compact|history|migrate>",
+        usage: "tx sync <export|import|stream|hydrate|status|auto|migrate>",
         examples: [
           "tx sync export",
           "tx sync status --json",

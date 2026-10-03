@@ -1,3 +1,4 @@
+const normaliseTaskCommand = (args: string[]): string[] => /^(add|list|ready|show|update|done|reset|delete|bulk|label|dep|block|unblock|children|tree)$/.test(args[0] ?? "") ? ["task", ...(/^(block|unblock|children|tree)$/.test(args[0]) ? ["dep"] : []), ...args] : args
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { spawnSync } from "node:child_process"
 import { existsSync, mkdtempSync, rmSync } from "node:fs"
@@ -15,6 +16,8 @@ interface ExecResult {
 }
 
 function runTx(args: string[], cwd: string, dbPath: string): ExecResult {
+  args = normaliseTaskCommand(args)
+
   const result = spawnSync(BUN_BIN, [CLI_SRC, ...args, "--db", dbPath], {
     cwd,
     encoding: "utf-8",
@@ -81,7 +84,7 @@ describe("CLI user-facing error contract", () => {
   })
 
   it("returns structured JSON for unknown subcommands", () => {
-    const result = runTx(["dep", "potato", "--json"], tmpDir, dbPath)
+    const result = runTx(["task", "dep", "potato", "--json"], tmpDir, dbPath)
 
     expect(result.status).toBe(1)
     expect(result.stderr).toBe("")
@@ -93,7 +96,7 @@ describe("CLI user-facing error contract", () => {
 
     expect(parsed.ok).toBe(false)
     expect(parsed.error.code).toBe("cli/unknown-subcommand")
-    expect(parsed.error.usage).toBe("tx dep <block|unblock|children|tree>")
+    expect(parsed.error.usage).toBe("tx task dep <block|unblock|children|tree>")
     expect(parsed.error.hint).toContain("tx help dep")
   })
 
@@ -111,7 +114,7 @@ describe("CLI user-facing error contract", () => {
     expect(parsed.ok).toBe(false)
     expect(parsed.error.code).toBe("cli/unknown-command")
     expect(parsed.error.details?.suggestions?.length).toBeGreaterThan(0)
-    expect(parsed.error.details?.suggestions).toContain("ready")
+    expect(parsed.error.details?.suggestions).toContain("task")
   })
 
   it("keeps text-mode errors actionable", () => {

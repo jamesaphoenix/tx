@@ -155,11 +155,9 @@ describe("API definition exports", () => {
   })
 
   it("should export all API groups from api.ts", async () => {
-    const { HealthGroup, TasksGroup, LearningsGroup, RunsGroup, SyncGroup } = await import("../api.js")
+    const { HealthGroup, TasksGroup, SyncGroup } = await import("../api.js")
     expect(HealthGroup).toBeDefined()
     expect(TasksGroup).toBeDefined()
-    expect(LearningsGroup).toBeDefined()
-    expect(RunsGroup).toBeDefined()
     expect(SyncGroup).toBeDefined()
   })
 })
