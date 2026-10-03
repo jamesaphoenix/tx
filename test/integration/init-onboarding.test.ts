@@ -19,7 +19,7 @@ interface Sandbox {
 
 const REPO_ROOT = resolve(__dirname, "..", "..")
 const BUN_BIN = process.execPath.includes("bun") ? process.execPath : "bun"
-const BUNDLED_SPEC_SKILLS = ["decompose-spec", "design-doc", "overview-spec", "prd", "verify-invariants"] as const
+const BUNDLED_SPEC_SKILLS = ["tx-tasks", "tx-docs", "verify-invariants"] as const
 const sandboxes: Sandbox[] = []
 
 function createSandbox(): Sandbox {
@@ -88,15 +88,15 @@ describe("tx init onboarding edge cases", () => {
     expect(existsSync(join(sandbox.dir, "AGENTS.md"))).toBe(false)
     expect(existsSync(join(sandbox.dir, ".codex", "agents"))).toBe(false)
     expect(existsSync(join(sandbox.dir, ".codex", "skills", "manifest.json"))).toBe(true)
-    expect(existsSync(join(sandbox.dir, ".codex", "skills", "tx-core-loop", "SKILL.md"))).toBe(true)
-    expect(existsSync(join(sandbox.dir, ".codex", "skills", "skills-sync", "SKILL.md"))).toBe(true)
-    expect(existsSync(join(sandbox.dir, ".codex", "rules", "default.rules"))).toBe(true)
+    expect(existsSync(join(sandbox.dir, ".codex", "skills", "tx-tasks", "SKILL.md"))).toBe(true)
+    expect(existsSync(join(sandbox.dir, ".codex", "skills", "tx-docs", "SKILL.md"))).toBe(true)
+    expect(existsSync(join(sandbox.dir, ".codex", "rules", "default.rules"))).toBe(false)
 
     const designDocSkill = readFileSync(
-      join(sandbox.dir, ".codex", "skills", "design-doc", "SKILL.md"),
+      join(sandbox.dir, ".codex", "skills", "tx-docs", "SKILL.md"),
       "utf-8",
     )
-    expect(designDocSkill).toContain("~/.codex/plans/")
+    expect(designDocSkill).toContain("tx doc add design")
     expect(designDocSkill).not.toContain("~/.claude/plans/")
     expect(designDocSkill).toContain("project instructions")
 
@@ -110,8 +110,8 @@ describe("tx init onboarding edge cases", () => {
     expect(result.status).toBe(0)
     expect(existsSync(join(sandbox.dir, "CLAUDE.md"))).toBe(false)
     expect(existsSync(join(sandbox.dir, ".claude", "skills", "manifest.json"))).toBe(true)
-    expect(existsSync(join(sandbox.dir, ".claude", "skills", "tx-core-loop", "SKILL.md"))).toBe(true)
-    expect(existsSync(join(sandbox.dir, ".claude", "skills", "skills-sync", "SKILL.md"))).toBe(true)
+    expect(existsSync(join(sandbox.dir, ".claude", "skills", "tx-tasks", "SKILL.md"))).toBe(true)
+    expect(existsSync(join(sandbox.dir, ".claude", "skills", "tx-docs", "SKILL.md"))).toBe(true)
 
     expectBundledSpecSkills(sandbox, "claude")
   })
@@ -123,11 +123,11 @@ describe("tx init onboarding edge cases", () => {
     expect(result.status).toBe(0)
     expect(existsSync(join(sandbox.dir, "CLAUDE.md"))).toBe(false)
     expect(existsSync(join(sandbox.dir, "AGENTS.md"))).toBe(false)
-    expect(existsSync(join(sandbox.dir, ".claude", "skills", "tx-core-loop", "SKILL.md"))).toBe(true)
-    expect(existsSync(join(sandbox.dir, ".codex", "skills", "tx-core-loop", "SKILL.md"))).toBe(true)
-    expect(existsSync(join(sandbox.dir, ".claude", "skills", "skills-sync", "SKILL.md"))).toBe(true)
-    expect(existsSync(join(sandbox.dir, ".codex", "skills", "skills-sync", "SKILL.md"))).toBe(true)
-    expect(existsSync(join(sandbox.dir, ".codex", "rules", "default.rules"))).toBe(true)
+    expect(existsSync(join(sandbox.dir, ".claude", "skills", "tx-tasks", "SKILL.md"))).toBe(true)
+    expect(existsSync(join(sandbox.dir, ".codex", "skills", "tx-tasks", "SKILL.md"))).toBe(true)
+    expect(existsSync(join(sandbox.dir, ".claude", "skills", "tx-docs", "SKILL.md"))).toBe(true)
+    expect(existsSync(join(sandbox.dir, ".codex", "skills", "tx-docs", "SKILL.md"))).toBe(true)
+    expect(existsSync(join(sandbox.dir, ".codex", "rules", "default.rules"))).toBe(false)
   })
 
   it("init --watchdog scaffolds watchdog assets with runtime auto-detect", () => {
@@ -196,7 +196,7 @@ describe("tx init onboarding edge cases", () => {
 
     const output = `${second.stdout}\n${second.stderr}`
     expect(output).toContain(".codex/skills/manifest.json (exists)")
-    expect(output).toContain(".codex/rules/default.rules (exists)")
+    expect(output).not.toContain(".codex/rules/default.rules")
   })
 
   it("fails with actionable error when explicit watchdog runtime is missing", () => {

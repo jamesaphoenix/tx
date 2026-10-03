@@ -378,48 +378,17 @@ describe("configurable spec types", () => {
     expect(JSON.parse(runTx(["doc", "list", "--json"], projectDir).stdout)).toEqual([])
   })
 
-  it("12. [INV-SPECCFG-008] generated skills embed this project's configured sections and prompts", () => {
-    appendConfig(
-      [
-        "[spec.types.rfc]",
-        'severity = "warn"',
-        "",
-        "[spec.types.rfc.section.motivation]",
-        'description = "Motivation description v1."',
-        'message = "{name}: every RFC needs {section}"',
-      ].join("\n"),
-    )
-
+  it("12. [INV-SPECCFG-008] [INV-MINIMAL-003] the minimal doc guide consults live configured templates", () => {
+    appendConfig('[spec.types.rfc]\nseverity = "warn"\n[spec.types.rfc.section.motivation]\ndescription = "Motivation description v1."\nmessage = "{name}: every RFC needs {section}"')
     expect(runTx(["skills", "generate", "--target", "claude", "--clean"], projectDir).status).toBe(0)
-
-    const skillPath = join(
-      projectDir,
-      ".tx",
-      "generated-skills",
-      "claude",
-      ".claude",
-      "skills",
-      "spec-doc",
-      "SKILL.md",
-    )
-    const skill = readFileSync(skillPath, "utf-8")
-    expect(skill).toContain("### `rfc` (custom to this project)")
-    expect(skill).toContain("Motivation description v1.")
-    expect(skill).toContain("every RFC needs Motivation")
-    expect(skill).toContain("severity **warn**")
-    // The fixed core is still documented as non-configurable.
-    expect(skill).toContain("are fixed by tx and are NOT configurable")
-
-    // Editing config and re-generating refreshes the rendered structure.
-    writeFileSync(
-      configPath(),
-      readFileSync(configPath(), "utf-8").replace(
-        "Motivation description v1.",
-        "Motivation description v2.",
-      ),
-    )
-    runTx(["skills", "generate", "--target", "claude", "--clean"], projectDir)
-    expect(readFileSync(skillPath, "utf-8")).toContain("Motivation description v2.")
+    const skillPath = join(projectDir,".tx","generated-skills","claude",".claude","skills","tx-docs","SKILL.md")
+    const skill = readFileSync(skillPath,"utf8")
+    expect(skill).toContain("tx spec types --json")
+    expect(skill).toContain("tx doc template")
+    expect(runTx(["doc","template","rfc","--name","test-rfc","--title","Test"],projectDir).stdout).toContain("Motivation description v1.")
+    writeFileSync(configPath(),readFileSync(configPath(),"utf8").replace("Motivation description v1.","Motivation description v2."))
+    expect(runTx(["doc","template","rfc","--name","test-rfc","--title","Test"],projectDir).stdout).toContain("Motivation description v2.")
+    expect(readFileSync(skillPath,"utf8")).toBe(skill)
   })
 
   it("13. tx spec types lists built-ins with their descriptions by default", () => {

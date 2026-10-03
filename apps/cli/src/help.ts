@@ -78,7 +78,7 @@ full default bundle non-interactively.
 Options:
   --db <path>   Database path (default: .tx/tasks.db)
   --claude      Scaffold Claude Code integration (.claude/skills; no CLAUDE.md by default)
-  --codex       Scaffold Codex integration (.codex/skills + .codex/rules; no AGENTS.md by default)
+  --codex       Scaffold Codex integration (.codex/skills; no AGENTS.md by default)
   --watchdog    Scaffold watchdog launcher/scripts/assets (optional later)
   --watchdog-runtime <mode>
                 Runtime mode for watchdog: auto|codex|claude|both (default: auto, requires --watchdog)
@@ -86,8 +86,8 @@ Options:
 
 Examples:
   tx init                     # Initialize database + choose skills interactively
-  tx init --claude            # Database + full generated Claude Code skills bundle
-  tx init --codex             # Database + full generated Codex skills bundle + rules
+  tx init --claude            # Database + three Claude Code guides
+  tx init --codex             # Database + three Codex guides
   tx init --claude --codex    # Database + both integrations
   tx init --watchdog          # Optional later: watchdog scaffolding (runtime auto-detect)
   tx init --watchdog --watchdog-runtime both
@@ -116,7 +116,8 @@ Examples:
 Usage: tx skills generate [options]
 
 Renders deterministic skill bundles for Claude Code and/or Codex from the
-existing tx CLI help text, plus bundled spec-writing skills. Output is install-ready:
+three guides: tx-tasks, tx-docs and verify-invariants. They consult live CLI help
+and configured document templates. Output is install-ready:
 
   <output-dir>/claude/.claude/skills/<skill-id>/
   <output-dir>/codex/.codex/skills/<skill-id>/
@@ -168,7 +169,8 @@ into the target project's install roots:
   .claude/skills/<skill-id>/
   .codex/skills/<skill-id>/
 
-Changed tx-managed skill files are updated in place. Unrelated custom skills are
+Retired skill directories listed in a valid tx manifest are removed. Changed
+tx-managed skill files are updated in place. Unrelated custom skills are
 left untouched.
 
 Options:
