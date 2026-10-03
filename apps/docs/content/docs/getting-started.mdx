@@ -1,9 +1,98 @@
 ---
 title: Getting started
-description: Create a task and connect specifications, plans and tests
+description: Design the change, save the plan, then work through linked tasks
 ---
 
-Install `@jamesaphoenix/tx-cli`, run `tx init` and create a task with `tx task add`.
-Use the [task guide](/docs/primitives/tasks) and [plan guide](/docs/primitives/plans).
-Run `tx init --codex` or `tx init --claude` to install four short authoring guides.
-The [migration guide](/docs/migration) covers v0.20 changes.
+Start with **design -> plan -> tasks**. tx keeps these files and their links in
+one local project. Your coding agent still does the planning and implementation.
+
+## Install
+
+The npm CLI requires [Bun](https://bun.sh). For a self-contained executable, use
+one of the [standalone releases](https://github.com/jamesaphoenix/tx/releases).
+
+```bash
+npm install -g @jamesaphoenix/tx-cli
+tx init
+```
+
+Run commands from your repository root. `tx init` creates `.tx/tasks.db` and
+`.tx/config.toml`. It is safe to run again.
+
+To install the four short authoring guides, use `tx init --codex` or
+`tx init --claude`. These add skills for tasks, docs, plans and invariant
+verification. They preserve unrelated skills and add no execution agents.
+
+## Write the design
+
+```bash
+tx doc add design checkout-design --title "Checkout design"
+```
+
+Edit `specs/design/checkout-design.md`, keeping its frontmatter. Explain the
+approach, interfaces, data model, failure modes and rules the implementation must
+preserve. The [document guide](/docs/primitives/docs) explains the schemas.
+
+Use a PRD when you need a separate product contract, and an overview when a
+system map will help. Neither is required to start with a design and a plan.
+
+## Save the plan
+
+Generate the implementation plan in your normal coding agent, then save a copy:
+
+```bash
+tx doc add plan checkout-plan --title "Checkout plan"
+tx doc link checkout-design checkout-plan
+```
+
+Replace the plan scaffold body with the agent's plan. Keep the tx frontmatter.
+If the original plan is a file elsewhere, keep it and add an adjacent
+`checkout-plan.source` symlink pointing to its absolute path. The copied plan
+remains readable without that link. See the [plan guide](/docs/primitives/plans).
+
+```bash
+tx doc sync checkout-design
+tx doc sync checkout-plan
+```
+
+## Create and complete tasks
+
+```bash
+tx task add "Make checkout retries idempotent" \
+  --description "Acceptance: retrying a paid checkout returns the existing order."
+tx doc attach <task-id> checkout-plan
+tx task ready
+tx task update <task-id> --status active
+```
+
+Replace `<task-id>` with the ID printed by `tx task add`. Implement the change,
+run its checks, then mark the task done:
+
+```bash
+tx task done <task-id>
+```
+
+Use [dependencies and labels](/docs/primitives/tasks) when they help organise the
+work. Tasks also work on their own for small changes.
+
+## Verify the design
+
+Map [invariants](/docs/primitives/invariants) to the source code that enforces
+them and to tests that would fail if those rules were broken. Discover those
+mappings, run the tests, then record their results:
+
+```bash
+tx spec discover --doc checkout-design
+tx spec gaps --doc checkout-design
+tx spec health
+```
+
+A discovered mapping does not prove a passing test. [tx spec](/docs/primitives/spec-trace)
+explains execution evidence and human sign-off. Check [Spec Health](/docs/primitives/spec-health)
+before handing the work over.
+
+The [dashboard](/docs/interfaces) shows Tasks, Documents and Spec Health. Run it
+from a source checkout with `tx diag dashboard`; the npm package ships the CLI,
+REST API and MCP server.
+
+For an existing installation, read the [v0.20 migration guide](/docs/migration).

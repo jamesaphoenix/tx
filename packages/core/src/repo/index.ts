@@ -13,4 +13,3 @@ export {
   type InvariantSummary,
   type SpecTraceFilter,
 } from "./spec-trace-repo.js"
-export { DecisionRepository, DecisionRepositoryLive } from "./decision-repo.js"

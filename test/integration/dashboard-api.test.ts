@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll, vi } from "vitest"
-import { Hono } from "hono"
+import { createDashboardServer } from "../../apps/dashboard/server/index.js"
+import type { Server } from "node:http"
+import type { AddressInfo } from "node:net"
+import {mkdtempSync, rmSync} from "node:fs"
+import {join} from "node:path"
+import {tmpdir} from "node:os"
 import { createSharedTestLayer, wrapDbAsTestDatabase, type SharedTestLayerResult, type TestDatabase } from "@jamesaphoenix/tx/testing"
-import { isPathWithin } from "@jamesaphoenix/tx"
 import { seedFixtures, FIXTURES, fixtureId } from "../fixtures.js"
-import { readFileSync, existsSync, } from "node:fs"
-import { resolve } from "node:path"
-import { homedir } from "node:os"
 
 // Types matching the server
 interface TaskRow {
@@ -28,440 +29,80 @@ interface TaskWithDeps extends TaskRow {
   isReady: boolean
 }
 
-interface TaskDependencySnapshot {
-  blockedByMap: Map<string, string[]>
-  blocksMap: Map<string, string[]>
-  childrenMap: Map<string, string[]>
-  statusMap: Map<string, string>
+// Exercise the actual dashboard HTTP implementation, using the shared SQLite fixture.
+async function request(app: Server, path: string, options?: RequestInit) {
+  if (!app.listening) await new Promise<void>((resolve) => app.listen(0, "127.0.0.1", resolve))
+  const port = (app.address() as AddressInfo).port
+  return fetch(`http://127.0.0.1:${port}${path}`, {...options, signal:AbortSignal.timeout(5_000)})
 }
 
-const WORKABLE_TASK_STATUSES = new Set<string>(["backlog", "ready", "planning"])
-
-// Create test app with injected database
-function createTestApp(
-  db: TestDatabase,
-  txDir: string,
-  transcriptRoots: ReadonlyArray<string> = [resolve(homedir(), ".claude")]
-) {
-  const app = new Hono()
-
-  // Path validation helper (mirrors server logic)
-  const resolvedTxDir = resolve(txDir)
-  const allowedTranscriptRoots = [resolvedTxDir, ...transcriptRoots.map(root => resolve(root))]
-  const validateTranscriptPath = (filePath: string): string | null => {
-    const resolved = resolve(filePath)
-    const isWithinAllowedRoot = allowedTranscriptRoots.some((root) =>
-      isPathWithin(root, resolved, { useRealpath: true })
-    )
-    return isWithinAllowedRoot ? resolved : null
-  }
-
-  function pushToMapList(map: Map<string, string[]>, key: string, value: string): void {
-    const existing = map.get(key)
-    if (existing) {
-      existing.push(value)
-      return
-    }
-    map.set(key, [value])
-  }
-
-  function buildDependencySnapshot(
-    allTasks?: ReadonlyArray<Pick<TaskRow, "id" | "parent_id" | "status">>
-  ): TaskDependencySnapshot {
-    const deps = db.db.prepare("SELECT blocker_id, blocked_id FROM task_dependencies").all() as Array<{
-      blocker_id: string
-      blocked_id: string
-    }>
-    const blockedByMap = new Map<string, string[]>()
-    const blocksMap = new Map<string, string[]>()
-
-    for (const dep of deps) {
-      pushToMapList(blockedByMap, dep.blocked_id, dep.blocker_id)
-      pushToMapList(blocksMap, dep.blocker_id, dep.blocked_id)
-    }
-
-    const tasksForSnapshot = allTasks
-      ?? (db.db.prepare("SELECT id, parent_id, status FROM tasks").all() as Array<{
-        id: string
-        parent_id: string | null
-        status: string
-      }>)
-
-    const childrenMap = new Map<string, string[]>()
-    const statusMap = new Map<string, string>()
-    for (const task of tasksForSnapshot) {
-      statusMap.set(task.id, task.status)
-      if (task.parent_id) {
-        pushToMapList(childrenMap, task.parent_id, task.id)
-      }
-    }
-
-    return { blockedByMap, blocksMap, childrenMap, statusMap }
-  }
-
-  // Helper to enrich tasks with dependency info (mirrors server logic)
-  function enrichTasksWithDeps(
-    tasks: TaskRow[],
-    snapshot?: TaskDependencySnapshot
-  ): TaskWithDeps[] {
-    const dependencySnapshot = snapshot ?? buildDependencySnapshot()
-
-    return tasks.map(task => {
-      const blockedBy = dependencySnapshot.blockedByMap.get(task.id) ?? []
-      const blocks = dependencySnapshot.blocksMap.get(task.id) ?? []
-      const children = dependencySnapshot.childrenMap.get(task.id) ?? []
-      const allBlockersDone = blockedBy.every(id => dependencySnapshot.statusMap.get(id) === "done")
-      const isReady = WORKABLE_TASK_STATUSES.has(task.status) && allBlockersDone
-
-      return { ...task, blockedBy, blocks, children, isReady }
-    })
-  }
-
-  // Cursor helpers
-  function parseTaskCursor(cursor: string): { score: number; id: string } {
-    const colonIndex = cursor.lastIndexOf(':')
-    return {
-      score: parseInt(cursor.slice(0, colonIndex), 10),
-      id: cursor.slice(colonIndex + 1),
-    }
-  }
-
-  function parseRunCursor(cursor: string): { startedAt: string; id: string } {
-    const match = cursor.match(/^(.+):(run-.+)$/)
-    if (!match) {
-      return { startedAt: cursor, id: '' }
-    }
-    return { startedAt: match[1]!, id: match[2]! }
-  }
-
-  function buildTaskCursor(task: TaskRow): string {
-    return `${task.score}:${task.id}`
-  }
-
-  function buildRunCursor(run: { started_at: string; id: string }): string {
-    return `${run.started_at}:${run.id}`
-  }
-
-  // GET /api/tasks
-  app.get("/api/tasks", (c) => {
-    try {
-      const cursor = c.req.query("cursor")
-      const limit = Math.min(parseInt(c.req.query("limit") ?? "20", 10) || 20, 100)
-      const statusFilter = c.req.query("status")?.split(",").filter(Boolean)
-      const search = c.req.query("search")
-
-      const conditions: string[] = []
-      const params: (string | number)[] = []
-
-      if (statusFilter?.length) {
-        conditions.push(`status IN (${statusFilter.map(() => "?").join(",")})`)
-        params.push(...statusFilter)
-      }
-
-      if (search) {
-        conditions.push("(title LIKE ? OR description LIKE ?)")
-        params.push(`%${search}%`, `%${search}%`)
-      }
-
-      if (cursor) {
-        const { score, id } = parseTaskCursor(cursor)
-        conditions.push("(score < ? OR (score = ? AND id > ?))")
-        params.push(score, score, id)
-      }
-
-      const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""
-
-      const sql = `
-        SELECT * FROM tasks
-        ${whereClause}
-        ORDER BY score DESC, id ASC
-        LIMIT ?
-      `
-      params.push(limit + 1)
-
-      const rows = db.db.prepare(sql).all(...params) as TaskRow[]
-      const hasMore = rows.length > limit
-      const tasks = hasMore ? rows.slice(0, limit) : rows
-
-      const countConditions = conditions.filter((_, i) => {
-        return !cursor || i < conditions.length - 1
-      })
-      const countParams = cursor ? params.slice(0, -4) : params.slice(0, -1)
-      const countWhereClause = countConditions.length ? `WHERE ${countConditions.join(" AND ")}` : ""
-      const total = (db.db.prepare(`SELECT COUNT(*) as count FROM tasks ${countWhereClause}`).get(...countParams) as { count: number }).count
-
-      const dependencySnapshot = buildDependencySnapshot()
-      const enriched = enrichTasksWithDeps(tasks, dependencySnapshot)
-
-      const summaryRows = db.db.prepare(`SELECT status, COUNT(*) as count FROM tasks ${countWhereClause} GROUP BY status`).all(...countParams) as Array<{ status: string; count: number }>
-      const byStatus = summaryRows.reduce((acc, r) => {
-        acc[r.status] = r.count
-        return acc
-      }, {} as Record<string, number>)
-
-      return c.json({
-        tasks: enriched,
-        nextCursor: hasMore && tasks.length ? buildTaskCursor(tasks[tasks.length - 1]!) : null,
-        hasMore,
-        total,
-        summary: { total, byStatus },
-      })
-    } catch (e) {
-      return c.json({ error: String(e) }, 500)
-    }
-  })
-
-  // GET /api/tasks/ready
-  app.get("/api/tasks/ready", (c) => {
-    try {
-      const tasks = db.db.prepare("SELECT * FROM tasks ORDER BY score DESC").all() as TaskRow[]
-      const dependencySnapshot = buildDependencySnapshot(tasks)
-      const ready = tasks.filter(task => {
-        const blockedBy = dependencySnapshot.blockedByMap.get(task.id) ?? []
-        const allBlockersDone = blockedBy.every(id => dependencySnapshot.statusMap.get(id) === "done")
-        return WORKABLE_TASK_STATUSES.has(task.status) && allBlockersDone
-      })
-      const enriched = enrichTasksWithDeps(ready, dependencySnapshot)
-
-      return c.json({ tasks: enriched })
-    } catch (e) {
-      return c.json({ error: String(e) }, 500)
-    }
-  })
-
-  // GET /api/tasks/:id
-  app.get("/api/tasks/:id", (c) => {
-    try {
-      const id = c.req.param("id")
-
-      const task = db.db.prepare("SELECT * FROM tasks WHERE id = ?").get(id) as TaskRow | undefined
-      if (!task) {
-        return c.json({ error: "Task not found" }, 404)
-      }
-
-      const dependencySnapshot = buildDependencySnapshot()
-      const blockedByIds = dependencySnapshot.blockedByMap.get(id) ?? []
-      const blocksIds = dependencySnapshot.blocksMap.get(id) ?? []
-      const childIds = dependencySnapshot.childrenMap.get(id) ?? []
-
-      const fetchTasksByIds = (ids: string[]): TaskWithDeps[] => {
-        if (ids.length === 0) return []
-        const placeholders = ids.map(() => "?").join(",")
-        const tasks = db.db.prepare(`SELECT * FROM tasks WHERE id IN (${placeholders})`).all(...ids) as TaskRow[]
-        return enrichTasksWithDeps(tasks, dependencySnapshot)
-      }
-
-      const blockedByTasks = fetchTasksByIds(blockedByIds)
-      const blocksTasks = fetchTasksByIds(blocksIds)
-      const childTasks = fetchTasksByIds(childIds)
-
-      const [enrichedTask] = enrichTasksWithDeps([task], dependencySnapshot)
-
-      return c.json({
-        task: enrichedTask,
-        blockedByTasks,
-        blocksTasks,
-        childTasks,
-      })
-    } catch (e) {
-      return c.json({ error: String(e) }, 500)
-    }
-  })
-
-  // GET /api/runs
-  app.get("/api/runs", (c) => {
-    try {
-      const cursor = c.req.query("cursor")
-      const limit = Math.min(parseInt(c.req.query("limit") ?? "20", 10) || 20, 100)
-      const agentFilter = c.req.query("agent")
-      const statusFilter = c.req.query("status")?.split(",").filter(Boolean)
-
-      const conditions: string[] = []
-      const params: (string | number)[] = []
-
-      if (agentFilter) {
-        conditions.push("agent = ?")
-        params.push(agentFilter)
-      }
-
-      if (statusFilter?.length) {
-        conditions.push(`status IN (${statusFilter.map(() => "?").join(",")})`)
-        params.push(...statusFilter)
-      }
-
-      if (cursor) {
-        const { startedAt, id } = parseRunCursor(cursor)
-        conditions.push("(started_at < ? OR (started_at = ? AND id > ?))")
-        params.push(startedAt, startedAt, id)
-      }
-
-      const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""
-
-      let runs: Array<{
-        id: string
-        task_id: string | null
-        agent: string
-        started_at: string
-        ended_at: string | null
-        status: string
-        exit_code: number | null
-        transcript_path: string | null
-        summary: string | null
-        error_message: string | null
-      }> = []
-
-      try {
-        const sql = `
-          SELECT id, task_id, agent, started_at, ended_at, status, exit_code, transcript_path, summary, error_message
-          FROM runs
-          ${whereClause}
-          ORDER BY started_at DESC, id ASC
-          LIMIT ?
-        `
-        params.push(limit + 1)
-        runs = db.db.prepare(sql).all(...params) as typeof runs
-      } catch {
-        return c.json({ runs: [], nextCursor: null, hasMore: false })
-      }
-
-      const hasMore = runs.length > limit
-      const pagedRuns = hasMore ? runs.slice(0, limit) : runs
-
-      // Batch fetch task titles to avoid N+1 queries
-      const taskIds = [...new Set(pagedRuns.map(r => r.task_id).filter((id): id is string => id !== null))]
-      const taskTitleMap = new Map<string, string>()
-      if (taskIds.length > 0) {
-        const placeholders = taskIds.map(() => "?").join(",")
-        const rows = db.db.prepare(`SELECT id, title FROM tasks WHERE id IN (${placeholders})`).all(...taskIds) as Array<{ id: string; title: string }>
-        for (const row of rows) {
-          taskTitleMap.set(row.id, row.title)
-        }
-      }
-
-      const enriched = pagedRuns.map(run => ({
-        ...run,
-        taskTitle: run.task_id ? (taskTitleMap.get(run.task_id) ?? null) : null,
-      }))
-
-      return c.json({
-        runs: enriched,
-        nextCursor: hasMore && pagedRuns.length ? buildRunCursor(pagedRuns[pagedRuns.length - 1]!) : null,
-        hasMore,
-      })
-    } catch (e) {
-      return c.json({ error: String(e) }, 500)
-    }
-  })
-
-  // GET /api/runs/:id
-  app.get("/api/runs/:id", (c) => {
-    try {
-      const id = c.req.param("id")
-
-      const run = db.db.prepare("SELECT * FROM runs WHERE id = ?").get(id) as {
-        id: string
-        task_id: string | null
-        agent: string
-        started_at: string
-        ended_at: string | null
-        status: string
-        exit_code: number | null
-        pid: number | null
-        transcript_path: string | null
-        context_injected: string | null
-        summary: string | null
-        error_message: string | null
-        metadata: string
-      } | undefined
-
-      if (!run) {
-        return c.json({ error: "Run not found" }, 404)
-      }
-
-      let transcript: string | null = null
-      if (run.transcript_path) {
-        const validatedPath = validateTranscriptPath(run.transcript_path)
-        if (validatedPath && existsSync(validatedPath)) {
-              transcript = readFileSync(validatedPath, "utf-8")
-        }
-      }
-
-      return c.json({ run, transcript })
-    } catch (e) {
-      return c.json({ error: String(e) }, 500)
-    }
-  })
-
-  // GET /api/ralph (simplified for testing - no pid/log file checking)
-  app.get("/api/ralph", (c) => {
-    return c.json({
-      running: false,
-      pid: null,
-      currentIteration: 0,
-      currentTask: null,
-      recentActivity: [],
-    })
-  })
-
-  // GET /api/stats
-  app.get("/api/stats", (c) => {
-    try {
-      const taskCount = (db.db.prepare("SELECT COUNT(*) as count FROM tasks").get() as { count: number }).count
-      const doneCount = (db.db.prepare("SELECT COUNT(*) as count FROM tasks WHERE status = 'done'").get() as { count: number }).count
-      const readyCount = (db.db.prepare(`
-        SELECT COUNT(*) as count FROM tasks t
-        WHERE t.status IN ('backlog', 'ready', 'planning')
-        AND NOT EXISTS (
-          SELECT 1 FROM task_dependencies d
-          JOIN tasks blocker ON d.blocker_id = blocker.id
-          WHERE d.blocked_id = t.id AND blocker.status != 'done'
-        )
-      `).get() as { count: number }).count
-
-      let learningsCount = 0
-      try {
-        learningsCount = (db.db.prepare("SELECT COUNT(*) as count FROM learnings").get() as { count: number }).count
-      } catch {
-        // Table doesn't exist
-      }
-
-      let runsRunning = 0
-      let runsTotal = 0
-      try {
-        runsRunning = (db.db.prepare("SELECT COUNT(*) as count FROM runs WHERE status = 'running'").get() as { count: number }).count
-        runsTotal = (db.db.prepare("SELECT COUNT(*) as count FROM runs").get() as { count: number }).count
-      } catch {
-        // Table doesn't exist
-      }
-
-      return c.json({
-        tasks: taskCount,
-        done: doneCount,
-        ready: readyCount,
-        learnings: learningsCount,
-        runsRunning,
-        runsTotal,
-      })
-    } catch (e) {
-      return c.json({ error: String(e) }, 500)
-    }
-  })
-
-  return app
-}
-
-// Helper to make requests to the test app
-async function request(app: Hono, path: string, options?: RequestInit) {
-  const url = `http://localhost${path}`
-  const req = new Request(url, options)
-  const res = await app.fetch(req)
-  return {
-    status: res.status,
-    json: () => res.json(),
-  }
+async function closeServer(app: Server): Promise<void> {
+  if (!app.listening) return
+  await new Promise<void>((resolve, reject) => app.close(error => error ? reject(error) : resolve()))
 }
 
 const DEPENDENCY_SNAPSHOT_SQL = "select blocker_id, blocked_id from task_dependencies"
+
+describe("Dashboard API settings persistence", () => {
+  let shared: SharedTestLayerResult
+  let app: Server
+  let root: string
+  beforeAll(async () => { shared = await createSharedTestLayer() })
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(),"tx-dashboard-settings-"))
+    app = createDashboardServer({db:shared.getDb(),contentRoot:root})
+  })
+  afterEach(async () => { await closeServer(app); rmSync(root,{recursive:true,force:true}); await shared.reset() })
+  afterAll(async () => { await shared.close() })
+
+  it("persists auto-add statuses including an explicitly empty selection across restarts", async () => {
+    for (const statuses of [["planning","ready"], []]) {
+      const saved = await request(app,"/api/settings", {method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({dashboard:{cycles:{autoAddStatuses:statuses}}})})
+      expect(saved.status, await saved.text()).toBe(200)
+      await closeServer(app)
+      app = createDashboardServer({db:shared.getDb(),contentRoot:root})
+      const loaded = await request(app,"/api/settings")
+      expect((await loaded.json()).dashboard.cycles.autoAddStatuses).toEqual(statuses)
+    }
+  })
+
+  it.each(["ready", [null], ["made-up"]])("rejects malformed cycle status selections without writing them: %j", async (statuses) => {
+    const saved = await request(app,"/api/settings", {method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({dashboard:{cycles:{carryStatuses:statuses}}})})
+    expect(saved.status).toBe(400)
+    const loaded = await request(app,"/api/settings")
+    expect((await loaded.json()).dashboard.cycles.carryStatuses).toContain("active")
+  })
+
+  it("keeps cycles opt-in and auto-adds matching tasks beyond the first page", async () => {
+    seedFixtures(wrapDbAsTestDatabase(shared.getDb()))
+    for (let i = 0; i < 25; i++) shared.getDb().prepare("INSERT INTO tasks(id,title,status,created_at,updated_at) VALUES(?,?,?,datetime('now'),datetime('now'))").run(fixtureId(`cycle-auto-${i}`),`Ready task ${i}`,"ready")
+    const before = await request(app,"/api/cycles")
+    expect((await before.json()).cycles).toEqual([])
+    const created = await request(app,"/api/cycles",{method:"POST"})
+    expect(created.status).toBe(201)
+    const cycle = await created.json()
+    expect(cycle.taskCount).toBe(30)
+    const detail = await request(app,`/api/cycles/${cycle.id}`)
+    expect((await detail.json()).tasks).toHaveLength(30)
+    const disabled = await request(app,"/api/settings",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({dashboard:{cycles:{autoAddStatuses:[]}}})})
+    expect(disabled.status).toBe(200)
+    const newTask = await request(app,"/api/tasks",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({title:"Unscheduled work",status:"active"})})
+    expect(newTask.status).toBe(201)
+    const task = await newTask.json()
+    expect(shared.getDb().prepare("SELECT * FROM cycle_tasks WHERE task_id=?").all(task.id)).toEqual([])
+    const after = await request(app,"/api/cycles")
+    expect((await after.json()).cycles).toHaveLength(1)
+  })
+
+  it("rolls back a new cycle when automatic task membership cannot be saved", async () => {
+    seedFixtures(wrapDbAsTestDatabase(shared.getDb()))
+    shared.getDb().exec("CREATE TRIGGER reject_cycle_task BEFORE INSERT ON cycle_tasks BEGIN SELECT RAISE(FAIL, 'Membership unavailable'); END")
+    const created = await request(app,"/api/cycles",{method:"POST"})
+    expect(created.status).toBe(500)
+    expect(shared.getDb().prepare("SELECT * FROM cycles").all()).toEqual([])
+    shared.getDb().exec("DROP TRIGGER reject_cycle_task")
+  })
+})
 
 function normalizeSql(sql: string): string {
   return sql.replace(/\s+/g, " ").trim().toLowerCase()
@@ -648,7 +289,7 @@ function explainTaskListQueryPlan(db: TestDatabase, options: TaskListQueryPlanOp
 describe("Dashboard API - GET /api/tasks", () => {
   let shared: SharedTestLayerResult
   let db: TestDatabase
-  let app: Hono
+  let app: Server
 
   beforeAll(async () => {
     shared = await createSharedTestLayer()
@@ -657,10 +298,11 @@ describe("Dashboard API - GET /api/tasks", () => {
   beforeEach(async () => {
     db = wrapDbAsTestDatabase(shared.getDb())
     seedFixtures(db)
-    app = createTestApp(db, "/tmp/.tx")
+    app = createDashboardServer({db:db.db, contentRoot:"/tmp"})
   })
 
   afterEach(async () => {
+    await closeServer(app)
     await shared.reset()
   })
 
@@ -688,6 +330,47 @@ describe("Dashboard API - GET /api/tasks", () => {
       expect(Array.isArray(task.children)).toBe(true)
       expect(typeof task.isReady).toBe("boolean")
     }
+  })
+
+  it("rejects requests from unrelated browser origins before mutating tasks", async () => {
+    const res = await request(app, `/api/tasks/${FIXTURES.TASK_JWT}`, {
+      method:"PATCH", headers:{Origin:"https://unrelated.example", "Content-Type":"application/json"},
+      body:JSON.stringify({title:"Unexpected remote edit"}),
+    })
+    expect(res.status).toBe(403)
+    expect(res.headers.get("Access-Control-Allow-Origin")).not.toBe("*")
+    const row = db.db.prepare("SELECT title FROM tasks WHERE id = ?").get(FIXTURES.TASK_JWT) as {title:string}
+    expect(row.title).not.toBe("Unexpected remote edit")
+  })
+
+  it.each([
+    {title:123}, {description:[]}, {metadata:[]}, {status:123},
+    {assigneeId:{}}, {assignedAt:123}, {parentId:123},
+  ])("rejects malformed task fields across create and update: %j", async (fields) => {
+    const before = db.db.prepare("SELECT * FROM tasks WHERE id=?").get(FIXTURES.TASK_JWT)
+    for (const [method,path] of [["POST","/api/tasks"],["PATCH",`/api/tasks/${FIXTURES.TASK_JWT}`]]) {
+      const res = await request(app,path!,{method,headers:{"Content-Type":"application/json"},body:JSON.stringify({title:"Valid title",...fields})})
+      expect(res.status, await res.text()).toBe(400)
+    }
+    expect(db.db.prepare("SELECT * FROM tasks WHERE id=?").get(FIXTURES.TASK_JWT)).toEqual(before)
+    expect(db.db.prepare("SELECT COUNT(*) AS n FROM tasks").get()).toEqual({n:6})
+  })
+
+  it("rejects rebound hostnames and opaque origins", async () => {
+    const res = await request(app, "/api/tasks", {headers:{Host:"remote.example:3001"}})
+    expect(res.status).toBe(403)
+    const opaque = await request(app, "/api/tasks", {headers:{Origin:"null"}})
+    expect(opaque.status).toBe(403)
+  })
+
+  it("allows local dashboard preflight without granting wildcard CORS", async () => {
+    const origin = "http://localhost:5173"
+    const res = await request(app, "/api/tasks", {method:"OPTIONS", headers:{Origin:origin}})
+    expect(res.status).toBe(204)
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe(origin)
+    expect(res.headers.get("Vary")).toContain("Origin")
+    const tasks = await request(app, "/api/tasks", {headers:{Origin:origin}})
+    expect(tasks.status).toBe(200)
   })
 
   it("uses one dependency snapshot scan for /api/tasks on perf-sensitive query paths", async () => {
@@ -950,7 +633,7 @@ describe("Dashboard API - GET /api/tasks", () => {
 describe("Dashboard API - GET /api/tasks/ready", () => {
   let shared: SharedTestLayerResult
   let db: TestDatabase
-  let app: Hono
+  let app: Server
 
   beforeAll(async () => {
     shared = await createSharedTestLayer()
@@ -959,10 +642,11 @@ describe("Dashboard API - GET /api/tasks/ready", () => {
   beforeEach(async () => {
     db = wrapDbAsTestDatabase(shared.getDb())
     seedFixtures(db)
-    app = createTestApp(db, "/tmp/.tx")
+    app = createDashboardServer({db:db.db, contentRoot:"/tmp"})
   })
 
   afterEach(async () => {
+    await closeServer(app)
     await shared.reset()
   })
 
@@ -1064,7 +748,7 @@ describe("Dashboard API - GET /api/tasks/ready", () => {
 describe("Dashboard API - GET /api/tasks/:id", () => {
   let shared: SharedTestLayerResult
   let db: TestDatabase
-  let app: Hono
+  let app: Server
 
   beforeAll(async () => {
     shared = await createSharedTestLayer()
@@ -1073,10 +757,11 @@ describe("Dashboard API - GET /api/tasks/:id", () => {
   beforeEach(async () => {
     db = wrapDbAsTestDatabase(shared.getDb())
     seedFixtures(db)
-    app = createTestApp(db, "/tmp/.tx")
+    app = createDashboardServer({db:db.db, contentRoot:"/tmp"})
   })
 
   afterEach(async () => {
+    await closeServer(app)
     await shared.reset()
   })
 
@@ -1199,7 +884,7 @@ describe("Dashboard API - GET /api/tasks/:id", () => {
 describe("Dashboard API - GET /api/stats", () => {
   let shared: SharedTestLayerResult
   let db: TestDatabase
-  let app: Hono
+  let app: Server
 
   beforeAll(async () => {
     shared = await createSharedTestLayer()
@@ -1208,10 +893,11 @@ describe("Dashboard API - GET /api/stats", () => {
   beforeEach(async () => {
     db = wrapDbAsTestDatabase(shared.getDb())
     seedFixtures(db)
-    app = createTestApp(db, "/tmp/.tx")
+    app = createDashboardServer({db:db.db, contentRoot:"/tmp"})
   })
 
   afterEach(async () => {
+    await closeServer(app)
     await shared.reset()
   })
 
@@ -1239,41 +925,12 @@ describe("Dashboard API - GET /api/stats", () => {
     expect(data.ready).toBe(4)
   })
 
-  it("returns learnings count (0 if table doesn't exist)", async () => {
+  it("omits retired execution and memory metrics", async () => {
     const res = await request(app, "/api/stats")
     const data = await res.json()
-
-    expect(typeof data.learnings).toBe("number")
-  })
-
-  it("returns runs counts (0 if table doesn't exist)", async () => {
-    const res = await request(app, "/api/stats")
-    const data = await res.json()
-
-    expect(typeof data.runsRunning).toBe("number")
-    expect(typeof data.runsTotal).toBe("number")
-  })
-
-  it("counts running runs correctly", async () => {
-    const now = new Date().toISOString()
-    db.db.prepare(`
-      INSERT INTO runs (id, task_id, agent, started_at, status, metadata)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run("run-stats-a", null, "agent-1", now, "running", "{}")
-    db.db.prepare(`
-      INSERT INTO runs (id, task_id, agent, started_at, status, metadata)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run("run-stats-b", null, "agent-1", now, "completed", "{}")
-    db.db.prepare(`
-      INSERT INTO runs (id, task_id, agent, started_at, status, metadata)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run("run-stats-c", null, "agent-1", now, "running", "{}")
-
-    const res = await request(app, "/api/stats")
-    const data = await res.json()
-
-    expect(data.runsRunning).toBe(2)
-    expect(data.runsTotal).toBe(3)
+    expect(data).not.toHaveProperty("learnings")
+    expect(data).not.toHaveProperty("runsRunning")
+    expect(data).not.toHaveProperty("runsTotal")
   })
 
   it("updates done count when task is completed", async () => {
@@ -1313,7 +970,7 @@ describe("Dashboard API - Fixture ID consistency", () => {
 describe("Dashboard API - Paginated Tasks with Filters", () => {
   let shared: SharedTestLayerResult
   let db: TestDatabase
-  let app: Hono
+  let app: Server
 
   beforeAll(async () => {
     shared = await createSharedTestLayer()
@@ -1322,10 +979,11 @@ describe("Dashboard API - Paginated Tasks with Filters", () => {
   beforeEach(async () => {
     db = wrapDbAsTestDatabase(shared.getDb())
     seedFixtures(db)
-    app = createTestApp(db, "/tmp/.tx")
+    app = createDashboardServer({db:db.db, contentRoot:"/tmp"})
   })
 
   afterEach(async () => {
+    await closeServer(app)
     await shared.reset()
   })
 

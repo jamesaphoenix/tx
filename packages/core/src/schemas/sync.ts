@@ -7,7 +7,6 @@ import {
 
   DOC_STATUSES, DOC_LINK_TYPES, DOC_STABLE_ID_PATTERN, TASK_DOC_LINK_TYPES,
   INVARIANT_ENFORCEMENT_TYPES, INVARIANT_STATUSES,
-  DECISION_STATUSES, DECISION_SOURCES,
 } from "../types/index.js"
 
 // Schema version - v=1 for all sync operations
@@ -594,9 +593,9 @@ export type LabelSyncOperation = typeof LabelSyncOperationSchema.Type
 // ----- Decision Sync Operations -----
 
 // Decision status schema
-export const SyncDecisionStatusSchema = Schema.Literal(...DECISION_STATUSES)
+export const SyncDecisionStatusSchema = Schema.Literal("pending", "approved", "rejected", "edited", "superseded")
 // Decision source schema
-export const SyncDecisionSourceSchema = Schema.Literal(...DECISION_SOURCES)
+export const SyncDecisionSourceSchema = Schema.Literal("manual", "diff", "transcript", "agent")
 
 // Decision data embedded in upsert operations
 export const DecisionDataSchema = Schema.Struct({

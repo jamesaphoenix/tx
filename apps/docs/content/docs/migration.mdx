@@ -9,11 +9,17 @@ Task commands now require `tx task`: replace `tx add` with `tx task add`,
 and `tx dep block` with `tx task dep block`. Old syntax fails with a replacement
 hint before opening the database. Run `tx task --help` for the full namespace.
 
-Memory, learnings, pins, claims, messaging, guards, task shell verification,
+Decision review, memory, learnings, pins, claims, messaging, guards, task shell verification,
 reflection, automated decomposition, agent execution, Ralph and watchdog are retired.
 Ordinary labels and dashboard planning cycles remain. Existing tables and migration
 history are retained. Import validates historical stream events, reports recognised
 retired events as ignored, and rejects malformed or unknown events. Hydrate reapplies
 retained projections without truncating existing tables. Back up `.tx/` before upgrading.
 
+The four built-in document kinds are `overview`, `prd`, `design` and `plan`.
+Existing historical documents remain readable. New `requirement` and `system_design`
+commands print a deprecation hint and create `prd` and `design` documents instead.
+Move manual invariant commands under `tx spec invariant`. Markdown task export is
+now `tx task export`. `tx decision` has no replacement: keep requirements and
+technical choices in the design document, then save the implementation plan.
 

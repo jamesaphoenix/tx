@@ -11,7 +11,7 @@ const normaliseTaskCommand = (args: string[]): string[] => /^(add|list|ready|sho
  * - Deprecated aliases emit warnings + still function
  *
  * Per DD-007: Uses real in-memory SQLite and deterministic test setup.
- * No mocks — all tests run against real CLI subprocess with real database.
+ * No mocks - all tests run against real CLI subprocess with real database.
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { spawnSync } from "child_process"
@@ -67,7 +67,7 @@ function runTx(args: string, dbPath: string): ExecResult {
 // Compound Command Help Tests
 // =============================================================================
 
-describe("CLI compound commands — help output", () => {
+describe("CLI compound commands - help output", () => {
   let tmpDir: string
   let dbPath: string
 
@@ -115,10 +115,10 @@ describe("CLI compound commands — help output", () => {
 })
 
 // =============================================================================
-// tx task dep — Dependencies & Hierarchy
+// tx task dep - Dependencies & Hierarchy
 // =============================================================================
 
-describe("CLI tx task dep — dependencies", () => {
+describe("CLI tx task dep - dependencies", () => {
   let tmpDir: string
   let dbPath: string
   let taskA: string
@@ -190,10 +190,10 @@ describe("CLI tx task dep — dependencies", () => {
 })
 
 // =============================================================================
-// tx diag — Diagnostics
+// tx diag - Diagnostics
 // =============================================================================
 
-describe("CLI tx diag — diagnostics", () => {
+describe("CLI tx diag - diagnostics", () => {
   let tmpDir: string
   let dbPath: string
 
@@ -225,7 +225,7 @@ describe("CLI tx diag — diagnostics", () => {
     expect(data).toHaveProperty("total")
     expect(data).toHaveProperty("byStatus")
     expect(data).toHaveProperty("readyCount")
-    expect(data).toHaveProperty("claims")
+    expect(data).not.toHaveProperty("claims")
   })
 
   it("tx diag doctor runs health checks", () => {
@@ -246,10 +246,10 @@ describe("CLI tx diag — diagnostics", () => {
 })
 
 // =============================================================================
-// tx sync — Absorbed Commands
+// tx sync - Absorbed Commands
 // =============================================================================
 
-describe("CLI tx sync — absorbed commands", () => {
+describe("CLI tx sync - absorbed commands", () => {
   let tmpDir: string
   let dbPath: string
 

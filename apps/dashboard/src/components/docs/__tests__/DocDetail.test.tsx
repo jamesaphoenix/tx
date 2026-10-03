@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
-import { render, screen, waitFor } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { http, HttpResponse } from "msw"
 import { server } from "../../../../test/setup"
@@ -68,6 +68,7 @@ describe("DocDetail", () => {
         if (pathname === "/api/docs") {
           return HttpResponse.json(docsFixture)
         }
+        if (pathname === "/api/docs/graph") return HttpResponse.json({ nodes: [], edges: [] })
 
         return HttpResponse.json({ error: "not found" }, { status: 404 })
       }),
@@ -96,5 +97,50 @@ describe("DocDetail", () => {
 
     // YAML Source toggle was removed; verify metadata is visible instead
     expect(screen.getByText(docFixture.name)).toBeInTheDocument()
+  })
+
+  it("uses stored design and task links even when document names have no shared prefix", async () => {
+    const plan = { ...docFixture, id: 2, docId: "doc-222222222222", kind: "plan", name: "agent-plan", title: "Agent's implementation plan", version: 1 }
+    const samePrefix = { ...docFixture, id: 3, docId: "doc-333333333333", kind: "design", name: "DD-001-unrelated", title: "Unrelated design" }
+    server.use(
+      http.get("/api/docs", () => HttpResponse.json({ docs: [docFixture, plan, samePrefix] })),
+      http.get("/api/docs/graph", () => HttpResponse.json({ nodes: [
+        { id: "doc:1", kind: "prd", label: docFixture.name },
+        { id: "doc:2", kind: "plan", label: plan.name },
+        { id: "task:tx-linked", kind: "task", label: "Implement payment retry" },
+      ], edges: [
+        { source: "doc:1", target: "doc:2", type: "spec_to_plan" },
+        { source: "task:tx-linked", target: "doc:1", type: "implements" },
+      ] })),
+    )
+    const navigate = vi.fn()
+    renderWithProviders(<DocDetail docId={docFixture.docId} version={3} onNavigateToDoc={navigate} />)
+    const planLink = await screen.findByRole("link", { name: /Agent's implementation plan/ })
+    expect(planLink).toHaveAttribute("href", "/?tab=docs&docId=doc-222222222222&version=1")
+    fireEvent.click(planLink)
+    expect(navigate).toHaveBeenCalledWith("doc-222222222222", 1)
+    expect(screen.getByRole("link", { name: /Implement payment retry/ })).toHaveAttribute("href", "/?view=list&taskId=tx-linked")
+    expect(screen.queryByText("DD-001-unrelated")).not.toBeInTheDocument()
+  })
+
+  it("shows a source read error and retries without hiding the document metadata", async () => {
+    let failed = true
+    server.use(http.get(`/api/docs/by-id/${docFixture.docId}/source`, () => failed
+      ? HttpResponse.json({ error: "Source unavailable" }, { status: 500 })
+      : HttpResponse.json(sourceFixture)))
+    renderWithProviders(<DocDetail docId={docFixture.docId} version={3} onNavigateToDoc={vi.fn()} />)
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not load document content: Source unavailable")
+    expect(screen.getByRole("heading", { name: docFixture.title })).toBeInTheDocument()
+    expect(screen.queryByText("No rendered content available")).not.toBeInTheDocument()
+    failed = false
+    fireEvent.click(screen.getByRole("button", { name: "Retry content" }))
+    expect(await screen.findByText("Rendered body text")).toBeInTheDocument()
+  })
+
+  it("distinguishes a failed detail request from a document that is not found", async () => {
+    server.use(http.get(`/api/docs/by-id/${docFixture.docId}`, () => HttpResponse.json({ error: "Database unavailable" }, { status: 500 })))
+    renderWithProviders(<DocDetail docId={docFixture.docId} version={3} onNavigateToDoc={vi.fn()} />)
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not load document: Database unavailable")
+    expect(screen.queryByText("Doc not found")).not.toBeInTheDocument()
   })
 })

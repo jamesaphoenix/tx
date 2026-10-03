@@ -13,7 +13,7 @@ import path from 'path';
  * @param {string} content - The file content
  * @returns {string[]} - Array of exported identifier names
  */
-function extractExports(content) {
+export function extractExports(content) {
   const exports = [];
 
   // Match: export class ClassName
@@ -49,7 +49,7 @@ function extractExports(content) {
  * @param {string} content - The test file content
  * @returns {{ describes: string[], testedIdentifiers: string[] }}
  */
-function extractTestCoverage(content) {
+export function extractTestCoverage(content) {
   const describes = [];
   const testedIdentifiers = new Set();
 
@@ -69,9 +69,11 @@ function extractTestCoverage(content) {
   // Match direct service imports: import { ServiceName } from
   const importMatches = content.matchAll(/import\s*\{([^}]+)\}\s*from\s*["']/g);
   for (const match of importMatches) {
-    const names = match[1].split(',').map(s => s.trim().split(/\s+as\s+/)[0].trim());
-    for (const name of names) {
-      if (name.endsWith('Service') || name.endsWith('Repository') || name.endsWith('Live')) {
+    for (const specifier of match[1].split(',')) {
+      const [name, alias] = specifier.trim().split(/\s+as\s+/);
+      if (!/^\w+$/.test(name)) continue;
+      const calledDirectly = new RegExp(`\\b${alias ?? name}\\s*\\(`).test(content);
+      if (calledDirectly || name.endsWith('Service') || name.endsWith('Repository') || name.endsWith('Live')) {
         testedIdentifiers.add(name);
       }
     }
@@ -89,7 +91,7 @@ function extractTestCoverage(content) {
  * @param {string[]} testedIdentifiers - Identifiers found in tests
  * @returns {number} - Coverage percentage (0-100)
  */
-function calculateCoverage(sourceExports, testedIdentifiers) {
+export function calculateCoverage(sourceExports, testedIdentifiers) {
   if (sourceExports.length === 0) return 100;
 
   const testedSet = new Set(testedIdentifiers.map(s => s.toLowerCase()));

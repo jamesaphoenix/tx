@@ -1,10 +1,9 @@
 /**
- * Integration tests for MCP claim, tree, and stats tools.
+ * Integration tests for MCP task tree and stats tools.
  *
  * Tests the Effect services that back the MCP tools:
- * - tx_claim, tx_claim_release, tx_claim_renew, tx_claim_get (ClaimService)
  * - tx_dep_tree (HierarchyService)
- * - tx_diag_stats (TaskService + ReadyService + LearningService)
+ * - tx_diag_stats (TaskService + ReadyService)
  *
  * Uses singleton test database pattern (Doctrine Rule 8).
  * Real in-memory SQLite, no mocks.

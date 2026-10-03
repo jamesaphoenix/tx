@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { http, HttpResponse } from 'msw'
 import { server } from '../../../../test/setup'
@@ -63,8 +63,103 @@ describe('TaskDetail', () => {
     server.resetHandlers()
   })
 
+  it('renames the title through the task API and updates the detail cache', async () => {
+    let task = createTask({ id: 'tx-rename', title: 'Rename me' })
+    const patches: unknown[] = []
+    server.use(
+      http.get('/api/tasks/tx-rename', () => HttpResponse.json({task, blockedByTasks:[], blocksTasks:[], childTasks:[]})),
+      http.patch('/api/tasks/tx-rename', async ({request}) => {
+        const payload = await request.json() as {title:string}
+        patches.push(payload)
+        task = {...task, title:payload.title}
+        return HttpResponse.json(task)
+      }),
+    )
+    const {queryClient} = renderWithProviders(<TaskDetail taskId="tx-rename" onNavigateToTask={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button', {name:'Rename me'}))
+    const input = screen.getByRole('textbox', {name:'Task title'})
+    fireEvent.change(input, {target:{value:'  Clear title  '}})
+    fireEvent.keyDown(input, {key:'Enter'})
+    await screen.findByRole('heading', {name:'Clear title'})
+    expect(patches).toEqual([{title:'Clear title'}])
+    expect(queryClient.getQueryData<TaskDetailResponse>(['task','tx-rename'])?.task.title).toBe('Clear title')
+  })
+
+  it('hides previous task controls immediately when navigating', async () => {
+    let release!: () => void
+    const pending = new Promise<void>((resolve) => { release = resolve })
+    server.use(http.get('/api/tasks/:id', async ({params}) => {
+      if (params.id === 'tx-next') await pending
+      return HttpResponse.json({task:createTask({id:String(params.id),title:String(params.id)}), blockedByTasks:[],blocksTasks:[],childTasks:[]})
+    }))
+    const client = createTestQueryClient()
+    const view = (id:string) => <QueryClientProvider client={client}><TaskDetail taskId={id} onNavigateToTask={vi.fn()} /></QueryClientProvider>
+    const {rerender} = render(view('tx-first'))
+    await screen.findByRole('button', {name:'tx-first'})
+    rerender(view('tx-next'))
+    expect(screen.queryByRole('button', {name:'tx-first'})).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Loading task')
+    release()
+    await screen.findByRole('heading', {name:'tx-next'})
+  })
+
+  it('serialises description saves so a slow request cannot overwrite the latest draft', async () => {
+    let release!: () => void
+    const pending = new Promise<void>((resolve) => { release = resolve })
+    const writes: string[] = []
+    let stored = 'Initial'
+    server.use(
+      http.get('/api/tasks/tx-serial', () => HttpResponse.json({task:createTask({id:'tx-serial',description:stored}),blockedByTasks:[],blocksTasks:[],childTasks:[]})),
+      http.patch('/api/tasks/tx-serial', async ({request}) => {
+        const {description} = await request.json() as {description:string}
+        writes.push(description)
+        if (writes.length === 1) await pending
+        stored = description
+        return HttpResponse.json(createTask({id:'tx-serial',description:stored}))
+      }),
+    )
+    renderWithProviders(<TaskDetail taskId="tx-serial" onNavigateToTask={vi.fn()} />)
+    const input = await screen.findByRole('textbox', {name:'Task description'})
+    fireEvent.change(input, {target:{value:'First draft'}})
+    await waitFor(() => expect(writes).toEqual(['First draft']))
+    vi.useFakeTimers()
+    try {
+      fireEvent.change(input, {target:{value:'Latest draft'}})
+      await act(async () => { await vi.advanceTimersByTimeAsync(700) })
+      expect(writes).toEqual(['First draft'])
+    } finally {
+      vi.useRealTimers()
+      release()
+    }
+    await waitFor(() => expect(stored).toBe('Latest draft'))
+    expect(input).toHaveValue('Latest draft')
+    expect(writes).toEqual(['First draft','Latest draft'])
+  })
+
+  it('keeps a failed description draft and lets the user retry explicitly', async () => {
+    let calls = 0
+    server.use(
+      http.get('/api/tasks/tx-retry', () => HttpResponse.json({task:createTask({id:'tx-retry'}),blockedByTasks:[],blocksTasks:[],childTasks:[]})),
+      http.patch('/api/tasks/tx-retry', async ({request}) => {
+        const payload = await request.json() as {description:string}
+        calls++
+        if (calls === 1) return HttpResponse.json({error:'Disk full'}, {status:500})
+        return HttpResponse.json(createTask({id:'tx-retry',description:payload.description}))
+      }),
+    )
+    renderWithProviders(<TaskDetail taskId="tx-retry" onNavigateToTask={vi.fn()} />)
+    const input = await screen.findByRole('textbox', {name:'Task description'})
+    fireEvent.change(input, {target:{value:'Keep this draft'}})
+    await screen.findByText('Disk full')
+    expect(input).toHaveValue('Keep this draft')
+    fireEvent.click(screen.getByRole('button', {name:'Retry saving description'}))
+    await waitFor(() => expect(calls).toBe(2))
+    await waitFor(() => expect(screen.queryByText('Autosave failed')).not.toBeInTheDocument())
+    expect(input).toHaveValue('Keep this draft')
+  })
+
   describe('loading state', () => {
-    it('shows nothing while fetching', async () => {
+    it('announces loading while fetching', async () => {
       server.use(
         http.get('/api/tasks/:id', async () => {
           await new Promise((resolve) => setTimeout(resolve, 100))
@@ -79,12 +174,11 @@ describe('TaskDetail', () => {
       )
 
       const onNavigate = vi.fn()
-      const { container } = renderWithProviders(
+      renderWithProviders(
         <TaskDetail taskId="tx-loading" onNavigateToTask={onNavigate} />
       )
 
-      // Loading state returns null (empty container)
-      expect(container).toBeEmptyDOMElement()
+      expect(screen.getByRole('status')).toHaveTextContent('Loading task')
     })
   })
 

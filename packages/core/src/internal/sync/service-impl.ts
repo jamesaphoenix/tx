@@ -11,7 +11,7 @@ import { TaskService } from "../../services/task-service.js";
 import { StreamService } from "../../services/stream-service.js";
 import { DependencyRepository } from "../../repo/dep-repo.js";
 import { DocRepository } from "../../repo/doc-repo.js";
-import { DocUpsertOp as DocUpsertOpSchema, DocLinkUpsertOp as DocLinkUpsertOpSchema, TaskDocLinkUpsertOp as TaskDocLinkUpsertOpSchema, InvariantUpsertOp as InvariantUpsertOpSchema, LabelUpsertOp as LabelUpsertOpSchema, LabelAssignmentUpsertOp as LabelAssignmentUpsertOpSchema, AnySyncOperation as AnySyncOperationSchema, TaskSyncOperation as TaskSyncOperationSchema } from "../../schemas/sync.js";
+import { DocUpsertOp as DocUpsertOpSchema, DocLinkUpsertOp as DocLinkUpsertOpSchema, TaskDocLinkUpsertOp as TaskDocLinkUpsertOpSchema, InvariantUpsertOp as InvariantUpsertOpSchema, LabelUpsertOp as LabelUpsertOpSchema, LabelAssignmentUpsertOp as LabelAssignmentUpsertOpSchema, DecisionSyncOperation, AnySyncOperation as AnySyncOperationSchema, TaskSyncOperation as TaskSyncOperationSchema } from "../../schemas/sync.js";
 import { SyncEventEnvelopeSchema } from "../../schemas/sync-events.js";
 import { generateUlid } from "../../utils/ulid.js";
 import type { EntityImportResult, ImportResult, LegacySyncExportResult, SyncCompactResult, SyncExportResult, SyncHydrateResult, SyncImportResult, SyncStatus, SyncStreamInfoResult } from "../../services/sync/types.js";
@@ -46,7 +46,7 @@ export class SyncService extends Context.Tag("SyncService")<
 >() {
 }
 /** Historical streams remain readable but retired entities have no runtime projection. */
-const RETIRED_OPS = new Set(["learning_upsert", "learning_delete", "file_learning_upsert", "file_learning_delete", "attempt_upsert", "pin_upsert", "pin_delete", "anchor_upsert", "anchor_delete", "edge_upsert", "edge_delete"]);
+const RETIRED_OPS = new Set(["learning_upsert", "learning_delete", "file_learning_upsert", "file_learning_delete", "attempt_upsert", "pin_upsert", "pin_delete", "anchor_upsert", "anchor_delete", "edge_upsert", "edge_delete", "decision_upsert", "decision_delete"]);
 const ignoredEventCount = (events) => events.filter(event => RETIRED_OPS.has(event.payload.op)).length;
 const DEFAULT_JSONL_PATH = ".tx/tasks.jsonl";
 const DEFAULT_DOCS_JSONL_PATH = ".tx/docs.jsonl";
@@ -1501,6 +1501,19 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
             yield* atomicWrite(filePath, jsonl + (jsonl.length > 0 ? "\n" : ""));
             return { opCount: ops.length, path: filePath };
         }),
+        importDecisions: (path) => Effect.gen(function* () {
+            const filePath = resolve(path ?? ".tx/decisions.jsonl");
+            if (!(yield* fileExists(filePath))) return EMPTY_ENTITY_IMPORT_RESULT;
+            const content = yield* readUtf8FileWithLimit(filePath);
+            const lines = content.trim().split("\n").filter(Boolean);
+            for (const line of lines) {
+                yield* Effect.try({
+                    try: () => Schema.decodeUnknownSync(DecisionSyncOperation)(JSON.parse(line)),
+                    catch: (cause) => new ValidationError({reason: "Invalid historical decision operation: " + String(cause)})
+                });
+            }
+            return {imported: 0, skipped: lines.length};
+        }),
         importLabels: (path) => Effect.gen(function* () {
             const filePath = resolve(path ?? DEFAULT_LABELS_JSONL_PATH);
             const importLabelsFileExists = yield* fileExists(filePath);
@@ -1594,118 +1607,6 @@ export const SyncServiceLive = Layer.effect(SyncService, Effect.gen(function* ()
                                 // Skip FK failures (task may not exist)
                                 skipped++;
                             }
-                        }
-                        return { imported, skipped };
-                    });
-                },
-                catch: (cause) => new DatabaseError({ cause })
-            });
-        }),
-        importDecisions: (path) => Effect.gen(function* () {
-            const filePath = resolve(path ?? ".tx/decisions.jsonl");
-            const importDecisionsFileExists = yield* fileExists(filePath);
-            if (!importDecisionsFileExists)
-                return EMPTY_ENTITY_IMPORT_RESULT;
-            const content = yield* readUtf8FileWithLimit(filePath);
-            const lines = content.trim().split("\n").filter(Boolean);
-            if (lines.length === 0)
-                return EMPTY_ENTITY_IMPORT_RESULT;
-            const upsertOps = [];
-            const deleteOps = [];
-            for (const line of lines) {
-                const parsed = yield* Effect.try({
-                    try: () => JSON.parse(line),
-                    catch: (cause) => new ValidationError({ reason: `Invalid decision JSONL: ${cause}` })
-                });
-                if (parsed.op === "decision_upsert") {
-                    upsertOps.push(parsed);
-                } else if (parsed.op === "decision_delete") {
-                    deleteOps.push(parsed);
-                } else {
-                    yield* Effect.fail(new ValidationError({
-                        reason: `Unknown decision operation type "${parsed.op ?? "(missing)"}". Expected "decision_upsert" or "decision_delete".`
-                    }));
-                }
-            }
-            if (upsertOps.length === 0 && deleteOps.length === 0)
-                return EMPTY_ENTITY_IMPORT_RESULT;
-            // Dedup by content_hash
-            const existingHashes = yield* Effect.try({
-                try: () => {
-                    const rows = db.prepare("SELECT content_hash FROM decisions").all();
-                    return new Set(rows.map(r => r.content_hash));
-                },
-                catch: (cause) => new DatabaseError({ cause })
-            });
-            // Resolve doc keys to doc IDs. Support both new doc_id:version keys and legacy name:version keys.
-            const docKeyToId = yield* Effect.try({
-                try: () => {
-                    const rows = db.prepare("SELECT id, doc_id, name, version FROM docs").all();
-                    const map = new Map();
-                    for (const r of rows) {
-                        if (r.doc_id) {
-                            map.set(makeDocVersionKey(r.doc_id, r.version), r.id);
-                        }
-                        map.set(deriveLegacyDocVersionKey(r.name, r.version), r.id);
-                    }
-                    return map;
-                },
-                catch: (cause) => new DatabaseError({ cause })
-            });
-            const insertStmt = db.prepare(
-                `INSERT OR IGNORE INTO decisions
-                 (id, content, question, status, source, commit_sha, run_id, task_id, doc_id, invariant_id,
-                  reviewed_by, review_note, edited_content, reviewed_at, content_hash, superseded_by,
-                  synced_to_doc, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-            );
-            const deleteStmt = db.prepare("DELETE FROM decisions WHERE id = ?");
-            return yield* Effect.try({
-                try: () => {
-                    return withWriteTransaction(() => {
-                        let imported = 0;
-                        let skipped = 0;
-                        // Handle deletes first (tombstones). Only count rows that
-                        // actually existed; a tombstone for an already-absent
-                        // decision is a no-op and must not inflate `imported`.
-                        for (const op of deleteOps) {
-                            const res = deleteStmt.run(op.id);
-                            if (res.changes > 0) {
-                                imported++;
-                            } else {
-                                skipped++;
-                            }
-                        }
-                        // Handle upserts
-                        for (const op of upsertOps) {
-                            if (existingHashes.has(op.contentHash)) {
-                                skipped++;
-                                continue;
-                            }
-                            const d = op.data;
-                            const docId = d.docKey ? (docKeyToId.get(d.docKey) ?? null) : null;
-                            insertStmt.run(
-                                op.id,
-                                d.content,
-                                d.question,
-                                d.status,
-                                d.source,
-                                d.commitSha,
-                                d.runId,
-                                d.taskId,
-                                docId,
-                                d.invariantId,
-                                d.reviewedBy,
-                                d.reviewNote,
-                                d.editedContent,
-                                d.reviewedAt,
-                                op.contentHash,
-                                d.supersededBy,
-                                d.syncedToDoc ? 1 : 0,
-                                d.createdAt ?? op.ts,
-                                op.ts
-                            );
-                            imported++;
                         }
                         return { imported, skipped };
                     });

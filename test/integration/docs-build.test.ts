@@ -60,29 +60,21 @@ describe("Docs Site Build", { timeout: 180_000 }, () => {
       expect(prerenderManifest.routes).toHaveProperty("/docs/getting-started")
     })
 
-    it("includes design docs", () => {
-      const routes = Object.keys(prerenderManifest.routes)
-      const designDocs = routes.filter(r => r.startsWith("/docs/design/"))
-      expect(designDocs.length).toBeGreaterThan(10)
-    })
-
-    it("includes PRD docs", () => {
-      const routes = Object.keys(prerenderManifest.routes)
-      const prdDocs = routes.filter(r => r.startsWith("/docs/prd/"))
-      expect(prdDocs.length).toBeGreaterThan(10)
-    })
-
     it("includes primitives docs", () => {
       const routes = Object.keys(prerenderManifest.routes)
       const primitiveDocs = routes.filter(r => r.startsWith("/docs/primitives"))
       expect(primitiveDocs.length).toBeGreaterThan(5)
     })
 
-    it("includes key primitives", () => {
-      expect(prerenderManifest.routes).toHaveProperty("/docs/primitives/ready")
-      expect(prerenderManifest.routes).toHaveProperty("/docs/primitives/done")
-      expect(prerenderManifest.routes).toHaveProperty("/docs/primitives/block")
-      expect(prerenderManifest.routes).toHaveProperty("/docs/primitives/claim")
+    it("includes every retained workflow page and excludes retired pages", () => {
+      for (const page of ["tasks", "docs", "plans", "invariants", "spec-trace", "spec-health", "label", "sync", "skills"]) {
+        expect(prerenderManifest.routes).toHaveProperty(`/docs/primitives/${page}`)
+      }
+      for (const page of ["claim", "memory", "decision", "ralph-loop", "watchdog", "decompose"]) {
+        expect(prerenderManifest.routes).not.toHaveProperty(`/docs/primitives/${page}`)
+      }
+      expect(prerenderManifest.routes).toHaveProperty("/docs/interfaces")
+      expect(prerenderManifest.routes).toHaveProperty("/docs/migration")
     })
   })
 
@@ -101,25 +93,19 @@ describe("Docs Site Build", { timeout: 180_000 }, () => {
       expect(existsSync(join(contentDir, "meta.json"))).toBe(true)
     })
 
-    it("has design directory", () => {
-      expect(existsSync(join(contentDir, "design"))).toBe(true)
-    })
-
-    it("has prd directory", () => {
-      expect(existsSync(join(contentDir, "prd"))).toBe(true)
-    })
-
     it("has primitives directory", () => {
       expect(existsSync(join(contentDir, "primitives"))).toBe(true)
     })
   })
 
-  describe("Route count", () => {
-    it("has generated at least 40 static pages", () => {
-      const manifestPath = join(NEXT_DIR, "prerender-manifest.json")
-      const manifest = JSON.parse(readFileSync(manifestPath, "utf-8"))
-      const routeCount = Object.keys(manifest.routes).length
-      expect(routeCount).toBeGreaterThanOrEqual(40)
-    })
+  it("keeps every workflow page in the same concise guide format", () => {
+    const directory = join(DOCS_DIR, "content/docs/primitives")
+    for (const page of ["tasks", "docs", "plans", "invariants", "spec-trace", "spec-health", "label", "sync", "skills"]) {
+      const guide = readFileSync(join(directory, `${page}.mdx`), "utf8")
+      expect(guide).toContain("## Purpose")
+      expect(guide).toContain("## Commands")
+      expect(guide).toContain("## Workflow")
+      expect(guide).toMatch(/title: tx (task|doc|spec|sync|skills)/)
+    }
   })
 })

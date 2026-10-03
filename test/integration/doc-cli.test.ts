@@ -976,11 +976,14 @@ describe("tx doc lifecycle coverage", () => {
   it("shows usage and flag errors for invariant show/record argument guards", () => {
     const showUsage = runTx(["invariant", "show"], tmpProjectDir)
     expect(showUsage.status).not.toBe(0)
-    expect(showUsage.stderr).toContain("Usage: tx invariant show <id>")
+    expect(showUsage.stderr).toContain("Usage: tx spec invariant show <id>")
 
     const recordMissingFlags = runTx(["invariant", "record", "INV-ANY"], tmpProjectDir)
     expect(recordMissingFlags.status).not.toBe(0)
-    expect(recordMissingFlags.stderr).toContain("Must specify --passed or --failed")
+    expect(recordMissingFlags.stderr).toContain("Specify exactly one of --passed or --failed")
+    const conflictingFlags = runTx(["spec", "invariant", "record", "INV-ANY", "--passed", "--failed"], tmpProjectDir)
+    expect(conflictingFlags.status).not.toBe(0)
+    expect(conflictingFlags.stderr).toContain("Specify exactly one of --passed or --failed")
   })
 
   it("fails doc-scoped invariant sync when the requested doc does not exist", () => {

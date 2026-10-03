@@ -1,22 +1,36 @@
 ---
 doc_style: guide
-title: Plans
-description: Spec -> plan -> tasks
+title: tx doc add plan
+description: Save your coding agent plan in the docs
 ---
 
-Generate a plan using your normal coding agent. Save its content in a plan document:
+## Purpose
+
+Generate a plan using your normal coding agent. Copy it into tx without changing
+its format or introducing another planning process.
+
+## Commands
 
 ```bash
 tx doc add plan checkout-plan --title "Checkout plan"
 tx doc link checkout-design checkout-plan
+tx doc sync checkout-plan
 tx doc attach <task-id> checkout-plan
 ```
 
-Copy the existing plan verbatim below the tx frontmatter, replacing the scaffold body.
-Keep the original file intact. When it lives elsewhere, add an adjacent
-`checkout-plan.source` symlink to its absolute path. The committed copy remains
-readable on another machine even if the source link is unavailable. Update the copy
-explicitly when revising the original, then run `tx doc sync checkout-plan`.
+## Workflow
 
-Plans have no required section format. Requirements and invariants stay in the PRD
-and design documents. The `tx-plan` skill performs this small authoring workflow.
+Copy the plan verbatim below the generated frontmatter, replacing the scaffold
+body. Keep the original file intact. If it was authored elsewhere, add an adjacent
+`checkout-plan.source` symlink to the original file's absolute path. Check an
+existing link before replacing it.
+
+The saved copy remains readable when the source link is unavailable. The link
+records provenance; it does not synchronise content. Update the copy explicitly,
+then run `tx doc sync checkout-plan`. A plan made in conversation needs no source
+symlink. Avoid copying secrets or private machine-specific material.
+
+Plans have no required section format. Requirements and invariants stay in the
+PRD/design. Create tasks from the steps and attach them to the plan. The dashboard
+graph shows **spec -> plan -> tasks**. The `tx-plan` [skill](./skills) guides this
+small authoring workflow.

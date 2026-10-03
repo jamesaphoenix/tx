@@ -3,7 +3,8 @@ import { Button } from "../ui"
 import { useQuery } from "@tanstack/react-query"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import { fetchers, type DocSerialized } from "../../api/client"
+import { ApiError, fetchers } from "../../api/client"
+import { DocumentLinks } from "./DocumentLinks"
 
 interface DocDetailProps {
   docId: string
@@ -15,6 +16,7 @@ const KIND_LABELS: Record<string, string> = {
   overview: "OVERVIEW DOCUMENT",
   prd: "PRODUCT REQUIREMENTS",
   design: "DESIGN DOCUMENT",
+  plan: "IMPLEMENTATION PLAN",
   requirement: "REQUIREMENT",
   system_design: "SYSTEM DESIGN",
   runbook: "RUNBOOK",
@@ -35,92 +37,24 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 // =============================================================================
-// Relationships section
-// =============================================================================
-
-function RelationshipsSection({ doc, allDocs, onNavigateToDoc }: {
-  doc: DocSerialized
-  allDocs: DocSerialized[]
-  onNavigateToDoc: (docId: string, version: number) => void
-}) {
-  const parentDoc = doc.parentDocId ? allDocs.find((d) => d.id === doc.parentDocId) : null
-
-  const prefix = doc.name.match(/^(?:PRD|DD|prd|dd)-?(\d{3})/i)?.[1]
-  const related = prefix
-    ? allDocs.filter((d) => (d.docId !== doc.docId || d.version !== doc.version) && d.name.match(new RegExp(`^(?:PRD|DD|prd|dd)-?${prefix}`, "i")))
-    : []
-
-  if (!parentDoc && related.length === 0) return null
-
-  const inferLinkType = (from: DocSerialized, to: DocSerialized): string => {
-    if (from.kind === "prd" && to.kind === "design") return "prd to design"
-    if (from.kind === "overview" && to.kind === "prd") return "overview to prd"
-    if (from.kind === "overview" && to.kind === "design") return "overview to design"
-    return "related"
-  }
-
-  return (
-    <div className="mb-8 p-4 bg-gray-800/30 rounded-lg border border-gray-700/30">
-      <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-3">
-        Relationships
-      </div>
-      <div className="flex flex-wrap gap-3">
-        {parentDoc && (
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => onNavigateToDoc(parentDoc.docId, parentDoc.version)}
-          >
-            <span className="text-gray-500">&larr;</span>
-            <span className="text-blue-400">{parentDoc.name}</span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-700 text-gray-400">parent</span>
-          </Button>
-        )}
-        {related.map((rel) => (
-          <Button
-            key={`${rel.docId}:${rel.version}`}
-            size="sm"
-            variant="secondary"
-            onClick={() => onNavigateToDoc(rel.docId, rel.version)}
-          >
-            <span className="text-gray-500">&larr;</span>
-            <span className="text-blue-400">{rel.name}</span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-700 text-gray-400">
-              {inferLinkType(doc, rel)}
-            </span>
-          </Button>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-// =============================================================================
 // DocDetail component
 // =============================================================================
 
 export function DocDetail({ docId, version, onNavigateToDoc }: DocDetailProps) {
-  const { data: doc, isLoading: docLoading } = useQuery({
+  const { data: doc, isLoading: docLoading, error: docError, refetch: retryDoc } = useQuery({
     queryKey: ["doc", docId, version],
     queryFn: () => fetchers.docDetail(docId, version),
     enabled: !!docId,
     refetchInterval: 5000,
   })
 
-  const { data: allDocsData } = useQuery({
-    queryKey: ["docs"],
-    queryFn: () => fetchers.docs(),
-    refetchInterval: 5000,
-  })
-
-  const { data: sourceData, isLoading: sourceLoading } = useQuery({
+  const { data: sourceData, isLoading: sourceLoading, error: sourceError, refetch: retrySource } = useQuery({
     queryKey: ["doc-source", docId, version],
     queryFn: () => fetchers.docSource(docId, version),
     enabled: !!docId,
     refetchInterval: 5000,
   })
 
-  const allDocs = allDocsData?.docs ?? []
   // Strip leading title and Kind/Status/Version lines from rendered content
   // since we already show them in the header above
   const rendered = useMemo(() => {
@@ -150,8 +84,9 @@ export function DocDetail({ docId, version, onNavigateToDoc }: DocDetailProps) {
 
   if (!doc) {
     return (
-      <div className="flex items-center justify-center h-full text-gray-500">
-        Doc not found
+      <div role="alert" className="p-8 text-gray-400">
+        <p>{docError instanceof ApiError && docError.status === 404 ? "Document not found" : `Could not load document: ${docError?.message ?? "No response"}`}</p>
+        <Button className="mt-3" onClick={() => { void retryDoc() }}>Retry document</Button>
       </div>
     )
   }
@@ -164,14 +99,14 @@ export function DocDetail({ docId, version, onNavigateToDoc }: DocDetailProps) {
       </div>
 
       {/* Title + status + version */}
-      <div className="flex items-center gap-3 mb-3">
+      <div className="flex flex-wrap items-center gap-3 mb-3">
         <h1 className="text-2xl font-bold text-white">{doc.title}</h1>
         <StatusBadge status={doc.status} />
         <span className="text-xs text-gray-500 font-mono">v{doc.version}</span>
       </div>
 
       {/* Metadata line */}
-      <div className="flex items-center gap-2 text-xs text-gray-500 mb-8 font-mono">
+      <div className="flex flex-wrap items-center gap-2 break-all text-xs text-gray-500 mb-8 font-mono">
         <span>{doc.name}</span>
         <span className="text-gray-600">&middot;</span>
         <span>{doc.docId}</span>
@@ -182,10 +117,14 @@ export function DocDetail({ docId, version, onNavigateToDoc }: DocDetailProps) {
       </div>
 
       {/* Relationships */}
-      <RelationshipsSection doc={doc} allDocs={allDocs} onNavigateToDoc={onNavigateToDoc} />
+      <DocumentLinks nodeId={`doc:${doc.id}`} onNavigateToDoc={onNavigateToDoc} />
 
       {/* Content */}
       <div>
+        {sourceError && <div role="alert" className="mb-4 text-sm text-amber-400">
+          <p>Could not load document content: {sourceError.message}</p>
+          <Button className="mt-2" onClick={() => { void retrySource() }}>Retry content</Button>
+        </div>}
         {(!rendered && sourceLoading) ? (
           <div className="space-y-3">
             {Array.from({ length: 8 }).map((_, i) => (
@@ -198,9 +137,9 @@ export function DocDetail({ docId, version, onNavigateToDoc }: DocDetailProps) {
               {rendered}
             </ReactMarkdown>
           </div>
-        ) : (
-          <div className="text-sm text-gray-500 italic">No rendered content available</div>
-        )}
+        ) : !sourceError ? (
+          <div className="text-sm text-gray-500 italic">Document content is unavailable. Check {doc.filePath} in this checkout.</div>
+        ) : null}
       </div>
     </div>
   )

@@ -137,6 +137,7 @@ export {
   writeDashboardCycleLengthDays,
   writeDashboardCycleStartDay,
   writeDashboardCarryStatuses,
+  writeDashboardAutoAddStatuses,
   scaffoldConfigToml,
   upgradeConfigToml,
   DASHBOARD_DEFAULT_TASK_ASSIGMENT_KEY,

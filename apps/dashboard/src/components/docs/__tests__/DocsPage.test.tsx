@@ -51,6 +51,7 @@ function renderWithProviders(ui: React.ReactElement) {
 
 describe("DocsPage", () => {
   beforeEach(() => {
+    window.history.replaceState({}, "", "/")
     server.use(
       http.get("/api/docs", () =>
         HttpResponse.json({
@@ -77,12 +78,13 @@ describe("DocsPage", () => {
 
   afterEach(() => {
     server.resetHandlers()
+    window.history.replaceState({}, "", "/")
   })
 
   it("switches between list and map flows while preserving selected doc", async () => {
     renderWithProviders(<DocsPage />)
 
-    expect(screen.getByText("Select a doc to view details")).toBeInTheDocument()
+    expect(screen.getByText("Select a document to view details")).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: "Select Doc" }))
     await waitFor(() => {
@@ -96,5 +98,11 @@ describe("DocsPage", () => {
     await waitFor(() => {
       expect(screen.getByText("Detail:doc-111111111111:1")).toBeInTheDocument()
     })
+  })
+
+  it("opens the exact document version from a task's permalink", async () => {
+    window.history.replaceState({}, "", "/?tab=docs&docId=doc-111111111111&version=1")
+    renderWithProviders(<DocsPage />)
+    expect(await screen.findByText("Detail:doc-111111111111:1")).toBeInTheDocument()
   })
 })

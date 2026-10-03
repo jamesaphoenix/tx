@@ -188,25 +188,6 @@ export class StaleDataError extends Data.TaggedError("StaleDataError")<{
   }
 }
 
-// Decision error types (spec-driven development triangle)
-
-export class DecisionNotFoundError extends Data.TaggedError("DecisionNotFoundError")<{
-  readonly id: string
-}> {
-  get message() {
-    return `Decision not found: ${this.id}`
-  }
-}
-
-export class DecisionAlreadyReviewedError extends Data.TaggedError("DecisionAlreadyReviewedError")<{
-  readonly id: string
-  readonly status: string
-}> {
-  get message() {
-    return `Decision already reviewed: ${this.id} (status: ${this.status})`
-  }
-}
-
 export type TaskError = TaskNotFoundError
   | ValidationError
   | CircularDependencyError
@@ -223,5 +204,3 @@ export type TaskError = TaskNotFoundError
   | InvariantNotFoundError
   | LabelNotFoundError
   | StaleDataError
-  | DecisionNotFoundError
-  | DecisionAlreadyReviewedError

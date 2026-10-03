@@ -26,4 +26,22 @@ describe("help registry parsing", () => {
     expect(keys).not.toContain("block")
     expect(keys).not.toContain("ack:all")
   })
+  it("separates option values from required and optional positional arguments", () => {
+    const run = buildCommandSchema("spec run")
+    expect(run.arguments).toEqual([{ name: "<test-id>", required: true }])
+    expect(run.usage).toEqual(["tx spec run <test-id> --passed|--failed [--duration <ms>] [--details <text>] [--json]"])
+    expect(run.options).toEqual(expect.arrayContaining([
+      expect.objectContaining({ flags: ["--passed"] }),
+      expect.objectContaining({ flags: ["--failed"] }),
+      expect.objectContaining({ flags: ["--duration"], valueName: "<ms>" }),
+    ]))
+    const link = buildCommandSchema("spec link")
+    expect(link.arguments).toEqual([
+      { name: "<inv-id>", required: true }, { name: "<file>", required: true }, { name: "<name>", required: false },
+    ])
+    expect(link.options).toEqual(expect.arrayContaining([
+      expect.objectContaining({ flags: ["--framework"], valueName: "<name>" }),
+    ]))
+  })
+
 })

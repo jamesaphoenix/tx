@@ -14,6 +14,7 @@ import type {
   SyncStreamInfoResult
 } from "@jamesaphoenix/tx"
 import { SyncService } from "@jamesaphoenix/tx"
+import { registerEffectTool } from "./effect-schema-tool.js"
 import { runEffect } from "../runtime.js"
 import { handleToolError, type McpToolResult } from "../response.js"
 
@@ -159,47 +160,42 @@ const handleHydrate = async (): Promise<McpToolResult> => {
 
 export const registerSyncTools = (server: McpServer): void => {
   // tx_sync_export - Export stream events
-  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
-  server.tool(
+  registerEffectTool(server,
     "tx_sync_export",
     "Export current state as append-only sync events under .tx/streams.",
     {},
-    handleExport as Parameters<typeof server.tool>[3]
+    handleExport
   )
 
   // tx_sync_import - Import stream events
-  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
-  server.tool(
+  registerEffectTool(server,
     "tx_sync_import",
     "Import and apply sync events from .tx/streams incrementally.",
     {},
-    handleImport as Parameters<typeof server.tool>[3]
+    handleImport
   )
 
   // tx_sync_status - Get current sync status
-  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
-  server.tool(
+  registerEffectTool(server,
     "tx_sync_status",
     "Get current synchronization status including task counts, last export/import times, and dirty state.",
     {},
-    handleStatus as Parameters<typeof server.tool>[3]
+    handleStatus
   )
 
   // tx_sync_stream - Show current stream identity and sequence info
-  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
-  server.tool(
+  registerEffectTool(server,
     "tx_sync_stream",
     "Show the local sync stream identity and sequence state.",
     {},
-    handleStream as Parameters<typeof server.tool>[3]
+    handleStream
   )
 
-  // tx_sync_hydrate - Full projection rebuild from event streams
-  // @ts-expect-error - MCP SDK types cause deep type instantiation issues
-  server.tool(
+  // tx_sync_hydrate - Non-destructive replay from event streams
+  registerEffectTool(server,
     "tx_sync_hydrate",
-    "Rebuild materialized task state by replaying all sync events from stream logs.",
+    "Reapply retained projections without truncating existing records; validate and count retired events as ignored.",
     {},
-    handleHydrate as Parameters<typeof server.tool>[3]
+    handleHydrate
   )
 }

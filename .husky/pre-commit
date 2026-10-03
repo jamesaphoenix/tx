@@ -15,7 +15,8 @@ unset GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CONFIG GIT_CONFIG_PARAMETERS \
 echo "🔍 Running pre-commit checks..."
 
 # Run type checking and linting (fast feedback)
-./scripts/check.sh --types && ./scripts/check.sh --lint
+./scripts/check.sh --types || exit 1
+./scripts/check.sh --lint || exit 1
 
 # Run targeted tests for changed files only
 changed_files=$(git diff --cached --name-only --diff-filter=ACMR)
@@ -38,28 +39,17 @@ if echo "$changed_files" | grep -q "^packages/core/"; then
     fi
 fi
 
-# Check if types package was changed
-if echo "$changed_files" | grep -q "^packages/types/"; then
-    # Types changes can affect everything — run integration tests
-    if [ -f "test/integration/core.test.ts" ]; then
-        test_files="$test_files test/integration/core.test.ts"
+# CLI and dashboard use their own Vitest configuration; never pass them to root Vitest.
+for pkg in apps/cli apps/dashboard; do
+    if echo "$changed_files" | grep -q "^$pkg/"; then
+        (cd "$pkg" && timeout 120 bun run test) || exit 1
     fi
-fi
-
-# Check if CLI was changed (now also covers the merged MCP + API servers under apps/cli/src)
-if echo "$changed_files" | grep -q "^apps/cli/"; then
-    for f in $(echo "$changed_files" | grep "^apps/cli/src/.*\.ts$" | grep -v "\.test\.ts$"); do
-        test_file="${f%.ts}.test.ts"
-        if [ -f "$test_file" ]; then
-            test_files="$test_files $test_file"
-        fi
-    done
-fi
+done
 
 # Check if root test files were changed directly (only files runnable by root vitest)
 # Skip files excluded from default vitest runs (slow/network-dependent)
-EXCLUDED_TESTS="daemon-cli|cli-graph|cli-test-cache|cli-learning|cli-npm-binary|install-script"
-for f in $(echo "$changed_files" | grep "\.test\.ts$" | grep -v "^packages/" | grep -Ev "$EXCLUDED_TESTS"); do
+EXCLUDED_TESTS="cli-npm-binary|install-script|utils-usage|docs-build|docs-search-route"
+for f in $(echo "$changed_files" | grep "^test/.*\.test\.ts$" | grep -Ev "$EXCLUDED_TESTS"); do
     if [ -f "$f" ]; then
         test_files="$test_files $f"
     fi
@@ -69,7 +59,7 @@ done
 if [ -n "$test_files" ]; then
     unique_tests=$(echo "$test_files" | tr ' ' '\n' | sort -u | tr '\n' ' ')
     echo "🧪 Running targeted tests for changed files..."
-    timeout 120 scripts/test-quiet.sh $unique_tests
+    timeout 120 scripts/test-quiet.sh $unique_tests || exit 1
 fi
 
 # Run package-specific tests (these have their own vitest config)

@@ -4,6 +4,7 @@ import { Button } from "./components/ui"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   fetchers,
+  ApiError,
   type TaskAssigneeType,
   type DashboardDefaultTaskView,
   type TaskLabel,
@@ -368,8 +369,7 @@ function SettingsPage({
       setPendingDeleteLabelId(null)
       await invalidateLabelCaches()
     } catch (error) {
-      const rawMessage = error instanceof Error ? error.message : String(error)
-      if (rawMessage.includes("HTTP 404")) {
+      if (error instanceof ApiError && error.status === 404) {
         setLabelError("Delete labels endpoint not found. Restart `tx diag dashboard` and try again.")
       } else {
         setLabelError(error instanceof Error ? error.message : "Failed to delete label")
@@ -838,7 +838,10 @@ export default function App() {
 }
 
 function AppContent() {
-  const [activeTab, setActiveTab] = useState<Tab>("tasks")
+  const [activeTab, setActiveTab] = useState<Tab>(() => {
+    const requested = new URLSearchParams(window.location.search).get("tab")
+    return requested === "docs" || requested === "cycles" || requested === "health" || requested === "settings" ? requested : "tasks"
+  })
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => readInitialTheme())
   const [newTaskRequestNonce, setNewTaskRequestNonce] = useState(0)
   const [tabResetKey, setTabResetKey] = useState(0)
@@ -847,7 +850,8 @@ function AppContent() {
 
   /** Switch tabs via the top-level shell and reset to each section's base view. */
   const navigateToTab = useCallback((tab: Tab) => {
-    window.history.replaceState({}, "", window.location.pathname)
+    const query = tab === "tasks" ? "" : `?tab=${tab}`
+    window.history.replaceState({}, "", `${window.location.pathname}${query}`)
     setTabResetKey((current) => current + 1)
     setActiveTab(tab)
   }, [])
@@ -958,7 +962,7 @@ function AppContent() {
     // Tab switching - always available
     const tabs: { tab: Tab; label: string }[] = [
       { tab: "tasks", label: "Go to Tasks" },
-      { tab: "docs", label: "Go to Specs" },
+      { tab: "docs", label: "Go to Documents" },
       { tab: "cycles", label: "Go to Cycles" },
       { tab: "health", label: "Go to Spec Health" },
       { tab: "settings", label: "Go to Settings" },
@@ -992,7 +996,7 @@ function AppContent() {
             <nav className="flex gap-1">
               {([
                 { id: "tasks", label: "Tasks" },
-                { id: "docs", label: "Specs" },
+                { id: "docs", label: "Documents" },
                 { id: "cycles", label: "Cycles" },
                 { id: "health", label: "Spec Health" },
               ] as const).map(({ id, label }) => (
@@ -1036,7 +1040,7 @@ function AppContent() {
         </div>
       </header>
 
-      {/* Stats — only shown on tasks tab */}
+      {/* Stats, only shown on tasks tab */}
       {activeTab === "tasks" && (
         <div className="flex-shrink-0 px-4 pb-2">
           <Stats />
@@ -1051,7 +1055,6 @@ function AppContent() {
             themeMode={themeMode}
             defaultTaskAssigmentType={defaultTaskAssigmentType}
             defaultTaskView={defaultTaskView}
-            autoAddStatuses={cycleSettings.autoAddStatuses ?? DEFAULT_CYCLE_SETTINGS.autoAddStatuses}
             newTaskRequestNonce={newTaskRequestNonce}
           />
         ) : activeTab === "docs" ? (
@@ -1078,7 +1081,7 @@ function AppContent() {
             }}
           />
         ) : (
-          <CyclePage key={`cycles:${tabResetKey}`} themeMode={themeMode} autoAddStatuses={cycleSettings.autoAddStatuses ?? DEFAULT_CYCLE_SETTINGS.autoAddStatuses} />
+          <CyclePage key={`cycles:${tabResetKey}`} themeMode={themeMode} />
         )}
       </main>
     </div>

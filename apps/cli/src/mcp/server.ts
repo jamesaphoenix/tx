@@ -19,7 +19,6 @@ import { registerSyncTools } from "./tools/sync.js"
 import { registerDocTools } from "./tools/doc.js"
 import { registerInvariantTools } from "./tools/invariant.js"
 import { registerSpecTraceTools } from "./tools/spec-trace.js"
-import { registerDecisionTools } from "./tools/decision.js"
 import { registerLabelTools } from "./tools/label.js"
 import { formatErrorWithStack } from "./response.js"
 
@@ -34,7 +33,6 @@ export { registerDocTools, serializeDoc, serializeDocLink } from "./tools/doc.js
 export { registerInvariantTools } from "./tools/invariant.js"
 export { registerLabelTools } from "./tools/label.js"
 export { registerSpecTraceTools } from "./tools/spec-trace.js"
-export { registerDecisionTools, serializeDecision } from "./tools/decision.js"
 
 // -----------------------------------------------------------------------------
 // Signal Handler State (prevents handler accumulation/memory leak)
@@ -78,7 +76,6 @@ export const createMcpServer = (): McpServer => {
   registerDocTools(server)
   registerInvariantTools(server)
   registerSpecTraceTools(server)
-  registerDecisionTools(server)
   registerLabelTools(server)
 
   return server

@@ -427,7 +427,7 @@ const handleSpecComplete = async (args: {
 }
 
 export const registerSpecTraceTools = (server: McpServer): void => {
-  registerEffectTool(server, "tx_spec_health", "Inspect spec coverage, evidence, drift and decisions", {}, async () => ({ content: [{ type: "text", text: JSON.stringify(await runEffect(getSpecHealth())) }], isError: false }))
+  registerEffectTool(server, "tx_spec_health", "Inspect spec coverage, evidence and drift", {}, async () => ({ content: [{ type: "text", text: JSON.stringify(await runEffect(getSpecHealth())) }], isError: false }))
 
   registerEffectTool(server,
     "tx_spec_discover",

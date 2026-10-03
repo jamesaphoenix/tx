@@ -29,6 +29,7 @@ function renderWithProviders(ui: React.ReactElement) {
 
 describe("CyclePage", () => {
   beforeEach(() => {
+    window.history.replaceState(null,"","/?tab=cycles")
     server.use(
       http.get("/api/cycles", () =>
         HttpResponse.json({
@@ -72,6 +73,21 @@ describe("CyclePage", () => {
 
   afterEach(() => {
     server.resetHandlers()
+  })
+
+  it("shows a failed create request and lets the user retry", async () => {
+    let calls = 0
+    server.use(http.post("/api/cycles", () => {
+      calls++
+      return calls === 1 ? HttpResponse.json({error:"Disk full"},{status:500}) : HttpResponse.json({id:"cycle-1"},{status:201})
+    }))
+    renderWithProviders(<CyclePage />)
+    fireEvent.click(screen.getByRole("button",{name:"+ New Cycle"}))
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not create cycle: Disk full")
+    fireEvent.click(screen.getByRole("button",{name:"+ New Cycle"}))
+    await waitFor(() => expect(calls).toBe(2))
+    await screen.findByRole("button",{name:"Cycles"})
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument()
   })
 
   it("loads selected cycle details", async () => {

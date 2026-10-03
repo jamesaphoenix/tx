@@ -5,7 +5,6 @@ import { DependencyRepositoryLive } from "./repo/dep-repo.js"
 import { makeDocRepositoryLive } from "./repo/doc-repo.js"
 import { LabelRepositoryLive } from "./repo/label-repo.js"
 import { makeSpecTraceRepositoryLive } from "./repo/spec-trace-repo.js"
-import { DecisionRepositoryLive } from "./repo/decision-repo.js"
 import { TaskServiceLive } from "./services/task-service.js"
 import { DependencyServiceLive } from "./services/dep-service.js"
 import { ReadyServiceLive } from "./services/ready-service.js"
@@ -18,7 +17,6 @@ import { MigrationServiceLive } from "./services/migration-service.js"
 import { ValidationServiceLive } from "./services/validation-service.js"
 import { makeDocServiceLive } from "./services/doc-service.js"
 import { makeSpecTraceServiceLive } from "./services/spec-trace-service.js"
-import { DecisionServiceLive } from "./services/decision-service.js"
 import { legacySpecProjectionContext, type SpecProjectionContext } from "./workspace-context.js"
 export { SyncService } from "./services/sync/index.js"
 export { StreamService, StreamServiceLive, type StreamInfo, type StreamProgress } from "./services/stream-service.js"
@@ -49,12 +47,11 @@ export {
 } from "./services/spec-trace-service.js"
 export { LabelRepository, LabelRepositoryLive } from "./repo/label-repo.js"
 export { SpecTraceRepository, SpecTraceRepositoryLive } from "./repo/spec-trace-repo.js"
-export { DecisionService, DecisionServiceLive } from "./services/decision-service.js"
 export type AppLayerOptions = { readonly contentRoot?: string; readonly projection?: SpecProjectionContext }
 /** @spec INV-LEAN-002 */
 function appLayer<E>(infra: Layer.Layer<SqliteClient, E>, options: AppLayerOptions, auto: boolean) {
   const projection = options.projection ?? legacySpecProjectionContext(options.contentRoot ?? process.cwd())
-  const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive, makeDocRepositoryLive(projection), LabelRepositoryLive, makeSpecTraceRepositoryLive(projection), DecisionRepositoryLive).pipe(Layer.provide(infra))
+  const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive, makeDocRepositoryLive(projection), LabelRepositoryLive, makeSpecTraceRepositoryLive(projection)).pipe(Layer.provide(infra))
   const stream = StreamServiceLive.pipe(Layer.provide(infra))
   const base = Layer.mergeAll(infra, repos, stream)
   const task = TaskServiceLive.pipe(Layer.provide(repos))
@@ -62,7 +59,7 @@ function appLayer<E>(infra: Layer.Layer<SqliteClient, E>, options: AppLayerOptio
   const autosync = auto ? AutoSyncServiceLive.pipe(Layer.provide(Layer.merge(infra, sync))) : AutoSyncServiceNoop
   const tasks = Layer.mergeAll(task, DependencyServiceLive.pipe(Layer.provide(Layer.mergeAll(repos, autosync))), ReadyServiceLive.pipe(Layer.provide(repos)), HierarchyServiceLive.pipe(Layer.provide(repos)))
   const docs = makeDocServiceLive(options.contentRoot).pipe(Layer.provide(repos))
-  const services = Layer.mergeAll(tasks, docs, makeSpecTraceServiceLive(options.contentRoot).pipe(Layer.provide(Layer.merge(repos, docs))), DecisionServiceLive.pipe(Layer.provide(repos)), ScoreServiceLive.pipe(Layer.provide(Layer.merge(repos, tasks))), ValidationServiceLive.pipe(Layer.provide(infra)), MigrationServiceLive.pipe(Layer.provide(infra)))
+  const services = Layer.mergeAll(tasks, docs, makeSpecTraceServiceLive(options.contentRoot).pipe(Layer.provide(Layer.merge(repos, docs))), ScoreServiceLive.pipe(Layer.provide(Layer.merge(repos, tasks))), ValidationServiceLive.pipe(Layer.provide(infra)), MigrationServiceLive.pipe(Layer.provide(infra)))
   return Layer.mergeAll(base, services, sync, autosync)
 }
 export const makeAppLayerFromInfra = <E>(infra: Layer.Layer<SqliteClient, E>, options: AppLayerOptions = {}) => appLayer(infra, options, true)

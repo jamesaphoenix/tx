@@ -14,7 +14,7 @@ export interface SkillGenerationResult { outputDir: string; targets: GeneratedTa
 const skills: AvailableSkillDefinition[] = [
   { id: "tx-plan", title: "Copy an implementation plan", shortDescription: "Copy a coding agent plan into docs, link its spec and retain a source symlink.", source: "bundled" },
   { id: "tx-tasks", title: "Create tx tasks", shortDescription: "Create tasks with acceptance criteria and optional document links or dependencies.", source: "bundled" },
-  { id: "tx-docs", title: "Create tx documents", shortDescription: "Create configured documents and paired PRD/design documents.", source: "bundled" },
+  { id: "tx-docs", title: "Create tx documents", shortDescription: "Create design docs, optional product requirements and overviews.", source: "bundled" },
   { id: "verify-invariants", title: "Map and verify invariants", shortDescription: "Map invariants to enforcement code and tests, then record verification evidence.", source: "bundled" },
 ]
 export const retiredSkillIds = new Set([

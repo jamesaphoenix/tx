@@ -34,7 +34,7 @@ describe("Spec Health failures", () => {
       db.exec("BEGIN")
       try {
         // eslint-disable-next-line tx/no-inline-sql -- Temporary unavailable-table fault injection, rolled back below.
-        db.exec("ALTER TABLE decisions RENAME TO decisions_unavailable")
+        db.exec("ALTER TABLE docs RENAME TO docs_unavailable")
         const result = yield* Effect.either(getSpecHealth())
         expect(result._tag).toBe("Left")
       } finally { db.exec("ROLLBACK") }

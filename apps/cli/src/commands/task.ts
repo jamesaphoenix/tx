@@ -16,7 +16,7 @@ export const add = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const title = pos[0]
     if (!title) {
-      console.error("Usage: tx add <title> [--parent/-p <id>] [--score/-s <n>] [--description/-d <text>] [--json]")
+      console.error("Usage: tx task add <title> [--parent/-p <id>] [--score/-s <n>] [--description/-d <text>] [--json]")
       throw new CliExitError(1)
     }
 
@@ -118,7 +118,7 @@ export const show = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const raw = pos[0]
     if (!raw) {
-      console.error("Usage: tx show <id> [--json]")
+      console.error("Usage: tx task show <id> [--json]")
       throw new CliExitError(1)
     }
     const id = parseTaskId(raw)
@@ -137,18 +137,18 @@ export const update = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const raw = pos[0]
     if (!raw) {
-      console.error("Usage: tx update <id> [--status <s>] [--title <t>] [--score <n>] [--description <d>] [--parent <p>] [--human] [--json]")
+      console.error("Usage: tx task update <id> [--status <s>] [--title <t>] [--score <n>] [--description <d>] [--parent <p>] [--human] [--json]")
       throw new CliExitError(1)
     }
     const id = parseTaskId(raw)
 
     const svc = yield* TaskService
     const input: Record<string, unknown> = {}
-    if (opt(flags, "status")) input.status = opt(flags, "status")
-    if (opt(flags, "title")) input.title = opt(flags, "title")
+    if (opt(flags, "status") !== undefined) input.status = opt(flags, "status")
+    if (opt(flags, "title") !== undefined) input.title = opt(flags, "title")
     const scoreVal = parseIntOpt(flags, "score", "score")
     if (scoreVal !== undefined) input.score = scoreVal
-    if (opt(flags, "description", "d")) input.description = opt(flags, "description", "d")
+    if (opt(flags, "description", "d") !== undefined) input.description = opt(flags, "description", "d")
     if (opt(flags, "parent", "p")) input.parentId = opt(flags, "parent", "p")
 
     yield* svc.update(id, input, { actor: actorFromFlags(flags) })
@@ -167,7 +167,7 @@ export const done = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const raw = pos[0]
     if (!raw) {
-      console.error("Usage: tx done <id> [--human] [--json]")
+      console.error("Usage: tx task done <id> [--human] [--json]")
       throw new CliExitError(1)
     }
     const id = parseTaskId(raw)
@@ -203,7 +203,7 @@ export const deleteTask = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const raw = pos[0]
     if (!raw) {
-      console.error("Usage: tx delete <id> [--cascade] [--json]")
+      console.error("Usage: tx task delete <id> [--cascade] [--json]")
       throw new CliExitError(1)
     }
     const id = parseTaskId(raw)
@@ -224,7 +224,7 @@ export const reset = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const raw = pos[0]
     if (!raw) {
-      console.error("Usage: tx reset <id> [--json]")
+      console.error("Usage: tx task reset <id> [--json]")
       throw new CliExitError(1)
     }
     const id = parseTaskId(raw)

@@ -2,11 +2,12 @@ import { Effect } from "effect"
 import { add, list, ready, show, update, done, reset, deleteTask } from "./task.js"
 import { dep } from "./dep-compound.js"
 import { bulk } from "./bulk.js"
+import { mdExport } from "./md-export.js"
 import { label } from "./label.js"
 import { commandHelp } from "../help.js"
 import { unknownSubcommandError } from "../cli-errors.js"
 import type { Flags } from "../utils/parse.js"
-const handlers = { add, list, ready, show, update, done, reset, delete: deleteTask, dep, bulk, label }
+const handlers = { export: mdExport, add, list, ready, show, update, done, reset, delete: deleteTask, dep, bulk, label }
 export const taskCommand = (pos: string[], flags: Flags) => Effect.gen(function* () {
   const sub = pos[0]
   if (!sub || sub === "help") { console.log(commandHelp.task); return }

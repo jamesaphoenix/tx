@@ -194,7 +194,7 @@ export function DocSidebar({ selectedDocRef, onSelectDoc, showMap, onToggleMap, 
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">
-          Docs
+          Documents
         </span>
         <Button
           size="sm"
@@ -222,6 +222,7 @@ export function DocSidebar({ selectedDocRef, onSelectDoc, showMap, onToggleMap, 
       {/* Filters */}
       <div className="flex gap-2 mb-2">
         <select
+          aria-label="Document kind"
           value={kindFilter}
           onChange={(e) => onKindFilterChange(e.target.value)}
           className="flex-1 bg-gray-800 border border-gray-700 text-xs text-gray-300 rounded px-2 py-1.5"
@@ -230,10 +231,10 @@ export function DocSidebar({ selectedDocRef, onSelectDoc, showMap, onToggleMap, 
           <option value="overview">overview</option>
           <option value="prd">prd</option>
           <option value="design">design</option>
-          <option value="requirement">requirement</option>
-          <option value="system_design">system_design</option>
+          <option value="plan">plan</option>
         </select>
         <select
+          aria-label="Document status"
           value={statusFilter}
           onChange={(e) => onStatusFilterChange(e.target.value)}
           className="flex-1 bg-gray-800 border border-gray-700 text-xs text-gray-300 rounded px-2 py-1.5"
@@ -248,6 +249,7 @@ export function DocSidebar({ selectedDocRef, onSelectDoc, showMap, onToggleMap, 
         value={searchQuery}
         onChange={(e) => setSearchQuery(e.target.value)}
         data-native-select-all="true"
+        aria-label="Search documents"
         placeholder="Search docs by name or title..."
         className="mb-3 w-full bg-gray-900 border border-gray-700 text-xs text-gray-200 rounded px-2.5 py-1.5 placeholder:text-gray-500 focus:outline-none focus:border-blue-500"
       />
@@ -300,9 +302,9 @@ export function DocSidebar({ selectedDocRef, onSelectDoc, showMap, onToggleMap, 
           <div className="text-center py-8 text-gray-500">
             <div className="text-sm">No docs found</div>
             <div className="text-xs mt-1">
-              {searchQuery
+              {searchQuery || kindFilter || statusFilter
                 ? "Try a broader search term"
-                : <>Run <code className="text-gray-400">tx doc add</code> to create one</>}
+                : <>Start with <code className="text-gray-400">tx doc add design my-design</code></>}
             </div>
           </div>
         )}

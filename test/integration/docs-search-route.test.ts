@@ -7,6 +7,7 @@ import type { Readable } from "node:stream"
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..")
 const DOCS_APP_DIR = resolve(ROOT, "apps/docs")
+const NODE_BINARY = process.env.TX_DOCS_NODE ?? "node"
 const NEXT_BIN = require.resolve("next/dist/bin/next")
 
 type DocsProcess = ChildProcessByStdio<null, Readable, Readable>
@@ -64,7 +65,7 @@ async function waitForDocsServer(baseUrl: string, proc: DocsProcess): Promise<vo
     }
 
     try {
-      const res = await fetchWithTimeout(`${baseUrl}/api/search?query=decompose`, 1_000)
+      const res = await fetchWithTimeout(`${baseUrl}/api/search?query=plan`, 1_000)
       if (res.ok) return
     } catch {
       // keep polling until the server is ready
@@ -82,7 +83,7 @@ describe("docs search route", { timeout: 180_000 }, () => {
   let serverLogs = ""
 
   beforeAll(async () => {
-    const build = spawnSync("node", [NEXT_BIN, "build"], {
+    const build = process.env.TX_DOCS_TEST_BUILT === "1" ? { status: 0, stdout: "", stderr: "" } : spawnSync(NODE_BINARY, [NEXT_BIN, "build"], {
       cwd: DOCS_APP_DIR,
       encoding: "utf-8",
       timeout: 180_000,
@@ -95,7 +96,7 @@ describe("docs search route", { timeout: 180_000 }, () => {
     const port = await getFreePort()
     baseUrl = `http://127.0.0.1:${port}`
 
-    docsProc = spawn("node", [NEXT_BIN, "start", "--hostname", "127.0.0.1", "--port", String(port)], {
+    docsProc = spawn(NODE_BINARY, [NEXT_BIN, "start", "--hostname", "127.0.0.1", "--port", String(port)], {
       cwd: DOCS_APP_DIR,
       env: process.env,
       stdio: ["ignore", "pipe", "pipe"],
@@ -132,7 +133,7 @@ describe("docs search route", { timeout: 180_000 }, () => {
   })
 
   it("serves /api/search with JSON results instead of 404", async () => {
-    const response = await fetch(`${baseUrl}/api/search?query=decompose`)
+    const response = await fetch(`${baseUrl}/api/search?query=plan`)
 
     expect(response.status).toBe(200)
     expect(response.headers.get("content-type")).toContain("application/json")
@@ -141,7 +142,7 @@ describe("docs search route", { timeout: 180_000 }, () => {
 
     expect(Array.isArray(payload)).toBe(true)
     expect(payload.length).toBeGreaterThan(0)
-    expect(payload.some((result) => result.url === "/docs/primitives/decompose")).toBe(true)
+    expect(payload.some((result) => result.url === "/docs/primitives/plans")).toBe(true)
   })
 
   it("returns an empty array for an empty query", async () => {

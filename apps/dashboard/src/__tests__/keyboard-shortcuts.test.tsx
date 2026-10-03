@@ -136,6 +136,13 @@ describe('Keyboard shortcuts', () => {
     )
   }
 
+  it('restores the requested document tab on refresh', async () => {
+    window.history.replaceState({}, "", "/?tab=docs&docId=doc-111111111111&version=1")
+    renderApp()
+    expect(await screen.findByText('Select a document to view details')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Documents$/ })).toHaveClass('bg-blue-600')
+  })
+
   describe('CMD+A selects all loaded items on Tasks tab', () => {
     it('selects tasks from first page', async () => {
       const page1Tasks = [
@@ -528,7 +535,7 @@ describe('Keyboard shortcuts', () => {
       })
 
       act(() => {
-        fireEvent.click(screen.getByRole('button', { name: 'Specs' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Documents' }))
       })
 
       await waitFor(() => {

@@ -67,7 +67,7 @@ run_check() {
 
         # For tests, extract count
         if [[ "$name" == *"test"* ]] || [[ "$name" == *"Test"* ]]; then
-            local test_count=$(grep -oE '[0-9]+ passed' "$tmp_file" | head -1 || echo "")
+            local test_count=$(grep -E '^[[:space:]]*Tests[[:space:]]' "$tmp_file" | grep -oE '[0-9]+ passed' | head -1 || echo "")
             if [ -n "$test_count" ]; then
                 echo "  $test_count"
             fi
@@ -124,12 +124,14 @@ export NODE_OPTIONS="--max-old-space-size=4096"
 # Concurrency=2 balances speed vs CI memory limits
 run_and_track "Workflow policy (no hook bypass)" "./scripts/enforce-no-verify.sh"
 run_and_track "Build (packages)" "bunx turbo build --concurrency=2"
-run_and_track "TypeScript (packages)" "bunx turbo typecheck --concurrency=2"
+run_and_track "TypeScript (packages)" "bunx turbo typecheck --concurrency=2 && bunx tsc --project tsconfig.json --noEmit"
 run_and_track "ESLint (packages)" "bunx turbo lint"
 run_and_track "ESLint (root tests)" "bunx eslint test/ --max-warnings 0"
 # Tests must run with Bun to access bun:sqlite
 run_and_track "Tests (packages)" "bunx turbo test"
 run_and_track "Tests (root)" "bunx --bun vitest run"
+run_and_track "Tests (production docs)" "bun run test:docs"
+run_and_track "Tests (published package install)" "bun run test:package-install"
 
 # Summary
 echo ""

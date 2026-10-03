@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { spawnSync } from "node:child_process"
-import { dashboardSpecHealth } from "../../apps/dashboard/server/spec-health"
+import { dashboardSpecHealth } from "../../apps/dashboard/server/spec-health.js"
 
 const roots: string[] = []
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, {recursive:true, force:true}) })
@@ -14,7 +14,7 @@ const tx = (cwd: string, args: string[]) => {
   return JSON.parse(result.stdout)
 }
 
-describe("dashboard evidence scope", () => {
+describe("dashboardSpecHealth", () => {
   it("shows the same missing checkout evidence as the CLI [INV-LEAN-004]", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "tx-dashboard-health-")); roots.push(cwd)
     const doc = tx(cwd, ["doc", "add", "design", "checkout", "--title", "Checkout"])
@@ -27,5 +27,18 @@ describe("dashboard evidence scope", () => {
     expect(expected.specTest.total).toBe(1)
     expect(expected.status).not.toBe("synced")
     expect(await dashboardSpecHealth(join(cwd, ".tx/tasks.db"), cwd)).toEqual(expected)
+  })
+
+  it("honours an explicit content root while using shared task state [INV-LEAN-004]", async () => {
+    const state = mkdtempSync(join(tmpdir(), "tx-dashboard-state-")); roots.push(state)
+    const content = mkdtempSync(join(tmpdir(), "tx-dashboard-content-")); roots.push(content)
+    const doc = tx(content, ["doc", "add", "design", "worktree-design", "--state-root", state])
+    const path = join(content, "specs", doc.filePath)
+    writeFileSync(path, readFileSync(path, "utf8").replace("invariants: []", "invariants:\n  - id: INV-WORKTREE-001\n    statement: worktree evidence remains scoped\n    severity: high\n    verified_by:\n      - test/worktree.test.ts"))
+    tx(content, ["doc", "sync", "worktree-design", "--state-root", state])
+    const expected = tx(state, ["spec", "health", "--content-root", content])
+    expect(expected.specTest.total).toBe(1)
+    expect(expected.docDrift.totalDocs).toBe(1)
+    expect(await dashboardSpecHealth(join(state, ".tx/tasks.db"), state, content)).toEqual(expected)
   })
 })

@@ -6,13 +6,29 @@ Commands:
   task      Create, organise and complete tasks
   doc       Create specs and plans
   spec      Map invariants, lint specs and inspect evidence
-  decision  Record spec decisions
   sync      Git-backed state
   diag      Diagnostics and dashboard
   skills    Four authoring and verification guides
   init      Initialise a project
   schema    Inspect command contracts
 
+Workflow: design -> plan -> tasks.
+
+Common options:
+  --json                 Structured output (supported by most commands)
+  --db <path>            Database path (default: .tx/tasks.db)
+  --state-root <path>    Shared task state root for worktrees
+  --content-root <path>  Checkout containing documents and tests
+  --help, -h            Command help
+  --version, -v         Show version
+
+Examples:
+  tx doc add design checkout-design
+  tx doc add plan checkout-plan
+  tx doc link checkout-design checkout-plan
+  tx task add "Implement checkout retries"
+
+Use -- before a dash-prefixed title, or --option=value for a dash-prefixed value.
 Run tx help <command> for details.
 `
 
@@ -34,6 +50,7 @@ Subcommands:
   dep  Dependencies and hierarchy
   bulk  Bulk task actions
   label  Task labels
+  export  Export tasks to Markdown
 `,
   "schema": `tx schema - Show machine-readable CLI command schemas
 
@@ -47,10 +64,11 @@ Examples:
   tx schema
   tx schema task dep
   tx schema task dep block`,
-  "init": `tx init - Initialize task database
+  "init": `tx init - Initialise a project
 
+Usage: tx init [options]
 
-Initializes the tx database and required tables. Creates .tx/tasks.db
+Initialises the tx database and required tables. Creates .tx/tasks.db
 by default. Safe to run multiple times (idempotent).
 
 Interactive tx init lets the user choose the exact Claude/Codex tx skills
@@ -64,7 +82,7 @@ Options:
   --help        Show this help
 
 Examples:
-  tx init                     # Initialize database + choose skills interactively
+  tx init                     # Initialise database + choose skills interactively
   tx init --claude            # Database + four Claude Code guides
   tx init --codex             # Database + four Codex guides
   tx init --claude --codex    # Database + both integrations
@@ -138,14 +156,14 @@ Examples:
 Usage: tx task add <title> [options]
 
 Creates a new task with the given title. Tasks start with status "backlog"
-and default score 500.
+and default score 0.
 
 Arguments:
   <title>         Required. The task title (use quotes for multi-word titles)
 
 Options:
   --parent, -p <id>       Parent task ID (for subtasks)
-  --score, -s <n>         Priority score 0-1000 (default: 500, higher = more important)
+  --score, -s <n>         Integer priority (default: 0, higher numbers come first)
   --description, -d <text> Task description
   --json                  Output as JSON
   --help                  Show this help
@@ -257,7 +275,7 @@ Displays aggregate statistics about the task queue including:
 - Task counts by status with percentages
 - Ready tasks grouped by priority (score range)
 - Completion activity (last 24h, 7d, avg per day)
-- Active and expired claim counts
+- Task and dependency counts
 
 Options:
   --json   Output as JSON
@@ -281,10 +299,14 @@ Options:
 
 Usage: tx diag dashboard [options]
 
-Starts the API server and Vite dev server, then opens the dashboard in a browser.
+Starts the API server and Vite dev server from a tx source checkout, then opens
+the dashboard in a browser. Occupied API ports fail with an actionable error.
+Vite chooses the next free UI port and prints the URL. Existing processes are
+never stopped.
 
 Options:
-  --port <n>    Custom API port (default: 3001)
+  --port <n>       API port (default: 3001)
+  --vite-port <n>  Preferred UI port (default: 5173)
   --no-open     Start without opening browser
   --help        Show this help
 
@@ -364,8 +386,7 @@ Examples:
 Usage: tx task show <id> [options]
 
 Shows full details for a single task including title, status, score,
-description, parent, blockers, blocks, children, timestamps, and
-orchestration status (claim info, failed attempts).
+description, parent, blockers, blocks, children, labels and timestamps.
 
 Arguments:
   <id>    Required. Task ID (e.g., tx-a1b2c3d4)
@@ -389,8 +410,8 @@ Arguments:
 Options:
   --status <s>          New status (backlog|ready|planning|active|blocked|review|needs_review|done)
   --title <t>           New title
-  --score <n>           New score (0-1000)
-  --description, -d <text>  New description
+  --score <n>           Integer priority (higher numbers come first)
+  --description, -d <text>  New description (pass an empty string to clear it)
   --parent, -p <id>     New parent task ID
   --human               Treat completion-style updates as human initiated
   --json                Output as JSON
@@ -454,9 +475,9 @@ Options:
 Examples:
   tx task delete tx-a1b2c3d4
   tx task delete tx-a1b2c3d4 --cascade   # Delete task and all children`,
-  "md-export": `tx md-export - Export tasks to markdown
+  "task export": `tx task export - Export tasks to Markdown
 
-Usage: tx md-export [options]
+Usage: tx task export [options]
 
 Options:
   --path, -p <path>  Output file (default: .tx/tasks.md)
@@ -577,12 +598,12 @@ Examples:
   tx task bulk score 900 tx-abc123 tx-def456
   tx task bulk reset tx-abc123 tx-def456
   tx task bulk delete tx-abc123 tx-def456 --json`,
-  "doc": `tx doc - Manage docs-as-primitives
+  "doc": `tx doc - Manage documents
 
 Usage: tx doc [subcommand] [options]
 
 Subcommands:
-  add <kind> <name>         Create a new doc (overview, prd, design)
+  add <kind> <name>         Create a document (overview, prd, design, plan)
   edit <name>               Open doc in $EDITOR
   show <name>               Show doc details
   list                      List all docs
@@ -591,7 +612,8 @@ Subcommands:
   version <name>            Create new version from locked doc
   link <from> <to>          Link two docs
   attach <task-id> <name>   Attach a doc to a task
-  patch <design> <patch>    Create a design patch doc
+  patch <design> <patch>    Create a design patch document
+  template <kind>           Preview a Markdown template
   validate                  Check task-doc coverage + searchable index metadata
   drift <name>              Detect file-vs-DB drift for a doc
   lint-ears <name|path>     Validate PRD EARS requirements
@@ -614,7 +636,7 @@ Examples:
 
 Usage: tx doc add <kind> <name> [--title <title>] [--json]
 
-Creates a new doc with generated YAML template on disk and metadata in DB.
+Creates a new doc with generated Markdown template on disk and metadata in DB.
 The generated frontmatter includes searchable index metadata:
   - summary   -> Description in generated specs/index.md
   - domain    -> included in Search Keywords in generated specs/index.md
@@ -625,12 +647,13 @@ and 'tx doc validate' will explain exactly how to fix missing search metadata.
 
 Arguments:
   <kind>    Required. Any spec type from 'tx spec types' (built-ins:
-            overview, prd, design, plan, runbook, decision; plus any custom type
+            overview, prd, design, plan; plus explicitly configured custom types
             defined under [spec.types.*] in .tx/config.toml)
   <name>    Required. Doc name (alphanumeric with dashes/dots)
 
 Options:
   --title, -t <title>  Doc title (defaults to name)
+  --path, -p <file>    Register an existing file relative to the docs directory
   --json               Output as JSON
   --help               Show this help
 
@@ -656,12 +679,12 @@ Options:
 
 Examples:
   tx doc template prd
-  tx doc template rfc --name my-rfc --title "My RFC"`,
-  "doc edit": `tx doc edit - Open doc YAML in editor
+  tx doc template plan --name checkout-plan --title "Checkout plan"`,
+  "doc edit": `tx doc edit - Open document in editor
 
 Usage: tx doc edit <name>
 
-Opens the doc's YAML file in $EDITOR (defaults to vi).
+Opens the document's Markdown file in $EDITOR (defaults to vi).
 
 Arguments:
   <name>    Required. Doc name
@@ -694,7 +717,7 @@ Usage: tx doc list [--kind <kind>] [--status <status>] [--json]
 Lists all docs, optionally filtered by kind or status.
 
 Options:
-  --kind, -k <kind>      Filter by kind (overview, prd, design)
+  --kind, -k <kind>      Filter by kind (overview, prd, design, plan)
   --status, -s <status>  Filter by status (changing, locked)
   --json                 Output as JSON
   --help                 Show this help
@@ -782,7 +805,7 @@ Arguments:
   <to-name>      Required. Target doc name
 
 Options:
-  --type <type>  Link type (overview_to_prd, overview_to_design, prd_to_design, design_patch)
+  --type <type>  Link type (overview_to_prd, overview_to_design, prd_to_design, spec_to_plan, design_patch)
   --json         Output as JSON
   --help         Show this help
 
@@ -863,7 +886,7 @@ Examples:
   tx doc sync                  # sync all docs
   tx doc sync auth-flow        # sync one doc
   tx doc sync --json`,
-  "invariant": `tx invariant is deprecated. Use 'tx spec' instead.
+  "invariant": `tx invariant is deprecated. Use 'tx spec invariant' instead.
 
 Run 'tx spec --help' for full usage.`,
   "spec": `tx spec - Docs-first spec-to-test traceability primitives
@@ -871,9 +894,11 @@ Run 'tx spec --help' for full usage.`,
 Usage: tx spec <subcommand> [options]
 
 Subcommands:
+  invariant                    Inspect declared invariants and manual checks
+  types                        Inspect the four built-in document kinds
   lint                         All-in-one check (drift, EARS, coverage, spec-test status)
   discover                     Refresh doc-derived invariants and discover test mappings
-  health                       Repo rollup for closure, decisions, and drift
+  health                       Repo rollup for closure and drift
   fci                          Compute Feature Completion Index
   status                       Quick phase + blocker summary
   complete                     Record human sign-off (HARDEN -> COMPLETE)
@@ -896,6 +921,49 @@ Examples:
   tx spec run test/core.test.ts::"ready returns unblocked" --passed
   vitest run --reporter=json | tx spec batch --from vitest
   tx spec complete --doc auth-flow --by james`,
+  "spec invariant": `tx spec invariant - Inspect document invariants
+
+Usage: tx spec invariant <list|show|sync|record> [options]
+
+Subcommands:
+  list    List declared invariants
+  show    Show one invariant and its enforcement metadata
+  sync    Refresh invariants from document schema blocks
+  record  Record a manual check, independently of executed test evidence
+
+Examples:
+  tx spec invariant list --doc checkout-design
+  tx spec invariant show INV-CHECKOUT-001`,
+  "spec invariant list": `tx spec invariant list - List declared invariants
+
+Usage: tx spec invariant list [--doc <ref>] [--subsystem <name>] [--json]
+
+Options:
+  --doc <ref>          Filter by document
+  --subsystem <name>   Filter by subsystem
+  --json              Structured output`,
+  "spec invariant show": `tx spec invariant show - Inspect one invariant
+
+Usage: tx spec invariant show <id> [--json]
+
+Examples:
+  tx spec invariant show INV-CHECKOUT-001`,
+  "spec invariant sync": `tx spec invariant sync - Refresh document-derived invariants
+
+Usage: tx spec invariant sync [--doc <ref>] [--json]
+
+Read invariant blocks from Markdown documents. Prefer tx spec discover when
+also refreshing executable test mappings.`,
+  "spec invariant record": `tx spec invariant record - Record a manual check
+
+Usage: tx spec invariant record <id> --passed|--failed [--details <text>] [--json]
+
+Specify exactly one result. This records an invariant check; it does not record
+an executed test run or advance Feature Completion Index. Use tx spec run or
+batch for executed test evidence.
+
+Examples:
+  tx spec invariant record INV-CHECKOUT-001 --passed --details "Reviewed ownership check"`,
   "spec discover": `tx spec discover - Refresh doc-derived invariants and upsert test mappings
 
 Usage: tx spec discover [--doc <name>] [--patterns <glob1,glob2,...>] [--dry-run] [--prune] [--json]
@@ -926,7 +994,7 @@ Examples:
   tx spec discover --patterns "test/**/*.test.ts,spec/**/*.py" --json`,
   "spec link": `tx spec link - Manually link an invariant to a test
 
-Usage: tx spec link <inv-id> <file> [name] [--framework <name>] [--json]
+Usage: tx spec link <inv-id> <file> [<name>] [--framework <name>] [--json]
 
 Creates or updates a manual mapping in spec_tests.
 
@@ -972,7 +1040,7 @@ Options:
   --json                       Output as JSON`,
   "spec batch": `tx spec batch - Import test run results from stdin
 
-Usage: tx spec batch [--from generic|vitest|pytest|go] [--json]
+Usage: tx spec batch [--from <format>] [--json]
 
 Input must be piped via stdin. Generic format:
   [{"testId":"file::name", "passed":true, "durationMs":12, "details":"..."}]
@@ -996,7 +1064,7 @@ Usage: tx spec run <test-id> --passed|--failed [--duration <ms>] [--details <tex
 Exactly one of --passed or --failed must be provided.
 
 Examples:
-  tx spec run test/integration/core.test.ts::ready detection returns unblocked tasks --passed
+  tx spec run 'test/integration/core.test.ts::ready detection returns unblocked tasks' --passed
   tx spec run tests/test_ready.py::test_ready_inv --failed --details "assertion failed"`,
   "spec complete": `tx spec complete - Record human completion sign-off
 
@@ -1077,55 +1145,19 @@ Usage: tx task label remove <name> [--json]
 Options:
   --json          Output as JSON
   --help          Show this help`,
-  "decision": `tx decision - Manage decisions as first-class artifacts
-
-Usage: tx decision <subcommand> [options]
-
-Subcommands:
-  add <content>       Add a decision manually
-  list                List decisions (default if no subcommand)
-  show <id>           Show decision details
-  approve <id>        Approve a pending decision
-  reject <id>         Reject a pending decision (--reason required)
-  edit <id> <content> Edit a pending decision's content
-  pending             Shorthand for list --status pending
-
-Options (where applicable):
-  --question <q>      Question this decision answers (add)
-  --task <id>         Link to a task (add)
-  --doc <id>          Link to a doc (add)
-  --commit <sha>      Git commit (add)
-  --reviewer <name>   Reviewer name (approve/reject/edit)
-  --note <text>       Approval note (approve)
-  --reason <text>     Rejection reason (reject, required)
-  --status <s>        Filter by status (list)
-  --source <s>        Filter by source: manual, diff, transcript, agent (list)
-  --limit <n>         Maximum results (list)
-  --json              Output as JSON
-  --help              Show this help
-
-Examples:
-  tx decision add "Use WAL mode for SQLite" --question "Which journal mode?"
-  tx decision list --status pending
-  tx decision approve dec-abc123 --reviewer james --note "Good call"
-  tx decision reject dec-abc123 --reviewer james --reason "Too complex"
-  tx decision edit dec-abc123 "Use WAL mode with 64MB cache"
-  tx decision pending`,
   "spec health": `tx spec health - Repo-level spec-driven development rollup
 
 Usage: tx spec health [--json]
 
-Aggregates spec trace closure, decision status, and doc drift into a
+Combines invariant coverage, recorded test results and document drift in a
 single health view. Shows overall status: SYNCED, DRIFTING, or BROKEN.
-This is an operations view for the repo, not part of the minimum day-1 loop.
+Use this before signing off a design or handing work over.
 
 Dimensions:
   Spec -> Test    Linked coverage across active invariants
   Spec State      Passing, failing, untested, uncovered invariants
   Doc Closure     COMPLETE vs HARDEN vs BUILD across docs with invariants
-  Decisions       Pending and approved-but-unsynced decisions
-  Doc Drift       Docs with YAML hash mismatches
-  Doc hierarchy   Count of docs by tier (REQ, PRD, DD, SD)
+  Doc Drift       Documents changed since their last sync
 
 Options:
   --json    Output as JSON
@@ -1169,7 +1201,7 @@ Prints the effective spec-type registry resolved from [spec.types.*] in
 prompt emitted when one is missing, the target subdirectory, and severity.
 
 Spec structure is user-configurable. Built-in types (prd, design, overview,
-runbook, decision) ship with defaults that are written into .tx/config.toml by
+plan) ship with defaults that are written into .tx/config.toml by
 'tx init'; edit them freely, or define a new type by adding a
 [spec.types.<name>] section. Custom types are scaffolded and linted like
 built-ins.

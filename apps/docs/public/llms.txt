@@ -5,7 +5,6 @@ Tasks, specs, plans and verification evidence.
 - [tasks](https://txdocs.dev/docs/primitives/tasks)
 - [label](https://txdocs.dev/docs/primitives/label)
 - [plans](https://txdocs.dev/docs/primitives/plans)
-- [decision](https://txdocs.dev/docs/primitives/decision)
 - [spec-trace](https://txdocs.dev/docs/primitives/spec-trace)
 - [skills](https://txdocs.dev/docs/primitives/skills)
 - [spec-health](https://txdocs.dev/docs/primitives/spec-health)

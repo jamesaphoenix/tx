@@ -1,4 +1,5 @@
 import type { SpecHealth } from "@jamesaphoenix/tx"
+import type { TaskLinkedDocRef } from "@jamesaphoenix/tx/types"
 // API client using Effect for type-safe fetching
 import { Effect, Data } from "effect"
 
@@ -74,13 +75,13 @@ export interface TaskMutationPayload {
   metadata?: Record<string, unknown>
 }
 
-export type OrchestrationStatus = "unclaimed" | "claimed" | "running" | "lease_expired" | "released"
 
 export interface TaskWithDeps extends TaskRow {
   blockedBy: string[]
   blocks: string[]
   children: string[]
   isReady: boolean
+  linkedDocs?: readonly TaskLinkedDocRef[]
 }
 
 export interface TasksResponse {
@@ -129,17 +130,32 @@ export interface AssignLabelResponse {
   label?: TaskLabel
 }
 
+// Preserve safe, human-readable API errors instead of hiding validation failures.
+const responseError = async (response: Response): Promise<ApiError> => {
+  let message = `HTTP ${response.status}: ${response.statusText}`
+  try {
+    const body: unknown = await response.json()
+    if (typeof body === "object" && body !== null) {
+      const error = "error" in body ? body.error : "message" in body ? body.message : null
+      if (typeof error === "string" && error.trim()) message = error
+    }
+  } catch { /* Non-JSON proxy errors retain the HTTP status. */ }
+  return new ApiError({message, status: response.status})
+}
+const apiError = (error: unknown): ApiError => error instanceof ApiError ? error :
+  new ApiError({message: error instanceof Error ? error.message : String(error)})
+
 // Effect-based API functions
 const fetchJson = <T>(url: string, options?: { signal?: AbortSignal }): Effect.Effect<T, ApiError> =>
   Effect.tryPromise({
     try: async () => {
       const res = await fetch(url, { signal: options?.signal })
       if (!res.ok) {
-        throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+        throw await responseError(res)
       }
       return res.json() as Promise<T>
     },
-    catch: (e) => new ApiError({ message: String(e) }),
+    catch: apiError,
   })
 
 const fetchJsonFromFallbacks = <T>(urls: readonly string[], options?: { signal?: AbortSignal }): Effect.Effect<T, ApiError> =>
@@ -157,13 +173,13 @@ const fetchJsonFromFallbacks = <T>(urls: readonly string[], options?: { signal?:
         lastStatus = res.status
         lastStatusText = res.statusText
         if (res.status !== 404) {
-          throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+          throw await responseError(res)
         }
       }
 
       throw new Error(`HTTP ${lastStatus}: ${lastStatusText}`)
     },
-    catch: (e) => new ApiError({ message: String(e) }),
+    catch: apiError,
   })
 
 async function fetchWithFallback(
@@ -198,10 +214,10 @@ export const api = {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         })
-        if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+        if (!res.ok) throw await responseError(res)
         return res.json() as Promise<TaskWithDeps>
       },
-      catch: (e) => new ApiError({ message: String(e) }),
+      catch: apiError,
     }),
   updateTask: (id: string, payload: TaskMutationPayload) =>
     Effect.tryPromise({
@@ -214,10 +230,10 @@ export const api = {
           },
           body: JSON.stringify(payload),
         })
-        if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+        if (!res.ok) throw await responseError(res)
         return res.json() as Promise<TaskWithDeps>
       },
-      catch: (e) => new ApiError({ message: String(e) }),
+      catch: apiError,
     }),
   getSettings: () => fetchJson<DashboardSettings>("/api/settings"),
   updateSettings: (payload: DashboardSettingsPatch) =>
@@ -228,10 +244,10 @@ export const api = {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         })
-        if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+        if (!res.ok) throw await responseError(res)
         return res.json() as Promise<DashboardSettings>
       },
-      catch: (e) => new ApiError({ message: String(e) }),
+      catch: apiError,
     }),
   getLabels: () => fetchJsonFromFallbacks<LabelsResponse>(["/api/labels", "/api/task-labels"]),
   createLabel: (payload: { name: string; color?: string }) =>
@@ -242,10 +258,10 @@ export const api = {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         })
-        if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+        if (!res.ok) throw await responseError(res)
         return res.json() as Promise<TaskLabel>
       },
-      catch: (e) => new ApiError({ message: String(e) }),
+      catch: apiError,
     }),
   updateLabel: (labelId: number, payload: { name?: string; color?: string }) =>
     Effect.tryPromise({
@@ -258,10 +274,10 @@ export const api = {
             body: JSON.stringify(payload),
           }
         )
-        if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+        if (!res.ok) throw await responseError(res)
         return res.json() as Promise<TaskLabel>
       },
-      catch: (e) => new ApiError({ message: String(e) }),
+      catch: apiError,
     }),
   deleteLabel: (labelId: number) =>
     Effect.tryPromise({
@@ -272,10 +288,10 @@ export const api = {
             method: "DELETE",
           }
         )
-        if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+        if (!res.ok) throw await responseError(res)
         return res.json() as Promise<{ success: boolean; id: number }>
       },
-      catch: (e) => new ApiError({ message: String(e) }),
+      catch: apiError,
     }),
   assignTaskLabel: (taskId: string, payload: { labelId?: number; name?: string; color?: string }) =>
     Effect.tryPromise({
@@ -288,10 +304,10 @@ export const api = {
             body: JSON.stringify(payload),
           }
         )
-        if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+        if (!res.ok) throw await responseError(res)
         return res.json() as Promise<AssignLabelResponse>
       },
-      catch: (e) => new ApiError({ message: String(e) }),
+      catch: apiError,
     }),
   unassignTaskLabel: (taskId: string, labelId: number) =>
     Effect.tryPromise({
@@ -305,10 +321,10 @@ export const api = {
             method: "DELETE",
           }
         )
-        if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+        if (!res.ok) throw await responseError(res)
         return res.json() as Promise<AssignLabelResponse>
       },
-      catch: (e) => new ApiError({ message: String(e) }),
+      catch: apiError,
     }),
   getStats: () => fetchJson<StatsResponse>("/api/stats"),
 }
@@ -329,55 +345,6 @@ export interface Cycle {
 
 export interface CycleDetail extends Cycle {
   tasks: TaskWithDeps[]
-}
-
-export interface CycleRun {
-  id: string
-  cycle: number
-  name: string
-  description: string
-  startedAt: string
-  endedAt: string | null
-  status: string
-  rounds: number
-  totalNewIssues: number
-  existingIssues: number
-  finalLoss: number
-  converged: boolean
-}
-
-export interface RoundMetric {
-  cycle: number
-  round: number
-  loss: number
-  newIssues: number
-  existingIssues: number
-  duplicates: number
-  high: number
-  medium: number
-  low: number
-}
-
-export interface CycleIssue {
-  id: string
-  title: string
-  description: string
-  severity: string
-  issueType: string
-  file: string
-  line: number
-  cycle: number
-  round: number
-}
-
-export interface CyclesResponse {
-  cycles: CycleRun[]
-}
-
-export interface CycleDetailResponse {
-  cycle: CycleRun
-  roundMetrics: RoundMetric[]
-  issues: CycleIssue[]
 }
 
 // Doc types
@@ -453,53 +420,51 @@ export interface DocHealthResponse {
   issues: DocHealthIssue[]
 }
 
+// Preserve typed HTTP errors at the Promise boundary. runPromise by itself
+// wraps failures in FiberFailure, which hides the status from callers.
+const runApi = async <T>(effect: Effect.Effect<T, ApiError>): Promise<T> => {
+  const result = await Effect.runPromise(Effect.either(effect))
+  if (result._tag === "Left") throw result.left
+  return result.right
+}
+
 // Promise-based wrappers for TanStack Query
 export const fetchers = {
-  specHealth: (): Promise<SpecHealth> => Effect.runPromise(fetchJson<SpecHealth>("/api/spec/health")),
-  tasks: () => Effect.runPromise(api.getTasks()),
-  ready: () => Effect.runPromise(api.getReady()),
-  taskDetail: (id: string, options?: { signal?: AbortSignal }) => Effect.runPromise(api.getTaskDetail(id, options)),
+  specHealth: (): Promise<SpecHealth> => runApi(fetchJson<SpecHealth>("/api/spec/health")),
+  tasks: () => runApi(api.getTasks()),
+  ready: () => runApi(api.getReady()),
+  taskDetail: (id: string, options?: { signal?: AbortSignal }) => runApi(api.getTaskDetail(id, options)),
   createTask: (payload: TaskMutationPayload & { title: string }) =>
-    Effect.runPromise(api.createTask(payload)),
+    runApi(api.createTask(payload)),
   updateTask: (id: string, payload: TaskMutationPayload) =>
-    Effect.runPromise(api.updateTask(id, payload)),
-  settings: () => Effect.runPromise(api.getSettings()),
-  updateSettings: (payload: DashboardSettingsPatch) => Effect.runPromise(api.updateSettings(payload)),
-  labels: () => Effect.runPromise(api.getLabels()),
-  createLabel: (payload: { name: string; color?: string }) => Effect.runPromise(api.createLabel(payload)),
+    runApi(api.updateTask(id, payload)),
+  settings: () => runApi(api.getSettings()),
+  updateSettings: (payload: DashboardSettingsPatch) => runApi(api.updateSettings(payload)),
+  labels: () => runApi(api.getLabels()),
+  createLabel: (payload: { name: string; color?: string }) => runApi(api.createLabel(payload)),
   updateLabel: (labelId: number, payload: { name?: string; color?: string }) =>
-    Effect.runPromise(api.updateLabel(labelId, payload)),
+    runApi(api.updateLabel(labelId, payload)),
   deleteLabel: (labelId: number) =>
-    Effect.runPromise(api.deleteLabel(labelId)),
+    runApi(api.deleteLabel(labelId)),
   assignTaskLabel: (taskId: string, payload: { labelId?: number; name?: string; color?: string }) =>
-    Effect.runPromise(api.assignTaskLabel(taskId, payload)),
+    runApi(api.assignTaskLabel(taskId, payload)),
   unassignTaskLabel: (taskId: string, labelId: number) =>
-    Effect.runPromise(api.unassignTaskLabel(taskId, labelId)),
-  stats: () => Effect.runPromise(api.getStats()),
-  cycles: async (): Promise<CyclesResponse> => {
-    const res = await fetch("/api/cycles")
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    return res.json()
-  },
-  cycleDetail: async (id: string): Promise<CycleDetailResponse> => {
-    const res = await fetch(`/api/cycles/${id}`)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    return res.json()
-  },
+    runApi(api.unassignTaskLabel(taskId, labelId)),
+  stats: () => runApi(api.getStats()),
   listCycles: async (): Promise<Cycle[]> => {
     const res = await fetch("/api/cycles")
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    if (!res.ok) throw await responseError(res)
     const data = await res.json()
     return data.cycles
   },
   createCycle: async (): Promise<Cycle> => {
     const res = await fetch("/api/cycles", { method: "POST" })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    if (!res.ok) throw await responseError(res)
     return res.json()
   },
   getCycle: async (id: string): Promise<CycleDetail> => {
     const res = await fetch(`/api/cycles/${id}`)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    if (!res.ok) throw await responseError(res)
     return res.json()
   },
   updateCycle: async (
@@ -511,7 +476,7 @@ export const fetchers = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    if (!res.ok) throw await responseError(res)
     return res.json()
   },
   addTasksToCycle: async (cycleId: string, taskIds: string[]): Promise<void> => {
@@ -520,19 +485,19 @@ export const fetchers = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ taskIds }),
     })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    if (!res.ok) throw await responseError(res)
   },
   removeTaskFromCycle: async (cycleId: string, taskId: string): Promise<void> => {
     const res = await fetch(`/api/cycles/${cycleId}/tasks/${taskId}`, {
       method: "DELETE",
     })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    if (!res.ok) throw await responseError(res)
   },
   completeCycle: async (id: string): Promise<{ completedCycle: Cycle; newCycle: Cycle; carriedTaskIds: string[] }> => {
     const res = await fetch(`/api/cycles/${id}/complete`, {
       method: "POST",
     })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    if (!res.ok) throw await responseError(res)
     return res.json()
   },
   docs: async (params?: { kind?: string; status?: string }): Promise<DocsListResponse> => {
@@ -541,12 +506,12 @@ export const fetchers = {
     if (params?.status) qs.set("status", params.status)
     const url = qs.toString() ? `/api/docs?${qs}` : "/api/docs"
     const res = await fetch(url)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    if (!res.ok) throw await responseError(res)
     return res.json()
   },
   docDetail: async (docId: string, version?: number): Promise<DocSerialized> => {
     const res = await fetch(appendDocVersion(`/api/docs/by-id/${encodeURIComponent(docId)}`, version))
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    if (!res.ok) throw await responseError(res)
     return res.json()
   },
   docRender: async (name?: string): Promise<DocRenderResponse> => {
@@ -555,45 +520,31 @@ export const fetchers = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: name ?? null }),
     })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    if (!res.ok) throw await responseError(res)
     return res.json()
   },
   docSource: async (docId: string, version?: number): Promise<DocSourceResponse> => {
     const res = await fetch(appendDocVersion(`/api/docs/by-id/${encodeURIComponent(docId)}/source`, version))
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    if (!res.ok) throw await responseError(res)
     return res.json()
   },
   docGraph: async (): Promise<DocGraphResponse> => {
     const res = await fetch("/api/docs/graph")
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    if (!res.ok) throw await responseError(res)
     return res.json()
   },
   docHealth: async (): Promise<DocHealthResponse> => {
     const res = await fetch("/api/docs/health")
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    if (!res.ok) throw await responseError(res)
     return res.json()
   },
   deleteDoc: async (docId: string, version?: number): Promise<{ success: boolean; docId: string | null; name: string; version: number | null }> => {
     const res = await fetch(appendDocVersion(`/api/docs/by-id/${encodeURIComponent(docId)}`, version), { method: "DELETE" })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    return res.json()
-  },
-  deleteCycle: async (id: string): Promise<{ success: boolean; id: string; deletedIssues: number }> => {
-    const res = await fetch(`/api/cycles/${id}`, { method: "DELETE" })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    return res.json()
-  },
-  deleteIssues: async (issueIds: string[]): Promise<{ success: boolean; deletedCount: number }> => {
-    const res = await fetch("/api/cycles/issues/delete", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ issueIds }),
-    })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    if (!res.ok) throw await responseError(res)
     return res.json()
   },
   deleteTask: async (id: string): Promise<void> => {
     const res = await fetch(`/api/tasks/${id}`, { method: "DELETE" })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    if (!res.ok) throw await responseError(res)
   },
 }

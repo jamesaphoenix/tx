@@ -138,20 +138,6 @@ export const resolveSpecTypes = (config: TxConfig): SpecTypeRegistry => {
     }
   }
 
-  // Legacy kinds are not config-authored but must remain resolvable.
-  for (const [name, subdir] of Object.entries(LEGACY_TYPE_SUBDIRS)) {
-    if (types.has(name)) continue
-    types.set(name, {
-      name,
-      builtin: true,
-      sections: [],
-      severity: "off",
-      subdir,
-      templatePath: null,
-      sectionsCustomized: false,
-    })
-  }
-
   return { types, messages, warnings }
 }
 

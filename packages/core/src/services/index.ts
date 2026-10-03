@@ -65,6 +65,5 @@ export {
   type BatchRunResult,
   type SpecTraceStatus,
 } from "./spec-trace-service.js"
-export { DecisionService, DecisionServiceLive } from "./decision-service.js"
 
 export { getSpecHealth, SpecHealthSchema, type SpecHealth } from "./spec-health.js"

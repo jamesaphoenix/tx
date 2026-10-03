@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 import { spawnSync, spawn, type ChildProcessByStdio } from "node:child_process"
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, readFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { createServer } from "node:net"
@@ -274,11 +274,19 @@ describe("API + SDK spec traceability integration", () => {
     const { registerSpecTraceTools } = await import("../../apps/cli/src/mcp/tools/spec-trace.js")
     const handlers = new Map<string, () => Promise<any>>()
     registerSpecTraceTools({ registerTool: (name: string, _config: unknown, handler: () => Promise<any>) => handlers.set(name, handler) } as any)
-    await initRuntime(dbPath)
+    const created = runTx(["doc", "add", "design", "parity", "--title", "Parity", "--db", dbPath, "--json"], tmpProjectDir)
+    expect(created.status, created.stderr).toBe(0)
+    const docPath = join(tmpProjectDir, "specs", JSON.parse(created.stdout).filePath)
+    writeFileSync(docPath, readFileSync(docPath, "utf8").replace("invariants: []", "invariants:\n  - id: INV-PARITY-001\n    statement: missing evidence remains visible\n    severity: high\n    verified_by:\n      - test/missing.test.ts"))
+    expect(runTx(["doc", "sync", "parity", "--db", dbPath], tmpProjectDir).status).toBe(0)
+    await initRuntime(dbPath, {contentRoot: tmpProjectDir})
     try {
       const cli = runTx(["spec", "health", "--db", dbPath, "--json"], tmpProjectDir)
       expect(cli.status, cli.stderr).toBe(0)
       const expected = JSON.parse(cli.stdout)
+      expect(expected.specTest.total).toBe(1)
+      expect(expected.specTest.uncovered).toBe(1)
+      expect(expected.status).not.toBe("synced")
       expect(await httpClient.spec.health()).toEqual(expected)
       expect(await direct.spec.health()).toEqual(expected)
       const response = await fetch(`${baseUrl}/api/spec/health`)

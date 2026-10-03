@@ -13,6 +13,7 @@ import {
   listTomlSections,
   readTxConfig,
   writeDashboardDefaultTaskAssigmentType,
+  writeDashboardAutoAddStatuses,
   scaffoldConfigToml,
   DASHBOARD_DEFAULT_TASK_ASSIGMENT_KEY,
 } from "@jamesaphoenix/tx";
@@ -56,6 +57,7 @@ const DEFAULTS = {
       cycleLengthDays: 7,
       cycleStartDay: "monday",
       carryStatuses: ["planning", "active", "blocked", "review", "needs_review"],
+      autoAddStatuses: ["backlog", "ready"],
     },
   },
 } as const;
@@ -81,6 +83,19 @@ afterEach(() => {
 });
 
 describe("toml-config", () => {
+  it("persists an explicitly disabled auto-add selection without losing unrelated config", () => {
+    const cwd = makeTempDir()
+    writeConfig(cwd, '[docs]\npath = "custom-specs"\n# Keep this comment\n[dashboard.cycles]\ncarry_statuses = ["active"]\n')
+    writeDashboardAutoAddStatuses(["ready","ready"],cwd)
+    expect(readTxConfig(cwd).dashboard.cycles.autoAddStatuses).toEqual(["ready"])
+    writeDashboardAutoAddStatuses([],cwd)
+    const config = readTxConfig(cwd)
+    expect(config.dashboard.cycles.autoAddStatuses).toEqual([])
+    expect(config.dashboard.cycles.carryStatuses).toEqual(["active"])
+    expect(config.docs.path).toBe("custom-specs")
+    expect(readFileSync(join(cwd,".tx/config.toml"),"utf8")).toContain("# Keep this comment")
+  })
+
   it("[INV-SPECCFG-001] returns defaults when config is missing", () => {
     const cwd = makeTempDir();
     const config = readTxConfig(cwd);
@@ -265,7 +280,9 @@ describe("scaffoldConfigToml", () => {
     expect(raw).toContain("test_patterns = [");
     expect(raw).toContain('design_doc_missing_task_links = "always"');
     expect(raw).toContain('default_task_assigment_type = "human"');
-    // Bounded autonomy sections
+    expect(raw.split("\n").length).toBeLessThan(90)
+    expect(readTxConfig(cwd)).toEqual(DEFAULTS)
+    // Configuration stays limited to docs, verification and task UI settings.
   });
 
   it("is a no-op when config.toml already exists", () => {
@@ -340,12 +357,10 @@ describe("spec type configuration", () => {
     const config = readTxConfig(makeTempDir());
 
     expect(Object.keys(config.spec.types).sort()).toEqual([
-      "decision",
       "design",
       "overview",
       "plan",
       "prd",
-      "runbook",
     ]);
     expect(config.spec.types.prd.sections.map((s) => s.heading)).toEqual([
       "Summary",

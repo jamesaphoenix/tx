@@ -41,8 +41,8 @@ export const bulk = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const subcommand = pos[0]
     if (!subcommand) {
-      console.error("Usage: tx bulk <done|score|reset|delete> <id...> [options]")
-      console.error("Run 'tx bulk --help' for more information")
+      console.error("Usage: tx task bulk <done|score|reset|delete> <id...> [options]")
+      console.error("Run 'tx task bulk --help' for more information")
       throw new CliExitError(1)
     }
 
@@ -65,7 +65,7 @@ export const bulk = (pos: string[], flags: Flags) =>
 const bulkDone = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     if (pos.length === 0) {
-      console.error("Usage: tx bulk done <id> [id...] [--human] [--json]")
+      console.error("Usage: tx task bulk done <id> [id...] [--human] [--json]")
       throw new CliExitError(1)
     }
 
@@ -113,7 +113,7 @@ const bulkDone = (pos: string[], flags: Flags) =>
 const bulkScore = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     if (pos.length < 2) {
-      console.error("Usage: tx bulk score <score> <id> [id...] [--json]")
+      console.error("Usage: tx task bulk score <score> <id> [id...] [--json]")
       throw new CliExitError(1)
     }
 
@@ -149,7 +149,7 @@ const bulkScore = (pos: string[], flags: Flags) =>
 const bulkReset = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     if (pos.length === 0) {
-      console.error("Usage: tx bulk reset <id> [id...] [--json]")
+      console.error("Usage: tx task bulk reset <id> [id...] [--json]")
       throw new CliExitError(1)
     }
 
@@ -178,7 +178,7 @@ const bulkReset = (pos: string[], flags: Flags) =>
 const bulkDelete = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     if (pos.length === 0) {
-      console.error("Usage: tx bulk delete <id> [id...] [--json]")
+      console.error("Usage: tx task bulk delete <id> [id...] [--json]")
       throw new CliExitError(1)
     }
 

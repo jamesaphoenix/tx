@@ -143,21 +143,20 @@ const docAdd = (pos: string[], flags: Flags) =>
     const name = pos[1]
     if (!kind || !name) {
       console.error("Usage: tx doc add <kind> <name> [--title <title>] [--path <file>]")
-      console.error("  Kinds: overview, prd, design")
+      console.error("  Kinds: overview, prd, design, plan")
       console.error("  --path: register an existing file instead of scaffolding")
       throw new CliExitError(1)
     }
     const root = contentRoot(flags)
     const registry = resolveSpecTypes(readTxConfig(root))
-    if (!registry.types.has(kind) && !docKindStrings.includes(kind)) {
+    const normalizedKind = normalizeDocKind(kind as DocKind)
+    if (!registry.types.has(normalizedKind) && !docKindStrings.includes(normalizedKind)) {
       console.error(`Invalid kind: ${kind}. Must be one of: ${specTypeNames(registry).join(", ")}`)
       console.error(`Define a new one by adding a [spec.types.${kind}] section to .tx/config.toml`)
       throw new CliExitError(1)
     }
 
     const pathFlag = opt(flags, "path", "p")
-    const requestedKind = kind as DocKind
-    const normalizedKind = normalizeDocKind(requestedKind)
 
     let content: string
     let relFilePath: string | undefined

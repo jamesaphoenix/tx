@@ -19,6 +19,7 @@ export type DashboardCyclesConfig = {
   cycleLengthDays: number
   cycleStartDay: DashboardCycleStartDay
   carryStatuses: string[]
+  autoAddStatuses: string[]
 }
 export type SpecDesignDocMissingTaskLinksMode = "always" | "locked_only" | "never"
 export type SpecSectionSeverity = "error" | "warn" | "off"
@@ -121,20 +122,6 @@ const DEFAULT_SECTION_SPECS: Record<string, ReadonlyArray<readonly [string, stri
     ["components", "Components", "Each major component and the responsibility it owns.", null],
     ["data-flows", "Data Flows", "How data moves between components, including entry and exit points.", null],
   ],
-  runbook: [
-    ["summary", "Summary", "One paragraph describing the operational scenario this runbook covers.", null],
-    ["symptoms", "Symptoms", "Observable signals that indicate this runbook applies.", null],
-    ["diagnosis", "Diagnosis", "Steps and queries that confirm the root cause.", null],
-    ["mitigation", "Mitigation", "Concrete actions that restore service, in order.", null],
-    ["escalation", "Escalation", "Who to page, when to escalate, and what context to hand over.", null],
-  ],
-  decision: [
-    ["summary", "Summary", "One paragraph stating the decision made.", null],
-    ["context", "Context", "The forces, constraints, and background driving this decision.", null],
-    ["alternatives", "Alternatives", "Options considered and why each was or was not chosen.", null],
-    ["decision", "Decision", "The option chosen, stated unambiguously.", null],
-    ["consequences", "Consequences", "What becomes easier or harder as a result, including follow-on work.", null],
-  ],
 }
 
 const buildDefaultSpecTypes = (): Record<string, SpecTypeConfig> => {
@@ -182,6 +169,7 @@ const DEFAULT_CONFIG: TxConfig = {
       cycleLengthDays: 7,
       cycleStartDay: "monday",
       carryStatuses: ["planning", "active", "blocked", "review", "needs_review"],
+      autoAddStatuses: ["backlog", "ready"],
     },
   },
 }
@@ -507,6 +495,7 @@ export const readTxConfig = (cwd: string = process.cwd()): TxConfig => {
           cycleLengthDays: parseDashboardCycleLengthOrDefault(dashboardCycleLengthDays),
           cycleStartDay: parseDashboardCycleStartDayOrDefault(dashboardCycleStartDay),
           carryStatuses: parseDashboardCarryStatusesOrDefault(dashboardCarryStatuses),
+          autoAddStatuses: collectTomlTables(raw, DASHBOARD_CYCLES_SECTION).get(DASHBOARD_CYCLES_SECTION)?.arrays.get("auto_add_statuses") ?? [...DEFAULT_CONFIG.dashboard.cycles.autoAddStatuses],
         },
       },
     }
@@ -688,6 +677,17 @@ export const writeDashboardCarryStatuses = (
   return nextConfig
 }
 
+/** Persist cycle auto-add selection, including an empty list that disables auto-add. */
+export const writeDashboardAutoAddStatuses = (value: readonly string[], cwd: string = process.cwd()): TxConfig => {
+  const configPath = resolve(cwd, ".tx", "config.toml")
+  const existingRaw = existsSync(configPath) ? readFileSync(configPath, "utf8") : ""
+  const statuses = [...new Set(value.map(status => status.trim()).filter(Boolean))]
+  const nextRaw = patchTomlKey(existingRaw, DASHBOARD_CYCLES_SECTION, "auto_add_statuses", JSON.stringify(statuses))
+  mkdirSync(dirname(configPath), {recursive:true})
+  writeFileSync(configPath, ensureTrailingNewline(nextRaw), "utf8")
+  return readTxConfig(cwd)
+}
+
 function ensureTrailingNewline(value: string): string {
   return value.endsWith("\n") ? value : `${value}\n`
 }
@@ -843,94 +843,34 @@ const renderDefaultSpecTypesToml = (): string => {
   const lines: string[] = []
   for (const [typeName, def] of Object.entries(DEFAULT_CONFIG.spec.types)) {
     lines.push("", `[${SPEC_SECTION}.types.${typeName}]`, `severity = "${def.severity}"`)
-    for (const section of def.sections) {
-      lines.push("", `[${SPEC_SECTION}.types.${typeName}.section.${section.slug}]`)
-      lines.push(`heading = "${section.heading}"`)
-      lines.push(`description = "${section.description}"`)
-      if (section.message !== null) {
-        lines.push(`message = "${section.message}"`)
-      }
-    }
+
   }
   return lines.join("\n")
 }
 
 /** Header comment for the [spec.types.*] block, shared by scaffold and upgrade. */
-const SPEC_TYPES_TOML_HEADER = `# ─── Spec Types ────────────────────────────────────────────────────
-# Required markdown sections per spec type, checked by \`tx spec lint\`.
-# These are LINT-ONLY: a missing section never blocks tx doc add/update/sync.
-#
-#   severity     "error" (fails tx spec lint) | "warn" | "off"
-#   heading      the markdown heading text matched in the doc (case-insensitive)
-#   description  what belongs under the heading. Bundled into generated skills
-#                and used as placeholder text by \`tx doc template\`.
-#   message      the lint prompt shown when the section is missing. Falls back to
-#                [spec.lint.messages].missing_section, then a built-in default.
-#                Placeholders: {name} {spec_type} {section} {description} {file}
-#
-# Edit, reorder, or delete any section below. Define a new spec type by adding
-# a [spec.types.<name>] table. It is scaffolded, linted, and exposed to agents
-# via \`tx spec types --json\` exactly like the built-ins.
-#
-# NOT configurable (tx functionality depends on them): the frontmatter contract
-# and the embedded yaml block schemas (ears_requirements with REQ-* ids,
-# invariants with INV-* ids, verification, interfaces, failure_modes,
-# acceptance_criteria). Those blocks are found anywhere in the body, so renaming
-# a heading never breaks \`tx spec discover\` or FCI scoring.
+const SPEC_TYPES_TOML_HEADER = `# Four built-in document kinds; defaults include their standard sections.
+# Inspect with \`tx spec types\` or \`tx doc template <kind>\`.
+# Override only the settings you need under [spec.types.<kind>].
 `
-
-/** Commented examples that follow the generated [spec.types.*] tables. */
-const SPEC_TYPES_TOML_FOOTER = `
-# Custom spec type example. Uncomment to enable \`tx doc add rfc <name>\`:
-# [spec.types.rfc]
-# severity = "warn"
-# subdir = "rfc"                     # defaults to the type name
-# template = ".tx/templates/rfc.md"  # optional; {name} {title} {date} {spec_type} substituted
-# sections = ["Summary", "Motivation", "Proposal", "Drawbacks", "Alternatives"]
-#
-# ...or use per-section tables to attach descriptions and lint prompts:
-# [spec.types.rfc.section.motivation]
-# heading = "Motivation"
-# description = "Why this change is worth making now."
-# message = "{name}: every RFC needs '# Motivation'. {description}"
-
-# Global lint prompt overrides, used when a section has no \`message\` of its own.
-# [spec.lint.messages]
-# missing_section = "{name}: missing required section '{section}' for spec_type '{spec_type}'. {description}"
-# unknown_spec_type = "{name}: spec_type '{spec_type}' is not defined in .tx/config.toml."
-`
+const SPEC_TYPES_TOML_FOOTER = ""
 
 /**
  * The default config.toml content with comments and doc links.
  * Written by `tx init` if config.toml does not exist.
  */
 const DEFAULT_CONFIG_TOML = `# tx configuration
-# Full documentation: https://txdocs.dev/docs
-#
-# This file is created by \`tx init\` and lives at .tx/config.toml.
-# Edit any value below to override the default. Commented-out lines
-# show optional settings — uncomment them to enable.
+# Docs: https://txdocs.dev/docs
+# Existing files are preserved by tx init.
 
-# ─── Docs ───────────────────────────────────────────────────────────
-# Structured documentation primitives for PRDs, design docs, and specs.
-# Commands: tx doc add, tx doc show, tx doc list, tx doc validate
-# Docs: https://txdocs.dev/docs/primitives/docs
+# Markdown designs, plans, optional PRDs and system overviews.
+# https://txdocs.dev/docs/primitives/docs
 [docs]
-
-# Where tx stores YAML doc files on disk.
-# Relative to the project root.
 path = "specs"
 
-# EARS (Easy Approach to Requirements Syntax) is mandatory for all PRDs.
-# PRDs with legacy 'requirements' must also define 'ears_requirements'.
-
-# ─── Spec Traceability ─────────────────────────────────────────────
-# Invariant-to-test mapping discovery and completion scoring.
-# Commands: tx spec discover, tx spec fci, tx spec matrix
+# EARS (Easy Approach to Requirements Syntax) is mandatory for PRDs.
+# Invariant mappings: tx spec discover. Evidence: tx spec batch.
 [spec]
-
-# Test file patterns scanned by tx spec discover.
-# Add/remove patterns to match your project's languages and conventions.
 test_patterns = [
   "test/**/*.test.{ts,js,tsx,jsx}",
   "tests/**/*.py",
@@ -944,46 +884,25 @@ test_patterns = [
   "**/*.test.{c,cpp,cc}",
   "**/*_test.{c,cpp,cc}",
 ]
-
-# Controls tx spec lint warnings for design docs that have no linked tasks.
-# "always" = current/default behavior.
-# "locked_only" = warn only after the design doc has been locked.
-# "never" = suppress this warning entirely.
+# Warn for designs without linked tasks: always | locked_only | never.
 design_doc_missing_task_links = "always"
 
 ${SPEC_TYPES_TOML_HEADER}${renderDefaultSpecTypesToml()}
-${SPEC_TYPES_TOML_FOOTER}
-# ─── Dashboard ──────────────────────────────────────────────────────
-# Settings for the tx dashboard web UI (\`tx diag dashboard\`).
-# The dashboard provides a visual interface for task management,
-# doc browsing, spec health and planning cycles.
-# Docs: https://txdocs.dev/docs/getting-started
+
+# Task display and optional weekly planning. tx diag dashboard.
+# https://txdocs.dev/docs/getting-started
 [dashboard]
-
-# Default assignee type when creating new tasks from the dashboard.
-# "human" = tasks are assigned to humans by default.
-# "agent" = tasks are assigned to agents by default.
-# Can be toggled per-task with Cmd+K in the dashboard.
+# human | agent. The historical spelling is retained for compatibility.
 default_task_assigment_type = "human"
-
-# Default task view when opening the Tasks tab in the dashboard.
-# "list" = table/list layout.
-# "kanban" = status-column board layout.
+# list | kanban
 default_task_view = "list"
 
-# Weekly cycle planning settings used by dashboard cycle APIs.
 [dashboard.cycles]
-
-# Cycle duration in days.
 cycle_length_days = 7
-
-# Day of week that anchors cycle windows.
 cycle_start_day = "monday"
-
-# Non-done statuses carried into the next cycle when a cycle is completed.
 carry_statuses = ["planning", "active", "blocked", "review", "needs_review"]
-
-# ─── Pins ───────────────────────────────────────────────────────────
+# Auto-add matching dashboard tasks to new cycles; [] disables auto-add.
+auto_add_statuses = ["backlog", "ready"]
 `
 
 /**

@@ -13,7 +13,7 @@ const PANEL_STYLES: Record<PanelTone, { border: string; badge: string; summary: 
   healthy: {
     border: "border-green-500/30 bg-green-500/5",
     badge: "bg-green-500/15 text-green-300 border-green-500/30",
-    summary: "All docs healthy",
+    summary: "Document checks passed",
   },
   warning: {
     border: "border-orange-500/30 bg-orange-500/5",
@@ -71,6 +71,7 @@ export function SpecHealth({ onSelectDoc }: SpecHealthProps) {
   const [expanded, setExpanded] = useState(false)
   const [copiedProblemKey, setCopiedProblemKey] = useState<string | null>(null)
   const [copiedAll, setCopiedAll] = useState(false)
+  const [copyError, setCopyError] = useState<string | null>(null)
 
   const healthQuery = useQuery({
     queryKey: ["doc-health"],
@@ -79,13 +80,13 @@ export function SpecHealth({ onSelectDoc }: SpecHealthProps) {
   })
 
   if (healthQuery.isLoading) {
-    return <div className="mb-3 animate-pulse rounded-lg border border-gray-700 bg-gray-800/50 h-24" />
+    return <div role="status" aria-label="Loading document checks" className="mb-3 animate-pulse rounded-lg border border-gray-700 bg-gray-800/50 h-24" />
   }
 
   if (healthQuery.error instanceof Error) {
     return (
       <div className="mb-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3">
-        <div className="text-xs font-semibold uppercase tracking-wider text-red-300">Spec Health</div>
+        <div className="text-xs font-semibold uppercase tracking-wider text-red-300">Document Checks</div>
         <div className="mt-1 text-xs text-red-200/90">Unable to load health data: {healthQuery.error.message}</div>
       </div>
     )
@@ -93,6 +94,10 @@ export function SpecHealth({ onSelectDoc }: SpecHealthProps) {
 
   const health = healthQuery.data
   if (!health) return null
+  if (health.total === 0) return <div role="status" className="mb-3 rounded-lg border border-gray-700 p-3">
+    <div className="text-xs font-semibold uppercase tracking-wider">Document Checks</div>
+    <p className="mt-1 text-xs text-gray-400">No documents to check yet.</p>
+  </div>
 
   const issueCount = health.issues.length
   const hasCritical = health.issues.some((issue) => issue.kind === "hash_drift" || issue.kind === "parse")
@@ -103,6 +108,7 @@ export function SpecHealth({ onSelectDoc }: SpecHealthProps) {
   )
 
   const handleCopyProblem = (problemKey: string, copyText: string) => {
+    setCopyError(null)
     void navigator.clipboard.writeText(copyText)
       .then(() => {
         setCopiedProblemKey(problemKey)
@@ -110,17 +116,18 @@ export function SpecHealth({ onSelectDoc }: SpecHealthProps) {
           setCopiedProblemKey((current) => (current === problemKey ? null : current))
         }, 1500)
       })
-      .catch(() => {})
+      .catch(() => setCopyError("Could not copy issues. Check clipboard access and try again."))
   }
 
   const handleCopyAllProblems = () => {
     if (allIssueProblems.length === 0) return
+    setCopyError(null)
     void navigator.clipboard.writeText(allIssueProblems.join("\n"))
       .then(() => {
         setCopiedAll(true)
         window.setTimeout(() => { setCopiedAll(false) }, 1500)
       })
-      .catch(() => {})
+      .catch(() => setCopyError("Could not copy issues. Check clipboard access and try again."))
   }
 
   const grouped = groupByDoc(health.issues)
@@ -129,7 +136,7 @@ export function SpecHealth({ onSelectDoc }: SpecHealthProps) {
     <div className={`mb-3 rounded-lg border p-3 ${styles.border}`}>
       <div className="flex items-center justify-between gap-2">
         <div>
-          <div className="text-xs font-semibold uppercase tracking-wider text-gray-100">Spec Health</div>
+          <div className="text-xs font-semibold uppercase tracking-wider text-gray-100">Document Checks</div>
           <div className="text-[11px] text-gray-300/90 mt-0.5">{styles.summary}</div>
         </div>
         <span className={`text-[10px] uppercase tracking-wider border rounded px-2 py-0.5 ${styles.badge}`}>
@@ -137,6 +144,7 @@ export function SpecHealth({ onSelectDoc }: SpecHealthProps) {
         </span>
       </div>
 
+      {copyError && <p role="alert" className="mt-2 text-xs text-red-300">{copyError}</p>}
       <div className="mt-3 grid grid-cols-3 gap-2">
         <div className="rounded border border-gray-700/70 bg-gray-900/60 px-2 py-1 text-center">
           <div className="text-[10px] text-gray-500 uppercase">Total</div>

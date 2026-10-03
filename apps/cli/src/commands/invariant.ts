@@ -20,7 +20,7 @@ export const invariant = (pos: string[], flags: Flags) => {
     default:
       return Effect.sync(() => {
         console.error(`Unknown invariant subcommand: ${sub ?? "(none)"}`)
-        console.error("Run 'tx invariant --help' for usage information")
+        console.error("Run 'tx spec invariant --help' for usage information")
         throw new CliExitError(1)
       })
   }
@@ -55,7 +55,7 @@ const invariantShow = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const id = pos[0]
     if (!id) {
-      console.error("Usage: tx invariant show <id>")
+      console.error("Usage: tx spec invariant show <id>")
       throw new CliExitError(1)
     }
 
@@ -86,14 +86,14 @@ const invariantRecord = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const id = pos[0]
     if (!id) {
-      console.error("Usage: tx invariant record <id> --passed|--failed [--details <text>]")
+      console.error("Usage: tx spec invariant record <id> --passed|--failed [--details <text>]")
       throw new CliExitError(1)
     }
 
     const passed = flag(flags, "passed")
     const failed = flag(flags, "failed")
-    if (!passed && !failed) {
-      console.error("Must specify --passed or --failed")
+    if (passed === failed) {
+      console.error("Specify exactly one of --passed or --failed")
       throw new CliExitError(1)
     }
 
@@ -122,7 +122,7 @@ const invariantSync = (_pos: string[], flags: Flags) =>
       console.log(toJson({ synced: synced.length, invariants: synced }))
     } else {
       if (synced.length === 0) {
-        console.log("No invariants found in doc YAML files")
+        console.log("No invariants found in document schema blocks")
       } else {
         console.log(`Synced ${synced.length} invariant(s):`)
         for (const inv of synced) {

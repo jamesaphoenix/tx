@@ -45,7 +45,7 @@ export const mdExport = (_pos: string[], flags: Flags) =>
         ? "Open Tasks"
       : filter === "all"
         ? "All Tasks"
-        : `Tasks — ${filter}`
+        : `Tasks: ${filter}`
 
     const emptyStateMessage = filter === "ready"
       ? "_No ready tasks._"

@@ -10,96 +10,7 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '../..');
 
-// Import the rule helper functions by reading the rule file
-// (We'll test the functions directly since testing ESLint rules requires special setup)
-
-/**
- * Parse a source file to extract exported identifiers
- */
-function extractExports(content) {
-  const exports = [];
-
-  // Match: export class ClassName
-  const classExports = content.matchAll(/export\s+class\s+(\w+)/g);
-  for (const match of classExports) {
-    exports.push(match[1]);
-  }
-
-  // Match: export const ConstName
-  const constExports = content.matchAll(/export\s+const\s+(\w+)/g);
-  for (const match of constExports) {
-    exports.push(match[1]);
-  }
-
-  // Match: export function FuncName
-  const funcExports = content.matchAll(/export\s+function\s+(\w+)/g);
-  for (const match of funcExports) {
-    exports.push(match[1]);
-  }
-
-  // Match: export { Named1, Named2 }
-  const namedExports = content.matchAll(/export\s*\{([^}]+)\}/g);
-  for (const match of namedExports) {
-    const names = match[1].split(',').map(s => s.trim().split(/\s+as\s+/)[0].trim());
-    exports.push(...names.filter(n => n && !n.includes('*')));
-  }
-
-  return [...new Set(exports)];
-}
-
-/**
- * Parse a test file to extract describe() block names and tested identifiers
- */
-function extractTestCoverage(content) {
-  const describes = [];
-  const testedIdentifiers = new Set();
-
-  const describeMatches = content.matchAll(/describe\s*\(\s*["'`]([^"'`]+)["'`]/g);
-  for (const match of describeMatches) {
-    describes.push(match[1]);
-  }
-
-  const yieldMatches = content.matchAll(/yield\*\s+(\w+)/g);
-  for (const match of yieldMatches) {
-    testedIdentifiers.add(match[1]);
-  }
-
-  const importMatches = content.matchAll(/import\s*\{([^}]+)\}\s*from\s*["']/g);
-  for (const match of importMatches) {
-    const names = match[1].split(',').map(s => s.trim().split(/\s+as\s+/)[0].trim());
-    for (const name of names) {
-      if (name.endsWith('Service') || name.endsWith('Repository') || name.endsWith('Live')) {
-        testedIdentifiers.add(name);
-      }
-    }
-  }
-
-  return {
-    describes,
-    testedIdentifiers: [...testedIdentifiers]
-  };
-}
-
-/**
- * Calculate coverage percentage
- */
-function calculateCoverage(sourceExports, testedIdentifiers) {
-  if (sourceExports.length === 0) return 100;
-
-  const testedSet = new Set(testedIdentifiers.map(s => s.toLowerCase()));
-  let covered = 0;
-
-  for (const exp of sourceExports) {
-    const expLower = exp.toLowerCase();
-    if (testedSet.has(expLower) ||
-        testedSet.has(expLower + 'live') ||
-        testedSet.has(expLower.replace(/live$/, ''))) {
-      covered++;
-    }
-  }
-
-  return Math.round((covered / sourceExports.length) * 100);
-}
+import { extractExports, extractTestCoverage, calculateCoverage } from '../rules/require-integration-tests.js';
 
 describe('require-integration-tests rule', () => {
   describe('extractExports', () => {
@@ -157,6 +68,14 @@ describe('require-integration-tests rule', () => {
   });
 
   describe('extractTestCoverage', () => {
+    it('recognises an imported function only when the test actually calls it', () => {
+      expect(extractTestCoverage('import { dashboardSpecHealth } from "./spec-health"; await dashboardSpecHealth(db, cwd);').testedIdentifiers).toContain('dashboardSpecHealth');
+      expect(extractTestCoverage('import { dashboardSpecHealth } from "./spec-health"; expect(true).toBe(true);').testedIdentifiers).not.toContain('dashboardSpecHealth');
+    });
+    it('tracks the original export when a called function is imported with an alias', () => {
+      expect(extractTestCoverage('import { dashboardSpecHealth as health } from "./spec-health"; await health(db);').testedIdentifiers).toContain('dashboardSpecHealth');
+    });
+
     it('extracts describe blocks', () => {
       const content = `
         describe("Task CRUD", () => {})

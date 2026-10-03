@@ -1,10 +1,12 @@
 import { useRef, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { fetchers, type DocGraphNode, type DocGraphEdge } from "../../api/client"
+import { Button } from "../ui"
 
 interface DocGraphProps {
   selectedNodeId?: string | null
   onSelectDoc?: (docDbId: number) => void
+  onSelectTask?: (taskId: string) => void
   fullPage?: boolean
 }
 
@@ -137,11 +139,11 @@ function edgePath(x1: number, y1: number, x2: number, y2: number, nodeR: number)
   return `M ${sx} ${sy} Q ${cpx} ${midY}, ${ex} ${ey}`
 }
 
-export function DocGraph({ selectedNodeId, onSelectDoc, fullPage }: DocGraphProps) {
+export function DocGraph({ selectedNodeId, onSelectDoc, onSelectTask, fullPage }: DocGraphProps) {
   const canvasRef = useRef<SVGSVGElement>(null)
   const [hoveredId, setHoveredId] = useState<string | null>(null)
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["doc-graph"],
     queryFn: fetchers.docGraph,
     refetchInterval: 30000,
@@ -174,8 +176,13 @@ export function DocGraph({ selectedNodeId, onSelectDoc, fullPage }: DocGraphProp
   }, [hoveredId, selectedNodeId, positioned, edges])
 
   if (isLoading) {
-    return <div className="animate-pulse bg-gray-800 rounded-lg h-full" />
+    return <div role="status" aria-label="Loading document graph" className="animate-pulse bg-gray-800 rounded-lg h-full" />
   }
+
+  if (error) return <div role="alert" className="p-6 text-sm text-amber-400">
+    <p>Could not load document graph: {error.message}</p>
+    <Button className="mt-3" onClick={() => { void refetch() }}>Retry graph</Button>
+  </div>
 
   if (nodes.length === 0) {
     return (
@@ -274,20 +281,29 @@ export function DocGraph({ selectedNodeId, onSelectDoc, fullPage }: DocGraphProp
               ? node.label.slice(0, labelMaxLen - 1) + "\u2026"
               : node.label
             const r = isSelected || isHovered ? selectedR : nodeR
+            const interactive = node.kind === "task" ? Boolean(onSelectTask) : Boolean(onSelectDoc)
+            const selectNode = () => {
+              if (node.id.startsWith("task:")) { onSelectTask?.(node.id.slice(5)); return }
+              if (!node.id.startsWith("doc:")) return
+              const parsed = Number(node.id.slice(4))
+              if (Number.isInteger(parsed)) onSelectDoc?.(parsed)
+            }
 
             return (
               <g
                 key={node.id}
-                onClick={() => {
-                  if (!node.id.startsWith("doc:")) return
-                  const parsed = Number.parseInt(node.id.slice(4), 10)
-                  if (Number.isFinite(parsed)) {
-                    onSelectDoc?.(parsed)
-                  }
+                role={interactive ? "button" : undefined}
+                tabIndex={interactive ? 0 : undefined}
+                aria-label={interactive ? `${node.kind}: ${node.label}` : undefined}
+                onClick={selectNode}
+                onKeyDown={event => {
+                  if (interactive && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); selectNode() }
                 }}
+                onFocus={() => setHoveredId(node.id)}
+                onBlur={() => setHoveredId(null)}
                 onMouseEnter={() => setHoveredId(node.id)}
                 onMouseLeave={() => setHoveredId(null)}
-                className="cursor-pointer"
+                className={interactive ? "cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400" : ""}
                 style={{
                   opacity: dimmed ? 0.25 : 1,
                   transition: "opacity 200ms ease",
@@ -341,9 +357,9 @@ export function DocGraph({ selectedNodeId, onSelectDoc, fullPage }: DocGraphProp
         <div className="absolute right-4 top-4 rounded-lg border border-gray-700/60 bg-gray-900/90 backdrop-blur-sm px-3 py-2.5 text-[11px] text-gray-300">
           <div className="font-semibold text-gray-100 mb-1.5 text-[10px] uppercase tracking-wider">Legend</div>
           <div className="space-y-1">
-            {Object.entries(KIND_COLORS).map(([kind, color]) => (
+            {Array.from(new Set(nodes.map(node => node.kind))).map(kind => (
               <div key={kind} className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
+                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: KIND_COLORS[kind] ?? "#9CA3AF" }} />
                 <span>{KIND_LABELS[kind] ?? kind}</span>
               </div>
             ))}

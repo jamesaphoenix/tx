@@ -35,11 +35,6 @@ type TriangleHealth = {
     readonly docsHarden: number
     readonly docsBuild: number
   }
-  readonly decisions: {
-    readonly pending: number
-    readonly approvedUnsynced: number
-    readonly total: number
-  }
   readonly docDrift: {
     readonly driftedDocs: number
     readonly totalDocs: number
@@ -180,39 +175,6 @@ const addPrd = (cwd: string, dbPath: string, name: string, title: string): void 
   )
 }
 
-const createApprovedDecision = (cwd: string, dbPath: string, taskTitle: string, content: string): string => {
-  const task = parseJson<{ id: string }>(
-    expectOk(runTx(cwd, dbPath, ["task", "add", taskTitle, "--json"]), `tx task add ${taskTitle}`),
-  )
-  const decision = parseJson<{ id: string }>(
-    expectOk(
-      runTx(cwd, dbPath, ["decision", "add", content, "--task", task.id, "--json"]),
-      `tx decision add ${content}`,
-    ),
-  )
-
-  expectOk(
-    runTx(cwd, dbPath, ["decision", "approve", decision.id, "--reviewer", "architect", "--note", "approved", "--json"]),
-    `tx decision approve ${decision.id}`,
-  )
-
-  return decision.id
-}
-
-const createPendingDecision = (cwd: string, dbPath: string, taskTitle: string, content: string): string => {
-  const task = parseJson<{ id: string }>(
-    expectOk(runTx(cwd, dbPath, ["task", "add", taskTitle, "--json"]), `tx task add ${taskTitle}`),
-  )
-  const decision = parseJson<{ id: string }>(
-    expectOk(
-      runTx(cwd, dbPath, ["decision", "add", content, "--task", task.id, "--json"]),
-      `tx decision add ${content}`,
-    ),
-  )
-
-  return decision.id
-}
-
 const specDiscover = (cwd: string, dbPath: string, doc: string) =>
   expectOk(
     runTx(cwd, dbPath, ["spec", "discover", "--doc", doc, "--patterns", "test/**/*.test.ts", "--json"]),
@@ -329,7 +291,6 @@ describe("Triangle approval flow fixtures", { timeout: FLOW_TEST_TIMEOUT }, () =
       docsHarden: 0,
       docsBuild: 0,
     })
-    expect(health.decisions.total).toBe(0)
     expect(health.docDrift.driftedDocs).toBe(0)
   })
 
@@ -414,11 +375,10 @@ describe("Triangle approval flow fixtures", { timeout: FLOW_TEST_TIMEOUT }, () =
       docsHarden: 1,
       docsBuild: 0,
     })
-    expect(health.decisions.total).toBe(0)
     expect(health.docDrift.driftedDocs).toBe(0)
   })
 
-  it("keeps triangle health drifting when a decision is approved before the spec loop is closed", () => {
+  it("keeps health drifting while discovered tests have no execution evidence", () => {
     addPrd(cwd, dbPath, "auth-approval-gap", "Auth Approval Gap")
     syncPrdMd(cwd, dbPath, "auth-approval-gap", "Auth Approval Gap", [
       { id: "INV-TRI-AUTH-001", rule: "issue session tokens" },
@@ -456,7 +416,6 @@ describe("Triangle approval flow fixtures", { timeout: FLOW_TEST_TIMEOUT }, () =
     const discover = parseJson<{ discoveredLinks: number }>(specDiscover(cwd, dbPath, "auth-approval-gap"))
     expect(discover.discoveredLinks).toBe(2)
 
-    createApprovedDecision(cwd, dbPath, "Auth approval review", "Keep token format stable")
 
     const status = specStatus(cwd, dbPath, "auth-approval-gap")
     expect(status.phase).toBe("BUILD")
@@ -476,8 +435,6 @@ describe("Triangle approval flow fixtures", { timeout: FLOW_TEST_TIMEOUT }, () =
       docsHarden: 0,
       docsBuild: 1,
     })
-    expect(health.decisions.approvedUnsynced).toBe(1)
-    expect(health.decisions.total).toBe(1)
     expect(health.docDrift.driftedDocs).toBe(0)
   })
 
@@ -531,7 +488,7 @@ describe("Triangle approval flow fixtures", { timeout: FLOW_TEST_TIMEOUT }, () =
     expect(health.specTest.docsBuild).toBe(0)
   })
 
-  it("keeps triangle health drifting after COMPLETE when an approved decision remains unsynced", () => {
+  it("reports synced health after passing evidence and human sign-off", () => {
     addPrd(cwd, dbPath, "queue-approval-loop", "Queue Approval Loop")
     syncPrdMd(cwd, dbPath, "queue-approval-loop", "Queue Approval Loop", [
       { id: "INV-TRI-QUEUE-001", rule: "enqueue in FIFO order" },
@@ -574,17 +531,15 @@ describe("Triangle approval flow fixtures", { timeout: FLOW_TEST_TIMEOUT }, () =
       runTx(cwd, dbPath, ["spec", "complete", "--doc", "queue-approval-loop", "--by", "queue-qa", "--json"]),
       "tx spec complete queue-approval-loop",
     )
-    createApprovedDecision(cwd, dbPath, "Queue approval review", "Preserve FIFO ordering decision")
 
     const status = specStatus(cwd, dbPath, "queue-approval-loop")
     expect(status.phase).toBe("COMPLETE")
     expect(status.fci).toBe(100)
 
     const health = specHealth(cwd, dbPath)
-    expect(health.status).toBe("drifting")
+    expect(health.status).toBe("synced")
     expect(health.specTest.coveragePercent).toBe(100)
     expect(health.specTest.docsComplete).toBe(1)
-    expect(health.decisions.approvedUnsynced).toBe(1)
     expect(health.docDrift.driftedDocs).toBe(0)
   })
 
@@ -744,7 +699,7 @@ describe("Triangle approval flow fixtures", { timeout: FLOW_TEST_TIMEOUT }, () =
     expect(health.docDrift.totalDocs).toBe(3)
   })
 
-  it("keeps triangle health drifting when a decision is still pending even after doc COMPLETE", () => {
+  it("ignores dormant decision records after evidence and human sign-off", () => {
     addPrd(cwd, dbPath, "ledger-pending-review", "Ledger Pending Review")
     syncPrdMd(cwd, dbPath, "ledger-pending-review", "Ledger Pending Review", [
       { id: "INV-TRI-LEDGER-001", rule: "sum ledger balances" },
@@ -771,11 +726,11 @@ describe("Triangle approval flow fixtures", { timeout: FLOW_TEST_TIMEOUT }, () =
       "tx spec complete ledger-pending-review",
     )
 
-    createPendingDecision(cwd, dbPath, "Ledger follow-up review", "Review ledger rounding narrative")
+    const historicalDb = new Database(dbPath)
+    try { historicalDb.prepare("INSERT INTO decisions(id,content,status,source,content_hash) VALUES(?, ?, ?, ?, ?)").run("dec-dormant", "Historical review", "pending", "manual", "historical-review") } finally { historicalDb.close() }
 
     const health = specHealth(cwd, dbPath)
-    expect(health.status).toBe("drifting")
-    expect(health.decisions.pending).toBe(1)
+    expect(health.status).toBe("synced")
     expect(health.specTest.docsComplete).toBe(1)
   })
 })

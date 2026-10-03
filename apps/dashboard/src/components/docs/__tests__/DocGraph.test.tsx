@@ -69,6 +69,32 @@ describe("DocGraph", () => {
       expect(screen.getByText("No doc graph data")).toBeInTheDocument()
     })
   })
+  it("makes document and task nodes keyboard operable", async () => {
+    server.use(http.get("/api/docs/graph", () => HttpResponse.json({ nodes: [
+      { id: "doc:2", label: "Saved plan", kind: "plan" },
+      { id: "task:tx-step", label: "Implement checkout", kind: "task" },
+    ], edges: [] })))
+    const selectDoc = vi.fn(), selectTask = vi.fn()
+    renderWithProviders(<DocGraph onSelectDoc={selectDoc} onSelectTask={selectTask} />)
+    const plan = await screen.findByRole("button", { name: "plan: Saved plan" })
+    expect(plan).toHaveAttribute("tabindex", "0")
+    fireEvent.keyDown(plan, { key: "Enter" })
+    expect(selectDoc).toHaveBeenCalledWith(2)
+    fireEvent.keyDown(screen.getByRole("button", { name: "task: Implement checkout" }), { key: " " })
+    expect(selectTask).toHaveBeenCalledWith("tx-step")
+  })
+  it("shows a failed graph request as an error and allows retry", async () => {
+    let failed = true
+    server.use(http.get("/api/docs/graph", () => failed
+      ? HttpResponse.json({ error: "Graph unavailable" }, { status: 500 })
+      : HttpResponse.json({ nodes: [{ id: "doc:1", label: "Recovered design", kind: "design" }], edges: [] })))
+    renderWithProviders(<DocGraph />)
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not load document graph: Graph unavailable")
+    expect(screen.queryByText("No doc graph data")).not.toBeInTheDocument()
+    failed = false
+    fireEvent.click(screen.getByRole("button", { name: "Retry graph" }))
+    expect(await screen.findByText("Recovered design")).toBeInTheDocument()
+  })
   it("places plans between specs and tasks [INV-LEAN-005]", async () => {
     server.use(http.get("/api/docs/graph", () => HttpResponse.json({nodes:[
       {id:"doc:1",label:"Design spec",kind:"design"},
@@ -81,6 +107,8 @@ describe("DocGraph", () => {
     expect(y("Design spec")).toBeLessThan(Number(plan.getAttribute("y")))
     expect(Number(plan.getAttribute("y"))).toBeLessThan(y("Task step"))
     expect(screen.getByText("Plan")).toBeInTheDocument()
+    expect(screen.queryByText("Decision")).not.toBeInTheDocument()
+    expect(screen.queryByText("Runbook")).not.toBeInTheDocument()
   })
 
 })

@@ -22,66 +22,17 @@ import { sync } from "./commands/sync.js"
 import { doc } from "./commands/doc.js"
 import { invariant } from "./commands/invariant.js"
 import { spec } from "./commands/spec.js"
-import { decision } from "./commands/decision.js"
 import { triangle } from "./commands/triangle.js"
 import { scaffoldClaude, scaffoldCodex, interactiveScaffold } from "./commands/scaffold.js"
 import { scaffoldConfigToml, upgradeConfigToml } from "@jamesaphoenix/tx"
-import { mdExport } from "./commands/md-export.js"
 import { diag } from "./commands/diag.js"
 import { skills } from "./commands/skills.js"
 import { schema } from "./commands/schema.js"
 import * as p from "@clack/prompts"
+import { parseArgs } from "./utils/argv.js"
 
 // --- Argv parsing helpers ---
 
-function parseArgs(argv: string[]): { command: string; positional: string[]; flags: Record<string, string | boolean> } {
-  const args = argv.slice(2)
-  const positional: string[] = []
-  const flags: Record<string, string | boolean> = {}
-
-  // Parse a flag at index idx, using valueCheckPrefix to determine if next arg is a value
-  // Returns number of args consumed (1 for boolean flag, 2 for flag with value)
-  function consumeFlag(idx: number, valueCheckPrefix: string): number {
-    const arg = args[idx]
-    const key = arg.startsWith("--") ? arg.slice(2) : arg.slice(1)
-    const next = args[idx + 1]
-    if (next && !next.startsWith(valueCheckPrefix)) {
-      // Accumulate repeated flags with comma (e.g., --prop a=1 --prop b=2 → "a=1,b=2")
-      const existing = flags[key]
-      flags[key] = typeof existing === "string" ? `${existing},${next}` : next
-      return 2
-    }
-    flags[key] = true
-    return 1
-  }
-
-  // Find the command (first non-flag argument), parsing any leading flags
-  let command = "help"
-  let startIdx = 0
-  for (let i = 0; i < args.length; i++) {
-    if (args[i].startsWith("-")) {
-      i += consumeFlag(i, "-") - 1
-    } else {
-      command = args[i]
-      startIdx = i + 1
-      break
-    }
-  }
-
-  // Parse remaining args: positional arguments and flags after command
-  for (let i = startIdx; i < args.length; i++) {
-    const arg = args[i]
-    if (arg.startsWith("--")) {
-      i += consumeFlag(i, "--") - 1
-    } else if (arg.startsWith("-")) {
-      i += consumeFlag(i, "-") - 1
-    } else {
-      positional.push(arg)
-    }
-  }
-
-  return { command, positional, flags }
-}
 
 function flag(flags: Record<string, string | boolean>, ...names: string[]): boolean {
   return names.some(n => flags[n] === true)
@@ -131,13 +82,13 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
           results.push(...r.copied.map(f => `+ ${f}`), ...r.skipped.map(f => `~ ${f} (exists)`))
         }
         if (results.length > 0) p.note(results.join("\n"), "Files")
-        p.outro('Done! Start with: tx add "First task" && tx ready')
+        p.outro('Done! Start with: tx task add "First task" && tx task ready')
         return
       }
 
       // Interactive mode
       yield* Effect.tryPromise(() => interactiveScaffold(projectDir))
-      p.outro('Done! Start with: tx add "First task" && tx ready')
+      p.outro('Done! Start with: tx task add "First task" && tx task ready')
     }),
 
   task: taskCommand,
@@ -146,29 +97,19 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
 
   sync,
 
-  // Cycle scan (PRD-023)
 
-  // Claim commands (PRD-018) — claim dispatches release/renew subcommands
 
-  // Trace command (with subcommands)
 
-  // Bulk operations
 
   // Doc commands (DD-023 docs-as-primitives)
   doc,
-  invariant: deprecatedAlias("spec", invariant),
+  invariant: deprecatedAlias("spec invariant", invariant),
   spec,
 
-  // Decision commands
-  decision,
   triangle: deprecatedAlias("spec health", triangle),
 
-  // Memory commands (filesystem-backed memory)
 
-  // Pin commands (context pins for agent memory injection)
 
-  // Markdown export (file-based agent loops)
-  "md-export": mdExport,
 
   // Spec-driven task graph creation
 
@@ -275,12 +216,12 @@ function exitCliUserError(error: unknown): never {
 }
 
 // Handle --version early, before any command processing
-if (flag(parsedFlags, "version") || flag(parsedFlags, "v")) {
+if (flag(parsedFlags, "version") || (flag(parsedFlags, "v") && !(command === "diag" && positional[0] === "doctor"))) {
   console.log(`tx v${CLI_VERSION}`)
   process.exit(0)
 }
 
-const oldTaskCommands: Record<string, string> = { add: "add", list: "list", ready: "ready", show: "show", update: "update", done: "done", reset: "reset", delete: "delete", dep: "dep", bulk: "bulk", label: "label", block: "dep block", unblock: "dep unblock", children: "dep children", tree: "dep tree" }
+const oldTaskCommands: Record<string, string> = { "md-export": "export", add: "add", list: "list", ready: "ready", show: "show", update: "update", done: "done", reset: "reset", delete: "delete", dep: "dep", bulk: "bulk", label: "label", block: "dep block", unblock: "dep unblock", children: "dep children", tree: "dep tree" }
 // @spec INV-LEAN-001 Reject retired mutations before storage initialisation.
 if (command in oldTaskCommands) {
   emitCliError(movedCommandError({ command, message: 'Task commands now use the task namespace.', hint: 'Use tx task ' + oldTaskCommands[command] + '.' }), jsonMode)
@@ -331,7 +272,7 @@ if (command === "mcp-server") {
   emitCliError(movedCommandError({
     command,
     message: "MCP server has been moved to a separate package.",
-    hint: "Use the @tx/mcp package or run the MCP server from the monorepo root.",
+    hint: "Use tx-mcp from @jamesaphoenix/tx-cli.",
   }), jsonMode)
   process.exit(1)
 }

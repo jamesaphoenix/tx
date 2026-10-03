@@ -1,21 +1,39 @@
 ---
 doc_style: guide
-title: Tasks
-description: Create, prioritise and connect tasks
+title: tx task
+description: Create and connect implementation tasks
 ---
+
+## Purpose
+
+Turn a saved implementation plan into small tasks with observable acceptance criteria.
+
+## Commands
 
 ```bash
 tx task add "Implement checkout" --description "Acceptance: a customer can pay."
 tx task list
 tx task ready
-tx task show <id>
-tx task update <id> --status active
+tx task show <task-id>
+tx task update <task-id> --status active
 tx task dep block <dependent-id> <blocker-id>
-tx task dep tree <id>
-tx task done <id>
+tx task dep tree <task-id>
+tx task done <task-id>
 ```
 
-Parent tasks model hierarchy; dependencies model blockers. Ordinary labels help filter
-tasks, and dashboard cycles group work into planning periods. Every interface returns
-blockers, blocked tasks, children and linked docs. Run `tx task --help` for reset,
-delete, bulk and label operations.
+Use `tx task --help` for reset, delete, bulk, parent and label operations.
+
+## Workflow
+
+Attach each task to its [plan](./plans) with `tx doc attach <task-id> <plan-ref>`.
+Parent tasks express hierarchy; dependencies express blockers. Every task response
+includes blockers, blocked tasks, children and linked docs. Dashboard cycles group
+work into planning periods. Click the title in task details to rename it.
+
+New tasks start in `backlog` with score `0`. Higher integer scores appear first.
+Use `tx task update <task-id> --description=""` to clear a description.
+For a title beginning with a dash, use `tx task add -- "--A task title"`.
+
+Weekly cycles are optional. Reading tasks or cycles does not create a planning
+period. Create a cycle explicitly; its auto-add selection includes every matching
+task. An empty auto-add selection disables automatic membership.

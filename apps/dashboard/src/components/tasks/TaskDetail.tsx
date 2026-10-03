@@ -8,6 +8,8 @@ import {
   type TaskWithDeps,
 } from "../../api/client"
 import { Button } from "../ui"
+import { EditableTaskTitle } from "./EditableTaskTitle"
+import { DocumentLinks } from "../docs/DocumentLinks"
 import { useDebounce } from "../../hooks/useDebounce"
 import {
   canonicalTaskLabelName,
@@ -61,7 +63,7 @@ function parseTimestamp(value: TimestampInput): Date | null {
 
 function formatTimestamp(value: TimestampInput): string {
   const date = parseTimestamp(value)
-  if (!date) return "—"
+    if (!date) return "Not set"
   return date.toLocaleString()
 }
 
@@ -287,7 +289,7 @@ export function TaskDetail({
   }, [taskId])
 
   useEffect(() => {
-    if (!data?.task.id) return
+    if (!data?.task.id || data.task.id !== taskId) return
     const nextDescription = data.task.description ?? ""
     setDescriptionDraft(nextDescription)
     lastSavedDescriptionRef.current = nextDescription
@@ -314,7 +316,7 @@ export function TaskDetail({
   }, [descriptionDraft, data?.task.id])
 
   useEffect(() => {
-    if (!data?.task.id) return
+    if (!data?.task.id || data.task.id !== taskId || isSavingDescription || descriptionError) return
     if (descriptionDraft === lastSavedDescriptionRef.current) return
 
     const requestTaskId = data.task.id
@@ -351,7 +353,7 @@ export function TaskDetail({
     }, 650)
 
     return () => window.clearTimeout(timer)
-  }, [data?.task.id, descriptionDraft, queryClient])
+  }, [data?.task.id, taskId, descriptionDraft, isSavingDescription, descriptionError, queryClient])
 
   const persistAssignment = useCallback(async (
     assigneeType: TaskAssigneeType,
@@ -392,8 +394,8 @@ export function TaskDetail({
     }
   }, [onUpdateAssignment])
 
-  if (isLoading) {
-    return null
+  if (isLoading || debouncedTaskId !== taskId || (data && data.task.id !== taskId)) {
+    return <div role="status" className="p-4 text-gray-500">Loading task...</div>
   }
 
   if (error) {
@@ -535,7 +537,7 @@ export function TaskDetail({
               </span>
             )}
           </div>
-          <h2 className="text-2xl font-semibold text-white">{task.title}</h2>
+          <EditableTaskTitle key={task.id} taskId={task.id} title={task.title} />
           <div className="mt-2 rounded-md border border-white/10 bg-gray-900/20">
             <div className="mb-1 flex items-center justify-end gap-2">
               <span className={`text-[11px] ${
@@ -556,6 +558,7 @@ export function TaskDetail({
               value={descriptionDraft}
               onChange={(event) => {
                 setDescriptionDraft(event.target.value)
+                setDescriptionError(null)
                 const input = descriptionInputRef.current
                 if (!input) return
                 input.style.height = "0px"
@@ -569,7 +572,12 @@ export function TaskDetail({
             />
 
             {descriptionError && (
-              <p className="mt-2 text-xs text-red-400">{descriptionError}</p>
+              <div className="mt-2 flex items-center gap-2 text-xs text-red-400">
+                <p role="alert">{descriptionError}</p>
+                <button type="button" onClick={() => setDescriptionError(null)} className="underline">
+                  Retry saving description
+                </button>
+              </div>
             )}
           </div>
           {task.labels && task.labels.length > 0 && (
@@ -602,6 +610,8 @@ export function TaskDetail({
             )}
           </div>
         </div>
+
+        <DocumentLinks nodeId={`task:${task.id}`} />
 
         <div>
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -749,7 +759,7 @@ export function TaskDetail({
               Assigned at: {formatTimestamp(task.assignedAt)}
             </p>
             <p className="text-[11px] text-gray-500">
-              Assigned by: {task.assignedBy ?? "—"}
+              Assigned by: {task.assignedBy ?? "Not set"}
             </p>
           </section>
 

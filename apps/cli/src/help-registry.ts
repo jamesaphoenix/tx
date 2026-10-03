@@ -1,9 +1,9 @@
 import { HELP_TEXT, commandHelp } from "./help.js"
 import { CliUserError, usageError } from "./cli-errors.js"
 
-export const compoundHelpParents = ["task", "task dep", "task bulk", "task label", "diag", "sync", "doc", "spec", "decision", "skills"] as const
+export const compoundHelpParents = ["task", "task dep", "task bulk", "task label", "diag", "sync", "doc", "spec", "spec invariant", "skills"] as const
 
-export const deprecatedCommandMap: Record<string, string> = {}
+export const deprecatedCommandMap: Record<string, string> = { invariant: "spec invariant", triangle: "spec health" }
 
 export type ParsedCliArgument = {
   name: string
@@ -93,9 +93,7 @@ function parseHelpSections(rawHelp: string): Record<string, string[]> {
 }
 
 function parseUsage(lines: string[] | undefined): string[] {
-  return (lines ?? [])
-    .map((line) => line.trim())
-    .filter(Boolean)
+  return (lines ?? []).map(line => line.trim()).filter(line => /^tx(?:\s|$)/.test(line))
 }
 
 function collapseSectionEntries(
@@ -165,23 +163,35 @@ function parseExamples(lines: string[] | undefined): string[] {
     .filter(Boolean)
 }
 
+const USAGE_OPTION_PATTERN = /(?<![\w<])(-{1,2}[A-Za-z][\w-]*(?:\s*,\s*-{1,2}[A-Za-z][\w-]*)*)(?:\s+(<[^>]+>))?/g
+
 function parseUsageArguments(usage: string[]): ParsedCliArgument[] {
   const seen = new Set<string>()
   const argumentsFromUsage: ParsedCliArgument[] = []
-
   for (const line of usage) {
-    const matches = line.match(/<[^>]+>/g) ?? []
-    for (const match of matches) {
-      if (seen.has(match)) continue
-      seen.add(match)
-      argumentsFromUsage.push({
-        name: match,
-        required: true,
-      })
+    const positional = line.replace(USAGE_OPTION_PATTERN, "")
+    for (const match of positional.matchAll(/<[^>]+>/g)) {
+      if (seen.has(match[0])) continue
+      seen.add(match[0])
+      const prefix = positional.slice(0, match.index)
+      argumentsFromUsage.push({ name: match[0], required: prefix.lastIndexOf("[") <= prefix.lastIndexOf("]") })
     }
   }
-
   return argumentsFromUsage
+}
+
+function parseUsageOptions(usage: string[], explicit: ParsedCliOption[]): ParsedCliOption[] {
+  const options = [...explicit]
+  const seen = new Set(explicit.flatMap(option => option.flags))
+  for (const line of usage) {
+    for (const match of line.matchAll(USAGE_OPTION_PATTERN)) {
+      const flags = match[1]!.split(/\s*,\s*/)
+      if (flags.some(flag => seen.has(flag))) continue
+      flags.forEach(flag => seen.add(flag))
+      options.push({ flags, ...(match[2] ? { valueName: match[2] } : {}) })
+    }
+  }
+  return options
 }
 
 function buildAliasMap(): Map<string, string[]> {
@@ -277,7 +287,7 @@ export function buildCommandSchema(key: string): CommandSchema {
     deprecatedTo: deprecatedCommandMap[key],
     usage,
     arguments: argumentsList.length > 0 ? argumentsList : parseUsageArguments(usage),
-    options: parseOptions(sections.options),
+    options: parseUsageOptions(usage, parseOptions(sections.options)),
     subcommands: parseSubcommands(sections.subcommands),
     examples: parseExamples(sections.examples),
   }

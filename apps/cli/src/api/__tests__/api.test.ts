@@ -73,9 +73,9 @@ describe("mapCoreError", () => {
     })
 
     it("should preserve NotFound", () => {
-      const result = mapCoreError(new NotFound({ message: "Run not found" }))
+      const result = mapCoreError(new NotFound({ message: "Document not found" }))
       expect(result._tag).toBe("NotFound")
-      expect(result.message).toBe("Run not found")
+      expect(result.message).toBe("Document not found")
     })
   })
 
@@ -86,27 +86,13 @@ describe("mapCoreError", () => {
       expect(result.message).toBe("Task tx-abc123 not found")
     })
 
-    it("should map LearningNotFoundError", () => {
-      const result = mapCoreError({ _tag: "LearningNotFoundError", message: "Learning 42 not found" })
-      expect(result._tag).toBe("NotFound")
-      expect(result.message).toBe("Learning 42 not found")
-    })
 
-    it("should map FileLearningNotFoundError", () => {
-      const result = mapCoreError({ _tag: "FileLearningNotFoundError", message: "Not found" })
-      expect(result._tag).toBe("NotFound")
-    })
 
-    it("should map AttemptNotFoundError", () => {
-      const result = mapCoreError({ _tag: "AttemptNotFoundError", message: "Not found" })
-      expect(result._tag).toBe("NotFound")
-    })
 
-    it("should map RunNotFoundError", () => {
-      const result = mapCoreError({ _tag: "RunNotFoundError", message: "Run missing" })
-      expect(result._tag).toBe("NotFound")
-      expect(result.message).toBe("Run missing")
-    })
+
+
+
+
   })
 
   describe("maps validation errors to BadRequest", () => {
@@ -120,14 +106,6 @@ describe("mapCoreError", () => {
       const result = mapCoreError({ _tag: "CircularDependencyError", message: "Cycle detected" })
       expect(result._tag).toBe("BadRequest")
       expect(result.message).toBe("Cycle detected")
-    })
-  })
-
-  describe("maps service errors to ServiceUnavailable", () => {
-    it("should map EmbeddingUnavailableError", () => {
-      const result = mapCoreError({ _tag: "EmbeddingUnavailableError", message: "No embedding model" })
-      expect(result._tag).toBe("ServiceUnavailable")
-      expect(result.message).toBe("No embedding model")
     })
   })
 
@@ -201,9 +179,9 @@ describe("SafePathString", () => {
       )
     })
 
-    it("should accept paths with .tx/runs/", () => {
-      expect(decode("/project/.tx/runs/run-abc12345/stdout.log")).toBe(
-        "/project/.tx/runs/run-abc12345/stdout.log"
+    it("should accept paths with a spec path", () => {
+      expect(decode("/project/specs/design/checkout.md")).toBe(
+        "/project/specs/design/checkout.md"
       )
     })
 

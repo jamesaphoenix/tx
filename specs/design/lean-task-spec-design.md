@@ -27,9 +27,18 @@ all runtime layers and public interfaces. Historical storage remains dormant.
 
 # Architecture
 The CLI dispatches tasks through `task-dispatch.ts`. The REST, MCP and SDK use the
-same retained core layer. `getSpecHealth` aggregates docs, decisions and spec
+same retained core layer. `getSpecHealth` aggregates docs, invariants and spec
 results without success-shaped fallbacks. Dashboard cycles remain simple planning.
 Skills contain creation, copying and verification guidance; they launch no agents.
+The dashboard uses stored relationships and stable versioned document links.
+Its HTTP server is constructed through the same factory used by integration tests,
+accepts local browser origins and binds to loopback. Task controls are hidden while
+navigation changes identity; description saves are serialised and failed drafts
+remain available for an explicit retry. Packaged builds remove stale output before
+compilation so deleted runtime modules cannot remain in npm tarballs.
+Weekly cycles are opt-in. Auto-add settings persist, including an empty selection;
+cycle creation includes all matching tasks in one transaction and never relies on
+the first page of the task list. Editing a task cannot create a future cycle.
 
 # Interfaces
 ```yaml

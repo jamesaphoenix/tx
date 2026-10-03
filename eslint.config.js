@@ -679,6 +679,15 @@ export default [
       'tx/no-generic-utility-file-names': GENERIC_UTILITY_FILE_NAME_RULE
     }
   },
+  // Shared spec-health helper is exercised through actual checkout fixtures.
+  {
+    files: ['apps/dashboard/server/spec-health.ts'],
+    rules: {
+      'tx/require-integration-tests': ['error', {
+        api: { src: 'apps/dashboard/server/spec-health.ts', test: 'test/integration/dashboard-spec-health.test.ts', threshold: 80 }
+      }]
+    }
+  },
   // Dashboard React components and hooks (require component tests)
   {
     files: ['apps/dashboard/**/*.tsx', 'apps/dashboard/src/hooks/**/*.ts'],

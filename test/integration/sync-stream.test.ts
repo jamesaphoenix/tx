@@ -694,7 +694,7 @@ describe("Sync stream event logs", () => {
     expect(title).toBe("Newer by event_id")
   })
 
-  it("decision sync round-trip: export → clear → import", async () => {
+  it("preserves dormant decision rows and ignores their historical stream projection", async () => {
     // 1. Insert a decision directly via SQL
     const decId = "dec-roundtrip01"
     const contentHash = "abc123hash"
@@ -727,17 +727,9 @@ describe("Sync stream event logs", () => {
     expect(decisionEvents.length).toBe(1)
     expect(decisionEvents[0].payload.data.content).toBe("Use WAL mode")
 
-    // 3. Clear decisions table
-    await run(Effect.gen(function* () {
-      const db = yield* SqliteClient
-      db.prepare("DELETE FROM decisions").run()
-      const count = db.prepare("SELECT COUNT(*) as c FROM decisions").get() as { c: number }
-      expect(count.c).toBe(0)
-    }))
-
-    // 4. Hydrate from stream (reimports everything including decisions)
+    // Hydration leaves dormant rows intact and counts ignored events.
     const hydrateResult = await run(syncSvc.hydrate())
-    expect(hydrateResult).toBeDefined()
+    expect(hydrateResult.ignoredEvents).toBe(1)
 
     // 5. Verify decision was reimported
     const reimported = await run(Effect.gen(function* () {

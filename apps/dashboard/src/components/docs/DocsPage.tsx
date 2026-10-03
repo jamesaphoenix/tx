@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react"
+import { useState, useMemo, useEffect, useCallback } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useStore } from "@tanstack/react-store"
 import { docSelectionKey, fetchers } from "../../api/client"
@@ -10,7 +10,22 @@ import { DocDetail } from "./DocDetail"
 import { DocGraph } from "./DocGraph"
 
 export function DocsPage() {
-  const [selectedDocRef, setSelectedDocRef] = useState<string | null>(null)
+  const [selectedDocRef, updateSelectedDocRef] = useState<string | null>(() => {
+    const query = new URLSearchParams(window.location.search)
+    const docId = query.get("docId")
+    const version = query.get("version")
+    return docId && /^doc-[a-f0-9]{12}$/.test(docId) && version && /^[1-9]\d*$/.test(version) ? `${docId}:${version}` : null
+  })
+  const setSelectedDocRef = useCallback((ref: string | null) => {
+    updateSelectedDocRef(ref)
+    const query = new URLSearchParams({ tab: "docs" })
+    if (ref) {
+      const [docId, version] = ref.split(":")
+      query.set("docId", docId)
+      query.set("version", version)
+    }
+    window.history.replaceState({}, "", `${window.location.pathname}?${query}`)
+  }, [])
   const [showMap, setShowMap] = useState(false)
   const [kindFilter, setKindFilter] = useState("")
   const [statusFilter, setStatusFilter] = useState("")
@@ -24,13 +39,14 @@ export function DocsPage() {
 
   // Fetch docs for command palette navigation
   const { data: docsData } = useQuery({
-    queryKey: ["docs", kindFilter, statusFilter],
-    queryFn: () => fetchers.docs({ kind: kindFilter || undefined, status: statusFilter || undefined }),
+    queryKey: ["docs"],
+    queryFn: () => fetchers.docs(),
     refetchInterval: 10000,
   })
-  const docs = docsData?.docs ?? []
+  const allDocs = docsData?.docs ?? []
+  const docs = allDocs.filter(doc => (!kindFilter || doc.kind === kindFilter) && (!statusFilter || doc.status === statusFilter))
   const selectedDoc = selectedDocRef
-    ? docs.find((doc) => docSelectionKey(doc) === selectedDocRef) ?? null
+    ? allDocs.find((doc) => docSelectionKey(doc) === selectedDocRef) ?? null
     : null
 
   // Register doc-specific commands
@@ -110,8 +126,7 @@ export function DocsPage() {
       { id: "filter:doc-overview", label: "Filter: Overview docs", group: "Filters", icon: "filter", action: () => setKindFilter("overview") },
       { id: "filter:doc-prd", label: "Filter: PRD docs", group: "Filters", icon: "filter", action: () => setKindFilter("prd") },
       { id: "filter:doc-design", label: "Filter: Design docs", group: "Filters", icon: "filter", action: () => setKindFilter("design") },
-      { id: "filter:doc-requirement", label: "Filter: Requirement docs", group: "Filters", icon: "filter", action: () => setKindFilter("requirement") },
-      { id: "filter:doc-system-design", label: "Filter: System Design docs", group: "Filters", icon: "filter", action: () => setKindFilter("system_design") },
+      { id: "filter:doc-plan", label: "Filter: Plans", group: "Filters", icon: "filter", action: () => setKindFilter("plan") },
       { id: "filter:doc-all-kinds", label: "Filter: All doc kinds", group: "Filters", icon: "filter", action: () => setKindFilter("") },
     )
 
@@ -174,7 +189,7 @@ export function DocsPage() {
       <div className="flex h-full min-h-0 w-full flex-col overflow-hidden">
         <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-700/50 flex-shrink-0">
           <Button size="sm" variant="secondary" onClick={() => setShowMap(false)}>
-            &larr; Back to Docs
+            &larr; Back to Documents
           </Button>
           <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">
             Document Graph
@@ -183,6 +198,7 @@ export function DocsPage() {
         <div className="min-h-0 flex-1 overflow-hidden relative">
           <DocGraph
             selectedNodeId={selectedDoc ? `doc:${selectedDoc.id}` : null}
+            onSelectTask={taskId => window.location.assign(`/?${new URLSearchParams({ view: "list", taskId })}`)}
             onSelectDoc={(docDbId) => {
               const doc = docs.find((candidate) => candidate.id === docDbId)
               if (!doc) return
@@ -198,7 +214,7 @@ export function DocsPage() {
 
   return (
     <div className="flex h-full min-h-0 w-full overflow-hidden">
-      <div className="w-72 min-h-0 border-r border-gray-700 p-4 overflow-y-auto flex-shrink-0">
+      <div className={`w-full md:w-72 min-h-0 border-r border-gray-700 p-4 overflow-y-auto flex-shrink-0 ${selectedDoc ? "hidden md:block" : ""}`}>
         <DocSidebar
           selectedDocRef={selectedDocRef}
           onSelectDoc={setSelectedDocRef}
@@ -213,23 +229,26 @@ export function DocsPage() {
         />
       </div>
       {!selectedDoc ? (
-        <div className="min-h-0 flex-1 flex items-center justify-center text-gray-500">
+        <div className="min-h-0 flex-1 hidden md:flex items-center justify-center text-gray-500">
           <div className="text-center">
             <div className="text-4xl mb-4 opacity-30">&#x1F4C4;</div>
-            <div className="text-lg mb-2">Select a doc to view details</div>
+            <div className="text-lg mb-2">Select a document to view details</div>
             <div className="text-sm">
-              Docs show PRDs, design docs, and system overviews
+              Design → plan → tasks. Keep the design and the work together
             </div>
           </div>
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          <Button className="ml-4 mt-4 md:hidden" onClick={() => setSelectedDocRef(null)}>Back to Documents</Button>
           <DocDetail
             docId={selectedDoc.docId}
             version={selectedDoc.version}
             onNavigateToDoc={(nextDocId, nextVersion) => {
-              const next = docs.find((doc) => doc.docId === nextDocId && doc.version === nextVersion)
+              const next = allDocs.find((doc) => doc.docId === nextDocId && doc.version === nextVersion)
               if (next) {
+                setKindFilter("")
+                setStatusFilter("")
                 setSelectedDocRef(docSelectionKey(next))
               }
             }}

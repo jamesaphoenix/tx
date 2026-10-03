@@ -2,7 +2,7 @@
  * TX API Server Library
  *
  * REST/HTTP API server using Effect HttpApi.
- * Provides HTTP interface for task management, learnings, runs, and sync.
+ * Provides HTTP interface for tasks, documents, specification evidence and sync.
  *
  * This module provides the library API. For CLI usage, see server.ts.
  */
@@ -11,14 +11,13 @@ import { HttpApiBuilder } from "@effect/platform"
 import { NodeHttpServer, NodeRuntime } from "@effect/platform-node"
 import { Effect, Layer } from "effect"
 import { createServer } from "node:http"
-import { makeAppLayer, resolveTxDbPath } from "@jamesaphoenix/tx"
+import { makeAppLayer, resolveTxDbPath, resolveWorkspaceContext } from "@jamesaphoenix/tx"
 import { TasksLive } from "./routes/tasks.js"
 import { HealthLive } from "./routes/health.js"
 import { SyncLive } from "./routes/sync.js"
 import { DocsLive } from "./routes/docs.js"
 import { InvariantsLive } from "./routes/invariants.js"
 import { SpecTraceLive } from "./routes/spec-trace.js"
-import { DecisionsLive } from "./routes/decisions.js"
 import { TxApi } from "./api.js"
 import { authMiddleware, isAuthEnabled } from "./middleware/auth.js"
 import { bodyLimitMiddleware } from "./middleware/body-limit.js"
@@ -38,7 +37,6 @@ const ApiLive = HttpApiBuilder.api(TxApi).pipe(
   Layer.provide(DocsLive),
   Layer.provide(InvariantsLive),
   Layer.provide(SpecTraceLive),
-  Layer.provide(DecisionsLive),
 )
 
 // -----------------------------------------------------------------------------
@@ -55,12 +53,14 @@ export const makeServerLive = (options: {
   port?: number
   dbPath?: string
   hostname?: string
+  contentRoot?: string
 }) => {
   const port = options.port ?? parseInt(process.env.TX_API_PORT ?? "3001", 10)
   const host = options.hostname ?? process.env.TX_API_HOST ?? "127.0.0.1"
   const dbPath = options.dbPath ?? process.env.TX_DB_PATH ?? resolveTxDbPath()
 
-  const appLayer = makeAppLayer(dbPath)
+  const workspace = resolveWorkspaceContext({dbPath, contentRoot: options.contentRoot})
+  const appLayer = makeAppLayer(dbPath, {contentRoot: workspace.contentRoot, projection: workspace})
 
   return HttpApiBuilder.serve().pipe(
     Layer.provide(HttpApiBuilder.middleware(bodyLimitMiddleware)),

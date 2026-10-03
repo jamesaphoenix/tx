@@ -68,7 +68,7 @@ run_tests() {
         local file_count=$(grep -oE '[0-9]+ passed \([0-9]+\)' "$tmp_file" | grep -oE '\([0-9]+\)' | tr -d '()' || echo "")
 
         if [ -n "$test_count" ]; then
-            printf "${GREEN}  ✓${NC} %s — %s ${YELLOW}(%ds)${NC}\n" "$description" "$test_count" "$duration"
+            printf "${GREEN}  ✓${NC} %s - %s ${YELLOW}(%ds)${NC}\n" "$description" "$test_count" "$duration"
         else
             printf "${GREEN}  ✓${NC} %s ${YELLOW}(%ds)${NC}\n" "$description" "$duration"
         fi
@@ -106,6 +106,8 @@ check_build() {
 check_test() {
     run_silent "Unit & Integration tests (packages)" "npx turbo test"
     run_silent "Unit & Integration tests (root)" "scripts/test-quiet.sh"
+    run_tests "Production docs tests" "bun run test:docs"
+    run_tests "Published package install tests" "bun run test:package-install"
 }
 
 check_test_quick() {

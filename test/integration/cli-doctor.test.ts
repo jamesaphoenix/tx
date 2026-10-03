@@ -4,7 +4,7 @@ const normaliseTaskCommand = (args: string[]): string[] => /^(add|list|ready|sho
  *
  * Tests the following:
  * - Database validation checks (integrity, schema, FK, orphaned deps, statuses, parent refs)
- * - System diagnostic checks (database, WAL, schema, services, claims, tasks, API key)
+ * - System diagnostic checks (database, WAL, schema, services and tasks)
  * - Verbose output mode
  * - JSON output mode (includes both validation and diagnostic results)
  * - --fix flag for auto-fixing DB issues
@@ -191,11 +191,15 @@ describe("CLI doctor command (consolidated validate + diagnostics)", () => {
   })
 
   describe("verbose mode", () => {
-    it("shows additional details with --verbose", () => {
-      // API key warning should have details in verbose mode
-      const result = runTxArgs(["diag", "doctor", "--verbose"], dbPath, { ANTHROPIC_API_KEY: "" })
+    it("supports the documented -v verbose alias without printing the version", () => {
+      const result = runTxArgs(["diag","doctor","-v","--json"],dbPath)
       expect(result.status).toBe(0)
-      // Verbose details for missing API key
+      expect(JSON.parse(result.stdout).checks).toBeInstanceOf(Array)
+    })
+
+    it("shows additional details with --verbose", () => {
+      const result = runTxArgs(["diag", "doctor", "--verbose"], dbPath)
+      expect(result.status).toBe(0)
     })
 
     it("shows verbose task breakdown", async () => {
@@ -208,7 +212,7 @@ describe("CLI doctor command (consolidated validate + diagnostics)", () => {
     })
 
     it("does not show details without --verbose", () => {
-      const result = runTxArgs(["diag", "doctor"], dbPath, { ANTHROPIC_API_KEY: "" })
+      const result = runTxArgs(["diag", "doctor"], dbPath)
       expect(result.status).toBe(0)
       // Without verbose, details should not appear
       expect(result.stdout).not.toContain("Required for:")
@@ -329,7 +333,7 @@ describe("CLI doctor command (consolidated validate + diagnostics)", () => {
   describe("verbose message accuracy", () => {
     it("does not suggest --verbose when already verbose", () => {
       // With --verbose, should never say "Run with --verbose for details"
-      const result = runTxArgs(["diag", "doctor", "--verbose"], dbPath, { ANTHROPIC_API_KEY: "" })
+      const result = runTxArgs(["diag", "doctor", "--verbose"], dbPath)
       expect(result.status).toBe(0)
       expect(result.stdout).not.toContain("Run with --verbose for details")
     })

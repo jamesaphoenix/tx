@@ -1,13 +1,28 @@
 ---
 doc_style: guide
-title: Labels
-description: Labels
+title: tx task label
+description: Organise tasks with ordinary labels
 ---
 
-Use `tx task label add <name>`, `tx task label assign <task-id> <label>` and `tx task label list`.
-Filter work with `tx task ready --label <label>`. Labels are ordinary task metadata.
-Use `tx task label --help` for update, unassign and delete.
+## Purpose
+
+Use labels for filtering and grouping tasks. Labels do not trigger agents or
+execution rules.
+
+## Commands
 
 ```bash
-tx task label --help
+tx task label add "Feature"
+tx task label list
+tx task label assign <task-id> "Feature"
+tx task show <task-id>
+tx task label unassign <task-id> "Feature"
 ```
+
+Run `tx task label --help` for colours and deletion.
+
+## Workflow
+
+Choose a small set of labels that help find work. Apply them in the CLI or dashboard.
+Use [task](./tasks) dependencies for blockers and plan attachments for specification
+traceability. Labels are also available through the MCP task label tools.

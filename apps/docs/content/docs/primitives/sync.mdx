@@ -1,16 +1,30 @@
 ---
 doc_style: guide
-title: Sync
-description: Sync
+title: tx sync
+description: Share task and spec history safely
 ---
 
-Use `tx sync export`, `tx sync import`, `tx sync hydrate` and `tx sync status`.
-Streams under `.tx/streams` are git-friendly append-only data. Import rejects malformed
-or unknown events, validates recognised retired events and reports them as ignored.
-Hydrate replays retained projections without truncating existing tables.
-Old tables and stream files remain available for backup and a later downgrade.
-Run `tx sync --help` for supported options.
+## Purpose
+
+Export retained state as append-only events and import changes from another checkout.
+
+## Commands
 
 ```bash
+tx sync export
+tx sync import
 tx sync status
+tx sync hydrate
 ```
+
+Use `tx sync --help` for stream and legacy-file options.
+
+## Workflow
+
+Commit and exchange the `.tx/streams/` files alongside your project. Back up `.tx/`
+before upgrading. Import validates payloads before advancing progress and reports
+recognised retired records as ignored; malformed or unknown events fail.
+
+Hydrate reapplies retained projections without truncating existing tables. Historical
+records remain dormant rather than restoring removed features. See the
+[v0.20 migration guide](../migration) for command and compatibility changes.

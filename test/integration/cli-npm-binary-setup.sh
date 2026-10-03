@@ -1,38 +1,35 @@
 #!/bin/bash
-# Setup script for cli-npm-binary.test.ts
-# Creates an isolated npm install of tx-cli from packed tarballs.
-# Run BEFORE the vitest test (vitest workers can't run npm pack).
-#
+# Install the three publishable packages from tarballs, without mutating the checkout.
 # Usage: bash test/integration/cli-npm-binary-setup.sh [output-dir]
-# Output: prints the tmp directory path to stdout
-
+# stdout contains only the fixture directory; diagnostics go to stderr.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 SETUP_DIR="${1:-$(mktemp -d /tmp/tx-npm-binary-XXXXXX)}"
+mkdir -p "$SETUP_DIR"
+SETUP_DIR="$(cd "$SETUP_DIR" && pwd)"
+STAGING_DIR="$(mktemp -d /tmp/tx-npm-pack-XXXXXX)"
+trap 'rm -rf "$STAGING_DIR"' EXIT
 
-echo "$SETUP_DIR"
-
-cleanup() {
-  cd "$ROOT"
-  node scripts/strip-bun-exports.js --restore >&2 2>/dev/null || true
+for pkg in packages/core apps/agent-sdk apps/cli; do
+  pkg_stage="$STAGING_DIR/$pkg"
+  mkdir -p "$pkg_stage"
+  cp "$PROJECT_DIR/$pkg/package.json" "$pkg_stage/package.json"
+  cp -R "$PROJECT_DIR/$pkg/dist" "$pkg_stage/dist"
+  cp "$PROJECT_DIR/$pkg/README.md" "$pkg_stage/README.md"
+  if [ -d "$PROJECT_DIR/$pkg/migrations" ]; then
+    cp -R "$PROJECT_DIR/$pkg/migrations" "$pkg_stage/migrations"
+  fi
+  node --input-type=module - "$pkg_stage/package.json" <<'JS'
+import {readFileSync, writeFileSync} from "node:fs"
+const path = process.argv[2]
+const pkg = JSON.parse(readFileSync(path, "utf8"))
+for (const conditions of Object.values(pkg.exports ?? {})) {
+  if (conditions && typeof conditions === "object") delete conditions.bun
 }
-trap cleanup EXIT
-
-cd "$ROOT"
-
-# 1. Strip bun export conditions
-node scripts/strip-bun-exports.js >&2
-
-# 2. Pack each package
-for pkg in packages/types packages/core packages/test-utils packages/tx apps/cli; do
-  (cd "$pkg" && npm pack --pack-destination "$SETUP_DIR" >/dev/null 2>&1)
+writeFileSync(path, JSON.stringify(pkg, null, 2) + "\n")
+JS
+  (cd "$pkg_stage" && npm pack --ignore-scripts --pack-destination "$SETUP_DIR" >&2)
 done
-
-# 3. Install all tarballs
-npm install --prefix "$SETUP_DIR" "$SETUP_DIR"/*.tgz >/dev/null 2>&1
-
-# 4. Restore (also handled by trap)
-node scripts/strip-bun-exports.js --restore >&2
-
-echo "Setup complete" >&2
+npm install --ignore-scripts --prefix "$SETUP_DIR" "$SETUP_DIR"/*.tgz >&2
+printf '%s\n' "$SETUP_DIR"

@@ -21,6 +21,8 @@ dist/
 **/.turbo/
 *.tsbuildinfo
 coverage/
+.vitest/
+apps/cli/generated-skills/
 .next/
 
 # Copied migrations (build artifact in packages/core)

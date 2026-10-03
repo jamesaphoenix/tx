@@ -26,7 +26,7 @@
       "id": "tx-docs",
       "title": "Create tx documents",
       "installPath": ".claude/skills/tx-docs",
-      "checksum": "330c7c2abab626fa56ef4422a21e66626daa33e63047dbda1b02997fc73eb93f",
+      "checksum": "b9efa755b57cf4da3cd31d42bb709a05504468de3d70485f25ee005f1ac12876",
       "commandKeys": [],
       "source": "bundled"
     },

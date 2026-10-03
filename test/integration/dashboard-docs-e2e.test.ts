@@ -54,7 +54,7 @@ async function waitForServers(outputRef: { value: string }, apiPort: number, tim
   throw new Error(`dashboard did not become ready. output:\n${outputRef.value}`)
 }
 
-describe.sequential("dashboard docs e2e", () => {
+describe("dashboard docs e2e", () => {
   let proc: ChildProcess | null = null
   let tmpProjectDir: string | null = null
 

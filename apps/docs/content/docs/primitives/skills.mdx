@@ -1,14 +1,30 @@
 ---
 doc_style: guide
-title: Four small skills
-description: Four small skills
+title: tx skills
+description: Install four small authoring guides
 ---
 
-`tx init --codex` or `tx init --claude` installs `tx-tasks`, `tx-docs`,
-`tx-plan` and `verify-invariants`. These cover authoring tasks, specs and agent
-plan copies, and mapping invariants to code and executed test evidence.
-Run `tx skills sync` to update tx-owned files while keeping unrelated guides.
+## Purpose
+
+Ship only task creation, doc authoring, agent-plan copying and invariant verification
+instructions. No agents or execution loops are included.
+
+## Commands
 
 ```bash
+tx init --claude
+tx init --codex
 tx skills sync
 ```
+
+Run `tx skills --help` for generation and sync options. Sync preserves unrelated skills.
+
+## Workflow
+
+- `tx-tasks`: create tasks, hierarchy and dependencies.
+- `tx-docs`: author and connect PRDs/design docs.
+- `tx-plan`: copy a normal coding-agent plan into docs and link its source.
+- `verify-invariants`: map rules into code/tests and verify real execution evidence.
+
+Keep planning and execution in your coding agent. tx maintains the
+**spec -> plan -> tasks** graph and verification records.

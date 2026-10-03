@@ -273,28 +273,4 @@ export {
   type SpecSignoffRow,
 } from "./spec-trace.js"
 
-// Decision types & schemas (spec-driven development triangle)
-export {
-  DECISION_STATUSES,
-  DECISION_SOURCES,
-  DecisionStatusSchema,
-  DecisionSourceSchema,
-  DecisionIdSchema,
-  DecisionSchema,
-  CreateDecisionInputSchema,
-  ReviewDecisionInputSchema,
-  DecisionSerializedSchema,
-  serializeDecision,
-  isValidDecisionStatus,
-  isValidDecisionSource,
-  type DecisionStatus,
-  type DecisionSource,
-  type DecisionId,
-  type Decision,
-  type CreateDecisionInput,
-  type ReviewDecisionInput,
-  type DecisionSerialized,
-  type DecisionRow,
-} from "./decision.js"
-
 export * from "./response.js"

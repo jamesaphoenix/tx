@@ -1,8 +1,8 @@
 # tx
 
-Tasks and spec-driven development, with a local SQLite database and a dashboard.
-Write requirements and invariants, save your coding agent's plan, then create linked
-tasks. Map invariants to the code that enforces them and to meaningful tests.
+Design docs, plans and tasks, with a local SQLite database and a dashboard.
+Write the design, save your coding agent's plan, then create linked tasks.
+Map invariants to the code that enforces them and to meaningful tests.
 
 ## Start
 
@@ -20,12 +20,10 @@ tx task done <task-id>
 Standalone binaries: use [the installer](https://github.com/jamesaphoenix/tx/blob/main/install.sh)
 or download an asset from [Releases](https://github.com/jamesaphoenix/tx/releases).
 
-## Spec -> plan -> tasks
+## Design -> plan -> tasks
 
 ```bash
-tx doc add prd checkout-prd --title "Checkout requirements"
 tx doc add design checkout-design --title "Checkout design"
-tx doc link checkout-prd checkout-design
 tx doc add plan checkout-plan --title "Checkout implementation plan"
 tx doc link checkout-design checkout-plan
 tx doc attach <task-id> checkout-plan
@@ -35,9 +33,11 @@ Edit the generated files in `specs/`. Plans accept your coding agent's normal fo
 copy its text below the tx frontmatter and keep an adjacent `<name>.source` symlink
 to the original file when it was authored elsewhere. The saved copy is authoritative;
 the symlink records provenance and is not automatic synchronisation.
+Add a separate PRD or system overview when the change needs one.
 
 ```bash
 tx doc sync checkout-design
+tx doc sync checkout-plan
 tx spec discover --doc checkout-design
 tx spec gaps --doc checkout-design
 tx spec health
@@ -49,7 +49,7 @@ for spec schemas and commands.
 
 ## Interfaces
 
-- CLI: `tx task`, `tx doc`, `tx spec`, `tx decision`, `tx sync` and `tx diag`.
+- CLI: `tx task`, `tx doc`, `tx spec`, `tx sync` and `tx diag`.
 - Dashboard: tasks, labels, planning cycles, docs and Spec Health.
 - REST: `tx-api` from the CLI package.
 - MCP: `tx-mcp` from the CLI package.
@@ -71,7 +71,7 @@ Task commands now require `tx task`: replace `tx add` with `tx task add`,
 and `tx dep block` with `tx task dep block`. Old syntax fails with a replacement
 hint before opening the database. Run `tx task --help` for the full namespace.
 
-Memory, learnings, pins, claims, messaging, guards, task shell verification,
+Decision review, memory, learnings, pins, claims, messaging, guards, task shell verification,
 reflection, automated decomposition, agent execution, Ralph and watchdog are retired.
 Ordinary labels and dashboard planning cycles remain. Existing tables and migration
 history are retained. Import validates historical stream events, reports recognised

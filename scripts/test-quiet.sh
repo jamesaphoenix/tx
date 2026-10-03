@@ -14,7 +14,7 @@
 
 set -o pipefail
 
-# Resolve project root (skill lives at .claude/skills/test-quiet/scripts/)
+# Resolve the checkout containing this runner.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_DIR"
@@ -22,7 +22,7 @@ cd "$PROJECT_DIR"
 # ── Defaults ──────────────────────────────────────────────────────────────────
 FLAKY_MODE=false
 FLAKY_RUNS=3
-TEST_PATH="test/integration/"
+TEST_PATHS=()
 
 # ── Colors (only if terminal) ────────────────────────────────────────────────
 if [ -t 1 ]; then
@@ -45,11 +45,15 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --runs)
+            if [[ ! ${2:-} =~ ^[1-9][0-9]*$ ]]; then
+                echo "--runs requires a positive integer" >&2
+                exit 2
+            fi
             FLAKY_RUNS="$2"
             shift 2
             ;;
         --help|-h)
-            echo "Usage: $0 [options] [test-path]"
+            echo "Usage: $0 [options] [test-path ...]"
             echo ""
             echo "Context-efficient test runner. Hides passing output, shows ALL failures."
             echo ""
@@ -67,36 +71,43 @@ while [[ $# -gt 0 ]]; do
             exit 0
             ;;
         *)
-            TEST_PATH="$1"
+            TEST_PATHS+=("$1")
             shift
             ;;
     esac
 done
 
+if [ ${#TEST_PATHS[@]} -eq 0 ]; then
+    TEST_PATHS=("test/integration/")
+fi
+
 # ── Phase 1: Run all tests with JSON reporter ────────────────────────────────
-printf "${BOLD}tx test-quiet${NC} ${DIM}— hide passing, show ALL failures${NC}\n"
+printf "${BOLD}tx test-quiet${NC} ${DIM}- hide passing, show ALL failures${NC}\n"
 printf "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
 
-TMP_JSON=$(mktemp)
-TMP_STDERR=$(mktemp)
+RESULTS_DIR=$(mktemp -d)
+trap 'rm -rf "$RESULTS_DIR"' EXIT
+TMP_JSON="$RESULTS_DIR/report.json"
+TMP_STDERR="$RESULTS_DIR/stderr.log"
+TMP_STDOUT="$RESULTS_DIR/stdout.log"
 START_TIME=$(date +%s)
 
-# Run vitest with JSON reporter (stdout=JSON, stderr=progress)
-bunx --bun vitest run "$TEST_PATH" --reporter=json 2>"$TMP_STDERR" >"$TMP_JSON"
+# Vitest 5 defaults to a report file. Choose a private path explicitly and keep
+# console output separate so diagnostics cannot corrupt the structured report.
+bunx --bun vitest run "${TEST_PATHS[@]}" --reporter=json --outputFile="$TMP_JSON" 2>"$TMP_STDERR" >"$TMP_STDOUT"
 VITEST_EXIT=$?
 
 END_TIME=$(date +%s)
 DURATION=$((END_TIME - START_TIME))
 
 # ── Phase 2: Parse JSON results ──────────────────────────────────────────────
-if ! jq empty "$TMP_JSON" 2>/dev/null; then
+if ! jq -e '(.testResults | type == "array") and (.numTotalTests | type == "number")' "$TMP_JSON" >/dev/null 2>&1; then
     printf "${RED}  ✗ vitest failed to produce valid JSON output${NC}\n"
     echo ""
     echo "━━━ stderr ━━━"
     cat "$TMP_STDERR"
     echo "━━━ stdout ━━━"
-    cat "$TMP_JSON"
-    rm -f "$TMP_JSON" "$TMP_STDERR"
+    cat "$TMP_STDOUT"
     exit 1
 fi
 
@@ -153,16 +164,19 @@ done <<< "$FAILING_FILES"
 # ── Phase 4: Summary ─────────────────────────────────────────────────────────
 printf "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
 
-if [ "$FAILED_FILES" -eq 0 ]; then
-    printf "${GREEN}${BOLD}All passing${NC} — %s tests across %s files ${DIM}(%ds)${NC}\n" "$PASSED_TESTS" "$TOTAL_FILES" "$DURATION"
+if [ "$VITEST_EXIT" -ne 0 ] && [ "$FAILED_FILES" -eq 0 ]; then
+    printf "${RED}Test runner failed before reporting assertions${NC}\n"
+    cat "$TMP_STDERR" "$TMP_STDOUT"
+elif [ "$FAILED_FILES" -eq 0 ]; then
+    printf "${GREEN}${BOLD}All passing${NC} - %s tests across %s files ${DIM}(%ds)${NC}\n" "$PASSED_TESTS" "$TOTAL_FILES" "$DURATION"
 else
-    printf "${RED}${BOLD}%s/%s files failed${NC} — %s/%s tests failed, %s skipped ${DIM}(%ds)${NC}\n" \
+    printf "${RED}${BOLD}%s/%s files failed${NC} - %s/%s tests failed, %s skipped ${DIM}(%ds)${NC}\n" \
         "$FAILED_FILES" "$TOTAL_FILES" "$FAILED_TESTS" "$TOTAL_TESTS" "$SKIPPED_TESTS" "$DURATION"
 fi
 
 # ── Phase 5: Flaky detection ─────────────────────────────────────────────────
 if [ "$FLAKY_MODE" = true ] && [ ${#FAILED_FILE_LIST[@]} -gt 0 ]; then
-    printf "\n${BOLD}${CYAN}Flaky detection${NC} — re-running %s failing files %s times each\n" "${#FAILED_FILE_LIST[@]}" "$FLAKY_RUNS"
+    printf "\n${BOLD}${CYAN}Flaky detection${NC} - re-running %s failing files %s times each\n" "${#FAILED_FILE_LIST[@]}" "$FLAKY_RUNS"
     printf "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
 
     declare -a FLAKY_FILES=()
@@ -173,8 +187,8 @@ if [ "$FLAKY_MODE" = true ] && [ ${#FAILED_FILE_LIST[@]} -gt 0 ]; then
         fail_count=0
 
         for ((run=1; run<=FLAKY_RUNS; run++)); do
-            TMP_RUN=$(mktemp)
-            if bunx --bun vitest run "$failed_file" --reporter=json 2>/dev/null >"$TMP_RUN"; then
+            TMP_RUN="$RESULTS_DIR/rerun.json"
+            if bunx --bun vitest run "$failed_file" --reporter=json --outputFile="$TMP_RUN" > /dev/null 2>&1; then
                 run_ok=$(jq '.numFailedTests' "$TMP_RUN" 2>/dev/null)
                 if [ "$run_ok" = "0" ]; then
                     pass_count=$((pass_count + 1))
@@ -219,7 +233,7 @@ if [ "$FLAKY_MODE" = true ] && [ ${#FAILED_FILE_LIST[@]} -gt 0 ]; then
     fi
 
     if [ ${#FLAKY_FILES[@]} -eq 0 ]; then
-        printf "${GREEN}No flaky tests detected${NC} — all failures are consistent\n"
+        printf "${GREEN}No flaky tests detected${NC} - all failures are consistent\n"
     fi
 fi
 

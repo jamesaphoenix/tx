@@ -30,10 +30,12 @@ Memory, execution loops, coordination and supervision obscure the useful task,
 document and verification primitives and add unwanted installation ceremony.
 
 # Scope
-Tasks, dependencies, hierarchy, labels, documents, decisions, invariant evidence,
+Tasks, dependencies, hierarchy, labels, documents, plans, invariant evidence,
 sync, CLI, REST, MCP, TypeScript SDK, dashboard and ordinary planning cycles.
 Remove runtime agents, Ralph, watchdog, execution tracing, memory, claims, pins,
-group context, gates, guards, reflection and automatic decomposition/review.
+group context, decisions, gates, guards, reflection and automatic decomposition/review.
+The main workflow is design -> plan -> tasks. Overview and PRD are optional.
+Built-in document kinds are overview, prd, design and plan.
 
 # Requirements
 ```yaml

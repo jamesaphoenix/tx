@@ -1,11 +1,11 @@
-import { dashboardSpecHealth } from "./spec-health"
+import { dashboardSpecHealth } from "./spec-health.js"
 import { Database } from "bun:sqlite"
 import { randomUUID } from "node:crypto"
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs"
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 import { resolve, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
-import { TASK_STATUSES, type TaskRow, type DependencyRow } from "@jamesaphoenix/tx/types"
+import { TASK_STATUSES, DocStableIdSchema, type TaskRow, type DependencyRow, type TaskLinkedDocRef } from "@jamesaphoenix/tx/types"
 import { parse as parseYaml } from "yaml"
 import {
   applyMigrations,
@@ -17,16 +17,15 @@ import {
   MdDocParseError,
   parseMdDocSync,
   readTxConfig,
+  writeDashboardAutoAddStatuses,
   renderDocToMarkdown,
   resolvePathWithin,
+  resolveWorkspaceContext,
 } from "@jamesaphoenix/tx"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const fallbackRoot = resolve(__dirname, "../../..")
 // TX_DB_PATH is set by the dashboard command to scope to the caller's CWD
-const configuredDbPath = process.env.TX_DB_PATH ?? resolve(fallbackRoot, ".tx/tasks.db")
-const dbPath = resolve(configuredDbPath)
-const dbDir = dirname(dbPath)
 const VALID_TASK_STATUSES = new Set<string>(TASK_STATUSES)
 type DashboardDefaultTaskAssigmentType = "human" | "agent"
 type DashboardDefaultTaskView = "list" | "kanban"
@@ -43,6 +42,7 @@ type DashboardCycleSettings = {
   cycleLengthDays: number
   cycleStartDay: DashboardCycleStartDay
   carryStatuses: string[]
+  autoAddStatuses: string[]
 }
 const VALID_ASSIGNEE_TYPES = new Set<DashboardDefaultTaskAssigmentType>(["human", "agent"])
 const VALID_TASK_VIEWS = new Set<DashboardDefaultTaskView>(["list", "kanban"])
@@ -62,11 +62,6 @@ const DASHBOARD_CYCLES_SECTION = "dashboard.cycles"
 const DASHBOARD_CYCLE_LENGTH_DAYS_KEY = "cycle_length_days"
 const DASHBOARD_CYCLE_START_DAY_KEY = "cycle_start_day"
 const DASHBOARD_CARRY_STATUSES_KEY = "carry_statuses"
-const DEFAULT_DASHBOARD_CYCLE_SETTINGS: DashboardCycleSettings = {
-  cycleLengthDays: 7,
-  cycleStartDay: "monday",
-  carryStatuses: ["planning", "active", "blocked", "review", "needs_review"],
-}
 const IN_PROGRESS_TASK_STATUSES = new Set<string>(["planning", "active", "blocked", "review", "needs_review"])
 const DEFAULT_LABEL_COLORS = [
   "#2563eb", // blue
@@ -122,19 +117,28 @@ type Route = {
 }
 
 const CORS_HEADERS: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET,POST,PATCH,DELETE,OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Vary": "Origin",
 }
 
-const applyCorsHeaders = (res: ServerResponse): void => {
+const isLoopbackUrl = (value: string): boolean => {
+  try {
+    const url = new URL(value)
+    return (url.protocol === "http:" || url.protocol === "https:")
+      && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
+      && !url.username && !url.password
+  } catch { return false }
+}
+
+const applyCorsHeaders = (res: ServerResponse, origin?: string): void => {
   for (const [key, value] of Object.entries(CORS_HEADERS)) {
     res.setHeader(key, value)
   }
+  if (origin) res.setHeader("Access-Control-Allow-Origin", origin)
 }
 
 const writeJsonResponse = (res: ServerResponse, response: JsonResponse): void => {
-  applyCorsHeaders(res)
   for (const [key, value] of Object.entries(response.headers)) {
     res.setHeader(key, value)
   }
@@ -192,8 +196,17 @@ class DashboardRouter {
   }
 
   async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const origin = req.headers.origin
+    if (!isLoopbackUrl(`http://${req.headers.host ?? ""}`) || (origin !== undefined && !isLoopbackUrl(origin))) {
+      writeJsonResponse(res, {
+        status:403,
+        headers:{"Content-Type":"application/json; charset=utf-8"},
+        body:JSON.stringify({error:"The dashboard only accepts local requests"}),
+      })
+      return
+    }
+    applyCorsHeaders(res, origin)
     if (req.method === "OPTIONS") {
-      applyCorsHeaders(res)
       res.statusCode = 204
       res.end()
       return
@@ -241,7 +254,7 @@ class DashboardRouter {
             total += buf.length
             if (total > MAX_BODY_BYTES) {
               // Stop buffering; the route's catch maps this to a 413.
-              rejectBody(new Error("Request body too large"))
+              rejectBody(new DashboardRequestError("Request body too large", 413))
               return
             }
             chunks.push(buf)
@@ -260,7 +273,13 @@ class DashboardRouter {
           param: (name: string): string => params.get(name) ?? "",
           json: async <T>(): Promise<T> => {
             const raw = await readBodyText()
-            return JSON.parse(raw) as T
+            let parsed: unknown
+            try { parsed = JSON.parse(raw) }
+            catch { throw new DashboardRequestError("Request body must be valid JSON", 400) }
+            if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+              throw new DashboardRequestError("Request body must be a JSON object", 400)
+            }
+            return parsed as T
           },
         },
         json: (body: unknown, status = 200): JsonResponse => ({
@@ -295,10 +314,30 @@ class DashboardRouter {
   }
 }
 
+class DashboardRequestError extends Error {
+  constructor(message: string, readonly status: 400 | 413) { super(message) }
+}
+
+const routeError = (context: Context, error: unknown): JsonResponse => {
+  if (error instanceof DashboardRequestError) return context.json({ error: error.message }, error.status)
+  console.error("[dashboard] Route failed:", error)
+  return context.json({ error: "Internal server error" }, 500)
+}
+
+export interface DashboardServerOptions {
+  readonly db?: Database
+  readonly dbPath?: string
+  readonly contentRoot?: string
+}
+
+/** Build the same HTTP server used by the CLI, without opening a listening port. */
+export function createDashboardServer(options: DashboardServerOptions = {}) {
+const dbPath = resolve(options.dbPath ?? process.env.TX_DB_PATH ?? resolve(fallbackRoot, ".tx/tasks.db"))
+const contentRoot = options.contentRoot ?? resolveWorkspaceContext({ dbPath }).contentRoot
 const app = new DashboardRouter()
 
 // Lazy DB connection
-let db: Database | null = null
+let db: Database | null = options.db ?? null
 const getDb = () => {
   if (!db) {
     if (!existsSync(dbPath)) {
@@ -465,6 +504,7 @@ interface SettingsPatchPayload {
       cycleLengthDays?: number
       cycleStartDay?: string
       carryStatuses?: string[]
+      autoAddStatuses?: string[]
     }
   }
 }
@@ -537,7 +577,7 @@ interface DocRow {
   id: number
   doc_id: string | null
   hash: string
-  kind: "overview" | "prd" | "design" | "requirement" | "system_design" | "runbook" | "decision"
+  kind: string
   name: string
   title: string
   version: number
@@ -564,7 +604,7 @@ interface DocResponse {
   id: number
   docId: string
   hash: string
-  kind: "overview" | "prd" | "design" | "requirement" | "system_design" | "runbook" | "decision"
+  kind: string
   name: string
   title: string
   version: number
@@ -586,6 +626,19 @@ function hashString(value: string): number {
 
 function defaultLabelColor(name: string): string {
   return DEFAULT_LABEL_COLORS[hashString(name) % DEFAULT_LABEL_COLORS.length]!
+}
+
+function validateTaskFields(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return "Task fields must be an object"
+  const fields = payload as Record<string,unknown>
+  for (const field of ["title", "description", "status"]) {
+    if (fields[field] !== undefined && typeof fields[field] !== "string") return `${field} must be a string`
+  }
+  for (const field of ["parentId", "assigneeId", "assignedAt", "assignedBy"]) {
+    if (fields[field] !== undefined && fields[field] !== null && typeof fields[field] !== "string") return `${field} must be a string or null`
+  }
+  if (fields.metadata !== undefined && (!fields.metadata || typeof fields.metadata !== "object" || Array.isArray(fields.metadata))) return "metadata must be an object"
+  return null
 }
 
 function normalizeLabelName(name: string): string {
@@ -623,9 +676,9 @@ function normalizeAssigneeType(
 function toSettingsResponse(): SettingsResponse {
   return {
     dashboard: {
-      defaultTaskAssigmentType: readDashboardDefaultTaskAssigmentType(process.cwd()),
-      defaultTaskView: readDashboardDefaultTaskView(process.cwd()),
-      cycles: readDashboardCycleSettings(process.cwd()),
+      defaultTaskAssigmentType: readDashboardDefaultTaskAssigmentType(contentRoot),
+      defaultTaskView: readDashboardDefaultTaskView(contentRoot),
+      cycles: readDashboardCycleSettings(contentRoot),
     },
   }
 }
@@ -697,55 +750,7 @@ function readDashboardDefaultTaskView(cwd: string): DashboardDefaultTaskView {
 }
 
 function readDashboardCycleSettings(cwd: string): DashboardCycleSettings {
-  const configPath = resolve(cwd, ".tx", "config.toml")
-  if (!existsSync(configPath)) {
-    return {
-      ...DEFAULT_DASHBOARD_CYCLE_SETTINGS,
-      carryStatuses: [...DEFAULT_DASHBOARD_CYCLE_SETTINGS.carryStatuses],
-    }
-  }
-  try {
-    const raw = readFileSync(configPath, "utf8")
-    const cycleLengthRaw = extractTomlValue(
-      raw,
-      DASHBOARD_CYCLES_SECTION,
-      DASHBOARD_CYCLE_LENGTH_DAYS_KEY
-    )
-    const cycleStartDayRaw = extractTomlValue(
-      raw,
-      DASHBOARD_CYCLES_SECTION,
-      DASHBOARD_CYCLE_START_DAY_KEY
-    )
-    const carryStatusesRaw = extractTomlArray(
-      raw,
-      DASHBOARD_CYCLES_SECTION,
-      DASHBOARD_CARRY_STATUSES_KEY
-    )
-
-    const cycleLengthParsed = cycleLengthRaw ? parseInt(cycleLengthRaw, 10) : NaN
-    const cycleLengthDays = Number.isFinite(cycleLengthParsed) && cycleLengthParsed > 0
-      ? cycleLengthParsed
-      : DEFAULT_DASHBOARD_CYCLE_SETTINGS.cycleLengthDays
-    const cycleStartDay = isDashboardCycleStartDay(cycleStartDayRaw)
-      ? cycleStartDayRaw
-      : DEFAULT_DASHBOARD_CYCLE_SETTINGS.cycleStartDay
-    const carryStatuses = carryStatusesRaw
-      .map((status) => status.trim())
-      .filter((status) => status.length > 0)
-
-    return {
-      cycleLengthDays,
-      cycleStartDay,
-      carryStatuses: carryStatuses.length > 0
-        ? carryStatuses
-        : [...DEFAULT_DASHBOARD_CYCLE_SETTINGS.carryStatuses],
-    }
-  } catch {
-    return {
-      ...DEFAULT_DASHBOARD_CYCLE_SETTINGS,
-      carryStatuses: [...DEFAULT_DASHBOARD_CYCLE_SETTINGS.carryStatuses],
-    }
-  }
+  return readTxConfig(cwd).dashboard.cycles
 }
 
 function writeDashboardDefaultTaskAssigmentType(
@@ -843,47 +848,6 @@ function extractTomlValue(toml: string, section: string, key: string): string | 
     }
   }
   return null
-}
-
-function extractTomlArray(toml: string, section: string, key: string): string[] {
-  const lines = toml.split("\n")
-  let inSection = false
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]
-    const trimmed = line.trim()
-    if (trimmed === `[${section}]`) {
-      inSection = true
-      continue
-    }
-    if (trimmed.startsWith("[") && inSection) {
-      break
-    }
-    if (!inSection) continue
-
-    const arrayStart = new RegExp(`^${key}\\s*=\\s*\\[`).exec(trimmed)
-    if (!arrayStart) continue
-
-    let collected = trimmed
-    while (!collected.includes("]") && i + 1 < lines.length) {
-      i += 1
-      collected += lines[i]!.trim()
-    }
-
-    const out: string[] = []
-    const quoted = /["']([^"']+)["']/g
-    let match: RegExpExecArray | null
-    while ((match = quoted.exec(collected)) !== null) {
-      if (match[1].trim().length > 0) {
-        out.push(match[1].trim())
-      }
-    }
-    return out
-  }
-
-  const fallback = extractTomlValue(toml, section, key)
-  if (!fallback) return []
-  return fallback.split(",").map((value) => value.trim()).filter(Boolean)
 }
 
 function patchTomlKey(
@@ -1036,6 +1000,7 @@ interface TaskRowWithDeps extends TaskRowWithAssignment {
   children: string[]
   isReady: boolean
   labels: TaskLabel[]
+  linkedDocs: TaskLinkedDocRef[]
 }
 
 interface TaskDependencySnapshot {
@@ -1065,6 +1030,7 @@ interface TaskWithDepsResponse {
   children: string[]
   isReady: boolean
   labels: TaskLabel[]
+  linkedDocs: TaskLinkedDocRef[]
 }
 
 function parseTaskMetadata(value: string): Record<string, unknown> {
@@ -1097,6 +1063,7 @@ function serializeTask(task: TaskRowWithDeps): TaskWithDepsResponse {
     children: task.children,
     isReady: task.isReady,
     labels: task.labels,
+    linkedDocs: task.linkedDocs,
   }
 }
 
@@ -1260,47 +1227,6 @@ function getNextUpcomingCycle(db: Database): CycleRow | null {
   return row ?? null
 }
 
-function getLatestCycleWindow(db: Database): { end_date: string } | null {
-  const row = db.prepare(`
-    SELECT end_date
-    FROM cycles
-    ORDER BY start_date DESC, created_at DESC
-    LIMIT 1
-  `).get() as { end_date: string } | undefined
-
-  return row ?? null
-}
-
-function computeCycleWindowAfter(endDate: string, config: DashboardCycleSettings): { startDate: string; endDate: string } {
-  const parsed = parseDateOnly(endDate)
-  if (!parsed) {
-    return computeDefaultCycleWindow(config)
-  }
-
-  const startDate = formatDateOnly(startOfUtcDay(parsed))
-  const nextEndDate = formatDateOnly(addUtcDays(parsed, config.cycleLengthDays))
-  return { startDate, endDate: nextEndDate }
-}
-
-function getOrCreateNextCycle(db: Database, config: DashboardCycleSettings): CycleRow {
-  const existingUpcoming = getNextUpcomingCycle(db)
-  if (existingUpcoming) {
-    return existingUpcoming
-  }
-
-  const latestCycle = getLatestCycleWindow(db)
-  const window = latestCycle?.end_date
-    ? computeCycleWindowAfter(latestCycle.end_date, config)
-    : computeDefaultCycleWindow(config)
-  const status: CycleStatus = hasCurrentCycle(db) ? "upcoming" : "current"
-
-  return insertCycle(db, {
-    startDate: window.startDate,
-    endDate: window.endDate,
-    status,
-  })
-}
-
 function hasActiveCycleAssignment(db: Database, taskId: string): boolean {
   const row = db.prepare(`
     SELECT 1
@@ -1314,17 +1240,12 @@ function hasActiveCycleAssignment(db: Database, taskId: string): boolean {
   return Boolean(row)
 }
 
-function maybeAddTaskToNextCycle(db: Database, taskId: string, taskStatus: string): void {
-  if (taskStatus === "backlog" || hasActiveCycleAssignment(db, taskId)) {
-    return
-  }
-
-  const config = readDashboardCycleSettings(process.cwd())
-  const cycle = getOrCreateNextCycle(db, config)
-  db.prepare(`
-    INSERT OR IGNORE INTO cycle_tasks (cycle_id, task_id)
-    VALUES (?, ?)
-  `).run(cycle.id, taskId)
+function maybeAddTaskToCurrentCycle(db: Database, taskId: string, taskStatus: string): void {
+  const config = readDashboardCycleSettings(contentRoot)
+  if (!config.autoAddStatuses.includes(taskStatus) || hasActiveCycleAssignment(db, taskId)) return
+  const cycle = db.prepare("SELECT id FROM cycles WHERE status='current' LIMIT 1").get() as {id:string} | undefined
+  if (!cycle) return
+  db.prepare("INSERT OR IGNORE INTO cycle_tasks(cycle_id,task_id) VALUES(?,?)").run(cycle.id,taskId)
 }
 
 function nextCycleName(db: Database): string {
@@ -1378,7 +1299,7 @@ function computeCurrentCycleWindow(config: DashboardCycleSettings): { startDate:
 }
 
 function shouldAutoCreateCurrentCycle(autoCreateQueryValue: string | undefined): boolean {
-  if (!autoCreateQueryValue) return true
+  if (!autoCreateQueryValue) return false
   return autoCreateQueryValue !== "false" && autoCreateQueryValue !== "0"
 }
 
@@ -1518,12 +1439,7 @@ function renderMarkdownFromYaml(yamlContent: string, filePath: string): string {
 }
 
 function getDocsRootPath(): string {
-  try {
-    const config = readTxConfig(process.cwd())
-    return resolve(process.cwd(), config.docs.path)
-  } catch {
-    return resolve(dbDir, "docs")
-  }
+  return resolve(contentRoot, readTxConfig(contentRoot).docs.path)
 }
 
 /**
@@ -1721,6 +1637,20 @@ function enrichTasksWithDeps(
 ): TaskRowWithDeps[] {
   const dependencySnapshot = snapshot ?? buildDependencySnapshot(db)
   const labelsByTask = loadTaskLabelsMap(db, tasks.map(t => t.id))
+  const docsByTask = new Map<string, TaskLinkedDocRef[]>()
+  if (tasks.length && hasDocsSchema(db) && hasTaskDocLinksSchema(db)) {
+    const placeholders = tasks.map(() => "?").join(",")
+    const rows = db.prepare(`SELECT d.*, l.task_id, l.link_type FROM task_doc_links l
+      JOIN docs d ON d.id = l.doc_id WHERE l.task_id IN (${placeholders}) ORDER BY d.kind, d.name, d.version
+    `).all(...tasks.map(task => task.id)) as (DocRow & { task_id: string; link_type: "implements" | "references" })[]
+    for (const doc of rows) {
+      const links = docsByTask.get(doc.task_id) ?? []
+      links.push({ docId: DocStableIdSchema.make(materializeDocId(doc)), kind: asDocKind(doc.kind),
+        name: doc.name, title: doc.title, version: doc.version, status: doc.status,
+        filePath: doc.file_path, linkType: doc.link_type })
+      docsByTask.set(doc.task_id, links)
+    }
+  }
 
   return tasks.map(task => {
     const blockedBy = dependencySnapshot.blockedByMap.get(task.id) ?? []
@@ -1730,7 +1660,7 @@ function enrichTasksWithDeps(
     const isReady = WORKABLE_TASK_STATUSES.has(task.status) && allBlockersDone
     const labels = labelsByTask.get(task.id) ?? []
 
-    return { ...task, blockedBy, blocks, children, isReady, labels }
+    return { ...task, blockedBy, blocks, children, isReady, labels, linkedDocs: docsByTask.get(task.id) ?? [] }
   })
 }
 
@@ -1738,7 +1668,7 @@ app.get("/api/settings", (c) => {
   try {
     return c.json(toSettingsResponse())
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -1750,6 +1680,7 @@ app.patch("/api/settings", async (c) => {
     const nextCycleLengthDays = payload?.dashboard?.cycles?.cycleLengthDays
     const nextCycleStartDay = payload?.dashboard?.cycles?.cycleStartDay
     const nextCarryStatuses = payload?.dashboard?.cycles?.carryStatuses
+    const nextAutoAddStatuses = payload?.dashboard?.cycles?.autoAddStatuses
 
     if (
       nextType === undefined
@@ -1757,6 +1688,7 @@ app.patch("/api/settings", async (c) => {
       && nextCycleLengthDays === undefined
       && nextCycleStartDay === undefined
       && nextCarryStatuses === undefined
+      && nextAutoAddStatuses === undefined
     ) {
       return c.json({ error: "At least one dashboard setting must be provided" }, 400)
     }
@@ -1782,6 +1714,12 @@ app.patch("/api/settings", async (c) => {
       }, 400)
     }
 
+    for (const [field, statuses] of [["carryStatuses", nextCarryStatuses], ["autoAddStatuses", nextAutoAddStatuses]] as const) {
+      if (statuses !== undefined && (!Array.isArray(statuses) || !statuses.every(status => typeof status === "string" && isTaskStatus(status.trim())))) {
+        return c.json({error:`dashboard.cycles.${field} must be an array of valid task statuses`}, 400)
+      }
+    }
+
     const normalizedCarryStatuses = nextCarryStatuses
       ?.map((status) => status.trim())
       .filter((status) => status.length > 0)
@@ -1791,23 +1729,24 @@ app.patch("/api/settings", async (c) => {
     }
 
     if (nextType !== undefined) {
-      writeDashboardDefaultTaskAssigmentType(nextType, process.cwd())
+      writeDashboardDefaultTaskAssigmentType(nextType, contentRoot)
     }
     if (nextTaskView !== undefined) {
-      writeDashboardDefaultTaskView(nextTaskView, process.cwd())
+      writeDashboardDefaultTaskView(nextTaskView, contentRoot)
     }
     if (nextCycleLengthDays !== undefined) {
-      writeDashboardCycleLengthDays(nextCycleLengthDays, process.cwd())
+      writeDashboardCycleLengthDays(nextCycleLengthDays, contentRoot)
     }
     if (nextCycleStartDay !== undefined) {
-      writeDashboardCycleStartDay(nextCycleStartDay, process.cwd())
+      writeDashboardCycleStartDay(nextCycleStartDay, contentRoot)
     }
     if (normalizedCarryStatuses !== undefined) {
-      writeDashboardCarryStatuses(normalizedCarryStatuses, process.cwd())
+      writeDashboardCarryStatuses(normalizedCarryStatuses, contentRoot)
     }
+    if (nextAutoAddStatuses !== undefined) writeDashboardAutoAddStatuses(nextAutoAddStatuses, contentRoot)
     return c.json(toSettingsResponse())
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -1815,7 +1754,7 @@ app.patch("/api/settings", async (c) => {
 app.get("/api/cycles", (c) => {
   try {
     const db = getDb()
-    const config = readDashboardCycleSettings(process.cwd())
+    const config = readDashboardCycleSettings(contentRoot)
     const shouldAutoCreate = shouldAutoCreateCurrentCycle(c.req.query("autoCreate"))
 
     if (shouldAutoCreate && !hasCurrentCycle(db)) {
@@ -1841,7 +1780,7 @@ app.get("/api/cycles", (c) => {
 
     return c.json({ cycles: listCyclesWithStats(db) })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -1849,7 +1788,7 @@ app.get("/api/cycles", (c) => {
 app.post("/api/cycles", (c) => {
   try {
     const db = getDb()
-    const config = readDashboardCycleSettings(process.cwd())
+    const config = readDashboardCycleSettings(contentRoot)
     const latestCycle = db.prepare(`
       SELECT end_date
       FROM cycles
@@ -1868,18 +1807,21 @@ app.post("/api/cycles", (c) => {
       : computeDefaultCycleWindow(config)
 
     const status: CycleStatus = hasCurrentCycle(db) ? "upcoming" : "current"
-    const created = insertCycle(db, {
-      startDate: window.startDate,
-      endDate: window.endDate,
-      status,
-    })
+    const created = db.transaction(() => {
+      const cycle = insertCycle(db, {startDate:window.startDate,endDate:window.endDate,status})
+      if (config.autoAddStatuses.length) {
+        const placeholders = config.autoAddStatuses.map(() => "?").join(",")
+        db.prepare(`INSERT OR IGNORE INTO cycle_tasks(cycle_id,task_id) SELECT ?,id FROM tasks WHERE status IN (${placeholders})`).run(cycle.id,...config.autoAddStatuses)
+      }
+      return cycle
+    })()
     const createdWithStats = getCycleWithStats(db, created.id)
     if (!createdWithStats) {
       return c.json({ error: "Failed to load created cycle" }, 500)
     }
     return c.json(createdWithStats, 201)
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -1920,7 +1862,7 @@ app.get("/api/cycles/:id", (c) => {
 
     return c.json(detail)
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -1975,7 +1917,7 @@ app.patch("/api/cycles/:id", async (c) => {
     }
     return c.json(updated)
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -2022,7 +1964,7 @@ app.post("/api/cycles/:id/tasks", async (c) => {
 
     return c.json({ success: true, cycleId, addedCount })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -2049,7 +1991,7 @@ app.delete("/api/cycles/:id/tasks/:taskId", (c) => {
       removed: Number(result.changes ?? 0) > 0,
     })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -2069,7 +2011,7 @@ app.post("/api/cycles/:id/complete", (c) => {
       return c.json({ error: "Only current cycles can be completed" }, 400)
     }
 
-    const config = readDashboardCycleSettings(process.cwd())
+    const config = readDashboardCycleSettings(contentRoot)
     const carryStatuses = config.carryStatuses.map((status) => status.trim()).filter((status) => status.length > 0)
     const now = new Date().toISOString()
     let nextCycleId = ""
@@ -2141,7 +2083,7 @@ app.post("/api/cycles/:id/complete", (c) => {
 
     return c.json({ completedCycle, newCycle, carriedTaskIds })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -2252,7 +2194,7 @@ app.get("/api/tasks", (c) => {
       summary: { total, byStatus },
     })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -2261,7 +2203,9 @@ app.post("/api/tasks", async (c) => {
   try {
     const db = getDb()
     const payload = await c.req.json<TaskCreatePayload>()
-    const title = payload.title?.trim()
+    const fieldError = validateTaskFields(payload)
+    if (fieldError) return c.json({error:fieldError},400)
+    const title = payload.title?.replace(/\0/g, "").replace(/^[\s\p{Cf}]+|[\s\p{Cf}]+$/gu, "")
 
     if (!title) {
       return c.json({ error: "Task title is required" }, 400)
@@ -2283,7 +2227,7 @@ app.post("/api/tasks", async (c) => {
     const description = payload.description ?? ""
     const score = payload.score ?? 0
     const status = payload.status?.trim() || "backlog"
-    const defaultAssigneeType = readDashboardDefaultTaskAssigmentType(process.cwd())
+    const defaultAssigneeType = readDashboardDefaultTaskAssigmentType(contentRoot)
     const requestedAssigneeType = payload.assigneeType === undefined
       ? defaultAssigneeType
       : payload.assigneeType
@@ -2330,7 +2274,7 @@ app.post("/api/tasks", async (c) => {
     )
 
     if (assignedBy !== "dashboard:cycle-composer") {
-      maybeAddTaskToNextCycle(db, id, status)
+      maybeAddTaskToCurrentCycle(db, id, status)
     }
 
     const task = getTaskWithDeps(db, id)
@@ -2339,7 +2283,7 @@ app.post("/api/tasks", async (c) => {
     }
     return c.json(serializeTask(task), 201)
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -2349,11 +2293,18 @@ app.patch("/api/tasks/:id", async (c) => {
     const db = getDb()
     const id = c.req.param("id")
     const payload = await c.req.json<TaskUpdatePayload>()
+    const fieldError = validateTaskFields(payload)
+    if (fieldError) return c.json({error:fieldError},400)
 
     const existing = db.prepare("SELECT * FROM tasks WHERE id = ?").get(id) as TaskRowWithAssignment | undefined
     if (!existing) {
       return c.json({ error: "Task not found" }, 404)
     }
+
+    if (payload.title !== undefined && (typeof payload.title !== "string" || !payload.title.replace(/[\s\p{Cf}\0]/gu, ""))) {
+      return c.json({ error: "Title must contain visible text" }, 400)
+    }
+    const title = payload.title?.replace(/\0/g, "").replace(/^[\s\p{Cf}]+|[\s\p{Cf}]+$/gu, "")
 
     if (payload.status !== undefined && !isTaskStatus(payload.status)) {
       return c.json({
@@ -2448,7 +2399,7 @@ app.patch("/api/tasks/:id", async (c) => {
           metadata = ?
       WHERE id = ?
     `).run(
-      payload.title ?? existing.title,
+      title ?? existing.title,
       payload.description ?? existing.description,
       nextStatus,
       payload.parentId !== undefined ? payload.parentId : existing.parent_id,
@@ -2463,7 +2414,7 @@ app.patch("/api/tasks/:id", async (c) => {
       id,
     )
 
-    maybeAddTaskToNextCycle(db, id, nextStatus)
+    maybeAddTaskToCurrentCycle(db, id, nextStatus)
 
     const task = getTaskWithDeps(db, id)
     if (!task) {
@@ -2471,7 +2422,7 @@ app.patch("/api/tasks/:id", async (c) => {
     }
     return c.json(serializeTask(task))
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -2486,7 +2437,7 @@ const listLabelsHandler = (c: Context) => {
 
     return c.json({ labels: rows.map(toTaskLabel) })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 }
 
@@ -2505,7 +2456,7 @@ const createLabelHandler = async (c: Context) => {
     const label = upsertLabel(db, { name: payload.name, color: payload.color })
     return c.json(label, 201)
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 }
 
@@ -2573,7 +2524,7 @@ const updateLabelHandler = async (c: Context) => {
 
     return c.json(toTaskLabel(updated))
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 }
 
@@ -2599,7 +2550,7 @@ const deleteLabelHandler = (c: Context) => {
     db.prepare("DELETE FROM task_labels WHERE id = ?").run(labelId)
     return c.json({ success: true, id: labelId })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 }
 
@@ -2647,7 +2598,7 @@ const assignLabelHandler = async (c: Context) => {
     }
     return c.json({ success: true, task: serializeTask(task), label })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 }
 
@@ -2679,7 +2630,7 @@ const unassignLabelHandler = (c: Context) => {
     }
     return c.json({ success: true, task: serializeTask(task) })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 }
 
@@ -2701,7 +2652,7 @@ app.delete("/api/tasks/:id", (c) => {
     db.prepare("DELETE FROM tasks WHERE id = ?").run(id)
     return c.json({ success: true, id })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -2726,7 +2677,7 @@ app.get("/api/tasks/ready", (c) => {
 
     return c.json({ tasks: enriched.map(serializeTask) })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -2753,7 +2704,7 @@ app.get("/api/stats", (c) => {
       ready: readyCount,
     })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -2789,7 +2740,7 @@ app.get("/api/docs", (c) => {
 
     return c.json({ docs: rows.map(serializeDoc) })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -2814,7 +2765,7 @@ app.get("/api/docs/graph", (c) => {
     const nodes: Array<{
       id: string
       label: string
-      kind: "overview" | "prd" | "design" | "requirement" | "system_design" | "runbook" | "decision" | "task"
+      kind: string
       status?: "changing" | "locked"
     }> = docs.map((doc) => ({
       id: `doc:${doc.id}`,
@@ -2825,7 +2776,6 @@ app.get("/api/docs/graph", (c) => {
 
     const edges: Array<{ source: string; target: string; type: string }> = []
 
-    const explicitDocTargets = new Map<number, number>()
     if (hasDocLinksSchema(db)) {
       const docLinks = db.prepare(`
         SELECT from_doc_id, to_doc_id, link_type
@@ -2833,7 +2783,6 @@ app.get("/api/docs/graph", (c) => {
         ORDER BY id ASC
       `).all() as DocLinkRow[]
       for (const link of docLinks) {
-        explicitDocTargets.set(link.to_doc_id, (explicitDocTargets.get(link.to_doc_id) ?? 0) + 1)
         edges.push({
           source: `doc:${link.from_doc_id}`,
           target: `doc:${link.to_doc_id}`,
@@ -2842,32 +2791,12 @@ app.get("/api/docs/graph", (c) => {
       }
     }
 
-    // Anchor unlinked docs under system-design overview (or first overview) for a single-root map.
-    const rootOverview = docs.find((doc) => doc.kind === "overview" && doc.name === "system-design")
-      ?? docs.find((doc) => doc.kind === "overview")
-    if (rootOverview) {
-      const existingPairs = new Set(edges.map((edge) => `${edge.source}->${edge.target}`))
-      for (const doc of docs) {
-        if (doc.id === rootOverview.id || doc.kind === "overview") continue
-        if ((explicitDocTargets.get(doc.id) ?? 0) > 0) continue
-        const source = `doc:${rootOverview.id}`
-        const target = `doc:${doc.id}`
-        const pair = `${source}->${target}`
-        if (existingPairs.has(pair)) continue
-        edges.push({
-          source,
-          target,
-          type: doc.kind === "prd" ? "overview_to_prd" : "overview_to_design",
-        })
-      }
-    }
-
     if (hasTaskDocLinksSchema(db)) {
       const taskLinks = db.prepare(`
-        SELECT task_id, doc_id, link_type
-        FROM task_doc_links
-        ORDER BY id ASC
-      `).all() as TaskDocLinkRow[]
+        SELECT l.task_id, l.doc_id, l.link_type, t.title
+        FROM task_doc_links l JOIN tasks t ON t.id = l.task_id
+        ORDER BY l.id ASC
+      `).all() as (TaskDocLinkRow & { title: string })[]
 
       const taskNodeIds = new Set<string>()
       for (const link of taskLinks) {
@@ -2876,7 +2805,7 @@ app.get("/api/docs/graph", (c) => {
           taskNodeIds.add(taskNodeId)
           nodes.push({
             id: taskNodeId,
-            label: link.task_id,
+            label: link.title,
             kind: "task",
           })
         }
@@ -2890,7 +2819,7 @@ app.get("/api/docs/graph", (c) => {
 
     return c.json({ nodes, edges })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -3031,7 +2960,7 @@ app.get("/api/docs/health", (c) => {
       issues,
     })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -3108,7 +3037,7 @@ app.post("/api/docs/render", async (c) => {
 
     return c.json({ rendered })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -3130,7 +3059,7 @@ app.get("/api/docs/by-id/:docId", (c) => {
 
     return c.json(serializeDoc(resolved.row))
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -3193,7 +3122,7 @@ app.get("/api/docs/by-id/:docId/source", (c) => {
       filePath: fp,
     })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -3221,7 +3150,7 @@ app.delete("/api/docs/by-id/:docId", (c) => {
     db.prepare("DELETE FROM docs WHERE id = ?").run(row.id)
     return c.json({ success: true, docId: materializeDocId(row), name: row.name, version: row.version })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -3242,7 +3171,7 @@ app.get("/api/docs/:name", (c) => {
     }
     return c.json(serializeDoc(resolved.row))
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -3299,7 +3228,7 @@ app.get("/api/docs/:name/source", (c) => {
       filePath: fp,
     })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -3326,7 +3255,7 @@ app.delete("/api/docs/:name", (c) => {
     db.prepare("DELETE FROM docs WHERE id = ?").run(row.id)
     return c.json({ success: true, docId: materializeDocId(row), name: row.name, version: row.version })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -3368,31 +3297,27 @@ app.get("/api/tasks/:id", (c) => {
       childTasks: childTasks.map(serializeTask),
     })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
 // =============================================================================
 app.get("/api/spec/health", async (c) => {
-  try { return c.json(await dashboardSpecHealth(dbPath)) }
+  try { return c.json(await dashboardSpecHealth(dbPath, contentRoot)) }
   catch (error) { console.error("Spec health failed", error); return c.json({ error: "Could not load spec health" }, 500) }
 })
 
-// SERVER STARTUP
-// =============================================================================
+return createServer((req, res) => { void app.handle(req, res) })
+}
 
-const port = Number(process.env.PORT ?? "3001")
-try {
-  const server = createServer((req, res) => {
-    void app.handle(req, res)
+if (import.meta.main) {
+  const port = Number(process.env.PORT ?? "3001")
+  const server = createDashboardServer()
+  server.on("error", (error) => {
+    console.error(`Failed to start dashboard API on port ${port}: ${error.message}`)
+    process.exitCode = 1
   })
-
-
-  server.listen(port, () => {
+  server.listen(port, "127.0.0.1", () => {
     console.log(`Dashboard API running on http://localhost:${port}`)
   })
-} catch (error) {
-  const message = error instanceof Error ? error.message : String(error)
-  console.error(`Failed to start dashboard API on port ${port}: ${message}`)
-  process.exit(1)
 }
