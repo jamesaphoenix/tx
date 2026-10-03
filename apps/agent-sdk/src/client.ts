@@ -711,6 +711,7 @@ class DirectTransport implements Transport {
       invariantId: entry.invariantId,
       rule: entry.rule,
       subsystem: entry.subsystem ?? null,
+      sourceRefs: entry.sourceRefs ?? [],
       tests: (entry.tests ?? []).map((test: any) => ({
         specTestId: test.specTestId,
         testId: test.testId,

@@ -23,3 +23,8 @@ Move manual invariant commands under `tx spec invariant`. Markdown task export i
 now `tx task export`. `tx decision` has no replacement: keep requirements and
 technical choices in the design document, then save the implementation plan.
 
+
+Re-run `tx spec discover` to classify production `@spec` annotations as source
+references. They remain visible in the matrix and no longer block executed test
+completion. Review a document-scoped `--dry-run` before pruning stale mappings;
+manual mappings are preserved.

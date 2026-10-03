@@ -156,6 +156,42 @@ describe("SpecTraceService Integration", () => {
     }
   })
 
+  it("keeps source enforcement references separate from executable evidence", async () => {
+    const result = await run(Effect.gen(function* () {
+      yield* createDocWithInvariants("source-trace-doc",[
+        {id:"INV-SRC-ONLY",rule:"ownership is enforced"},
+        {id:"INV-SRC-TESTED",rule:"retries preserve identity"},
+      ])
+      writeRelative(tempDir,"src/owner.ts","// @spec INV-SRC-ONLY\nexport const enforceOwner = () => true\n")
+      writeRelative(tempDir,"src/retry.ts","// @spec INV-SRC-TESTED\nexport const preserveIdentity = () => true\n")
+      writeRelative(tempDir,"test/retry.test.ts",'it("retry identity [INV-SRC-TESTED]", () => {})')
+      const spec = yield* SpecTraceService
+      yield* spec.discover({rootDir:tempDir,patterns:["test/**/*.test.ts"],doc:"source-trace-doc"})
+      yield* spec.link("INV-SRC-ONLY","src/owner.ts","spec@line-7")
+      const db = yield* SqliteClient
+      db.prepare("UPDATE spec_tests SET discovery = 'comment', test_name = NULL WHERE invariant_id = ? AND test_id = ?")
+        .run("INV-SRC-ONLY","src/owner.ts::spec@line-7")
+      yield* spec.discover({rootDir:tempDir,patterns:["test/**/*.test.ts"],doc:"source-trace-doc"})
+      const onlySource = yield* spec.testsForInvariant("INV-SRC-ONLY")
+      const tested = yield* spec.testsForInvariant("INV-SRC-TESTED")
+      yield* spec.recordRun(tested[0]!.testId,true)
+      const sourceRun = yield* Effect.either(spec.recordRun("src/owner.ts::spec@line-1",true))
+      const batch = yield* spec.recordBatchRun([{testId:"src/owner.ts::spec@line-1",passed:true}])
+      return {onlySource,tested,sourceRun,batch,
+        fci:yield* spec.fci({doc:"source-trace-doc"}),
+        gaps:yield* spec.uncoveredInvariants({doc:"source-trace-doc"}),
+        matrix:yield* spec.matrix({doc:"source-trace-doc"})}
+    }))
+    expect(result.onlySource).toEqual([])
+    expect(result.tested).toHaveLength(1)
+    expect(result.fci).toMatchObject({total:2,covered:1,uncovered:1,passing:1,untested:0,fci:50})
+    expect(result.gaps.map(gap => gap.id)).toEqual(["INV-SRC-ONLY"])
+    expect(result.sourceRun._tag).toBe("Left")
+    expect(result.batch).toMatchObject({recorded:0,unmatched:["src/owner.ts::spec@line-1"]})
+    expect(result.matrix.find(row => row.invariantId === "INV-SRC-ONLY")).toMatchObject({tests:[],sourceRefs:["src/owner.ts:1","src/owner.ts:7"]})
+    expect(result.matrix.find(row => row.invariantId === "INV-SRC-TESTED")).toMatchObject({sourceRefs:["src/retry.ts:1"]})
+  })
+
   it("discovers mappings from tags/comments/manifest and closes gaps", async () => {
     const result = await run(
       Effect.gen(function* () {

@@ -339,6 +339,7 @@ export interface SerializedTraceabilityMatrixEntry {
   rule: string
   subsystem: string | null
   tests: SerializedTraceabilityMatrixTest[]
+  sourceRefs?: string[]
 }
 
 export interface SerializedSpecSignoff {

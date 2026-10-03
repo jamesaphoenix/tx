@@ -29,7 +29,10 @@ the implementation, interfaces, invariants, failure handling and verification.
 Use distinct names or kind-scoped references to avoid ambiguous document slugs.
 
 Edit existing documents in place, then `tx doc sync <doc-ref>` and `tx spec lint`.
-Do not remove and recreate documents to refresh their hashes. For a worktree,
+Do not remove and recreate documents to refresh their hashes. Sync before locking
+a reviewed version. `tx doc version` preserves locked source under `.versions/`
+in the docs directory and creates the working version at its normal path. Commit
+both files; use `tx doc show --doc-version <n>` to read historical content. For a worktree,
 keep the main state root and explicitly select the worktree content root using
 `--state-root` and `--content-root`.
 

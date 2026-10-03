@@ -38,3 +38,8 @@ were broken. Run discovery, inspect the matrix and fill meaningful gaps.
 A mapping identifies coverage; it does not prove a passing result. Execute the
 mapped tests and record their results through [tx spec](./spec-trace). The
 `verify-invariants` skill covers both code mapping and verification.
+
+Source annotations appear separately in `tx spec matrix` as enforcement locations.
+They do not count as test coverage, failing evidence or missing test results.
+Use `tx spec invariant record` for a performed manual review. To prove a rule with
+a lint or constraint check, link that executable check and record its real result.

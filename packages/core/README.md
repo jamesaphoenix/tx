@@ -43,6 +43,8 @@ tx spec gaps --doc checkout-design
 tx spec health
 ```
 
+Source annotations appear separately in `tx spec matrix`; they identify enforcement
+locations and do not count as test coverage or missing results.
 A mapping is traceability. Executed test results are evidence. Human sign-off is a
 separate step after verification. See [documentation](https://txdocs.dev/docs)
 for spec schemas and commands.

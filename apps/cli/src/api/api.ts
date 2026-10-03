@@ -703,6 +703,7 @@ const SpecMatrixEntrySchema = Schema.Struct({
   rule: Schema.String,
   subsystem: Schema.NullOr(Schema.String),
   tests: Schema.Array(SpecMatrixTestSchema),
+  sourceRefs: Schema.optional(Schema.Array(Schema.String)),
 })
 
 const SpecMatrixResponse = Schema.Struct({

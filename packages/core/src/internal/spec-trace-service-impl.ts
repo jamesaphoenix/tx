@@ -83,7 +83,7 @@ const classifyInvariants = (params: {
   let untested = 0
 
   for (const invariant of invariants) {
-    const tests = testsByInvariant.get(invariant.id) ?? []
+    const tests = (testsByInvariant.get(invariant.id) ?? []).filter(test => test.framework !== "source")
     if (tests.length === 0) {
       uncovered += 1
       continue
@@ -186,7 +186,7 @@ export const makeSpecTraceServiceLive = (
       return `${normalized}::${testId.slice(separator + 2)}`
     }
     // Evidence belongs to a file and assertion, not to a title used elsewhere.
-    const resolveLinksForTestId = (testId: string) => repo.findSpecTestsByTestId(normalizeEvidenceId(testId))
+    const resolveLinksForTestId = (testId: string) => repo.findSpecTestsByTestId(normalizeEvidenceId(testId)).pipe(Effect.map(rows => rows.filter(row => row.framework !== "source")))
 
     const computeFci = (filter?: SpecTraceFilter) =>
       Effect.gen(function* () {
@@ -331,7 +331,7 @@ export const makeSpecTraceServiceLive = (
 
       unlink: (invariantId, testId) => repo.deleteSpecTest(invariantId, testId),
 
-      testsForInvariant: (invariantId) => repo.findSpecTestsByInvariant(invariantId),
+      testsForInvariant: (invariantId) => repo.findSpecTestsByInvariant(invariantId).pipe(Effect.map(rows => rows.filter(row => row.framework !== "source"))),
 
       invariantsForTest: (testId) =>
         Effect.gen(function* () {
@@ -390,7 +390,7 @@ export const makeSpecTraceServiceLive = (
           }>()
 
           for (const row of results) {
-            const links = byTestId.get(normalizeEvidenceId(row.testId)) ?? []
+            const links = (byTestId.get(normalizeEvidenceId(row.testId)) ?? []).filter(link => link.framework !== "source")
 
             if (links.length === 0) {
               unmatched.add(row.testId)
@@ -452,7 +452,9 @@ export const makeSpecTraceServiceLive = (
             invariantId: invariant.id,
             rule: invariant.rule,
             subsystem: invariant.subsystem,
-            tests: (testsByInvariant.get(invariant.id) ?? []).sort((a, b) => a.testId.localeCompare(b.testId)),
+            tests: (testsByInvariant.get(invariant.id) ?? []).filter(test => test.framework !== "source").sort((a, b) => a.testId.localeCompare(b.testId)),
+            sourceRefs: (testsByInvariant.get(invariant.id) ?? []).filter(test => test.framework === "source")
+              .map(test => test.testId.replace(/::spec@line-(\d+)$/, ":$1")).sort(),
           }))
 
           return out

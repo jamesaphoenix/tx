@@ -8,7 +8,9 @@ description: Map declared invariants to enforcement code and meaningful tests, r
 Start with the selected document: `tx doc show <doc-ref> --md` and
 `tx spec gaps --doc <doc-ref>`. Read each statement and its exact invariant ID.
 Locate the code that enforces it and the existing assertions that prove it.
-Matching names alone is not evidence.
+Matching names alone is not evidence. Source comments appear as enforcement
+references in `tx spec matrix`; they do not count as executable coverage or
+missing test results.
 
 ## Map code and tests
 
@@ -30,8 +32,9 @@ per invariant or annotate unrelated code just to improve a score.
 Reuse tests whose assertions demonstrate the behaviour, including failure paths.
 When completing verification, add focused missing tests. An annotation establishes
 traceability, not a passing result. Source-only enforcement needs an explicit
-structural review or a suitable lint/type/constraint check; do not automatically
-record source comments as passed.
+structural review or a suitable lint/type/constraint check. Record manual reviews
+with `tx spec invariant record` and keep them separate from test completion.
+Source comments cannot be recorded as passed tests.
 
 ## Discover and verify
 

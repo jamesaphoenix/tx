@@ -913,7 +913,7 @@ Subcommands:
   unlink <inv-id> <test-id>    Remove invariant/test link
   tests <inv-id>               List tests linked to an invariant
   gaps                         List uncovered invariants
-  matrix                       Show full traceability matrix
+  matrix                       Show tests and source enforcement references
 
 Run 'tx spec <subcommand> --help' for subcommand-specific help.
 
@@ -975,7 +975,8 @@ Examples:
 Usage: tx spec discover [--doc <name>] [--patterns <glob1,glob2,...>] [--dry-run] [--prune] [--json]
 
 Refreshes derived invariants from docs first, then scans configured test
-patterns for [INV-*], _INV_*, and @spec annotations. Also imports
+patterns for [INV-*], _INV_*, and @spec annotations. Scans production
+@spec comments as source references, separately from test coverage. Also imports
 .tx/spec-tests.yml manifest mappings.
 
 Without \`--doc\`, refreshes all docs before scanning. With \`--doc\`,
@@ -1058,9 +1059,12 @@ Examples:
   pytest --json-report --json-report-file=.tx/pytest-results.json
   tx spec batch --from pytest < .tx/pytest-results.json
   go test -json ./... | tx spec batch --from go`,
-  "spec matrix": `tx spec matrix - Full invariant-to-test traceability matrix
+  "spec matrix": `tx spec matrix - Test and source enforcement traceability
 
 Usage: tx spec matrix [--doc <name>] [--sub <name>] [--json]
+
+Lists executable tests and production source references separately.
+Source annotations do not count as executed test coverage.
 
 Examples:
   tx spec matrix

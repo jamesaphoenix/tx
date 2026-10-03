@@ -83,6 +83,30 @@ describe("spec-discovery", () => {
     expect(result.discovered.find((row) => row.invariantId === "INV-DISC-005")?.framework).toBe("go")
   })
 
+  it("marks production annotations as source references across languages", async () => {
+    const root = makeTempProject()
+    writeRelative(root,"src/owner.ts","// @spec INV-SOURCE-001\nexport const owner = true")
+    writeRelative(root,"src/retry.py","# @spec INV-SOURCE-002\ndef test_helper(): pass")
+    const result = await discoverSpecTests(root,["test/**/*.test.ts"])
+    expect([...result.discovered].sort((a,b) => a.testFile.localeCompare(b.testFile))).toEqual([
+      expect.objectContaining({testFile:"src/owner.ts",testName:null,framework:"source",testId:"src/owner.ts::spec@line-1"}),
+      expect.objectContaining({testFile:"src/retry.py",testName:null,framework:"source",testId:"src/retry.py::spec@line-1"}),
+    ])
+  })
+
+  it("does not discover copies from generated output or other worktrees", async () => {
+    const root = makeTempProject()
+    for (const dir of [".next",".source",".worktrees",".tx",".vitest",".cache"]) {
+      writeRelative(root,`${dir}/duplicate.test.ts`,'it("copy [INV-COPY-001]", () => {})')
+      writeRelative(root,`${dir}/enforcer.ts`,"// @spec INV-COPY-001\nexport const compiled = true")
+    }
+    writeRelative(root,"src/owner.ts","// @spec INV-COPY-001\nexport const owner = true")
+    const result = await discoverSpecTests(root,defaultSpecTestPatterns())
+    expect(result.scannedFiles).toBe(1)
+    expect(result.discovered).toHaveLength(1)
+    expect(result.discovered[0]?.testFile).toBe("src/owner.ts")
+  })
+
   it("discovers whitespace-separated invariant IDs in @spec comments", async () => {
     const root = makeTempProject()
 

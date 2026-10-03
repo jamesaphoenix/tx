@@ -33,7 +33,11 @@ Skills contain creation, copying and verification guidance; they launch no agent
 Executed evidence matches the mapped file and assertion within the content checkout.
 Repeated results in one batch retain any failure; shared titles cannot credit a
 different test file. Native reports keep their paths until the service resolves
-them against the checkout.
+them against the checkout. Production annotations appear as source references,
+separate from executable tests. They cannot be recorded as passing runs and do
+not create missing-result blockers. Source-only invariants remain testing gaps.
+Discovery ignores generated output and nested worktrees, preserves manual
+mappings and reclassifies older source annotations within the selected scope.
 The dashboard uses stored relationships and stable versioned document links.
 Its HTTP server is constructed through the same factory used by integration tests,
 accepts local browser origins and binds to loopback. Task controls are hidden while

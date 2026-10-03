@@ -42,3 +42,7 @@ because its tag exists. Failed or missing results keep the specification in BUIL
 Passing evidence moves it to HARDEN. Once the work has been reviewed, record human
 sign-off with `tx spec complete --doc checkout-design --by <reviewer>`. Sign-off is
 separate from test execution. [tx spec health](./spec-health) summarises the state.
+
+The matrix keeps production `@spec` comments under `sourceRefs`, separate from
+executable tests. Source references cannot be imported as passing tests. An
+invariant with only an enforcement annotation remains an uncovered testing gap.

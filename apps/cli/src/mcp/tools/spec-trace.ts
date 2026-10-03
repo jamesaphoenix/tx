@@ -35,6 +35,7 @@ const serializeMatrixEntry = (entry: TraceabilityMatrixEntry) => ({
   invariantId: entry.invariantId,
   rule: entry.rule,
   subsystem: entry.subsystem,
+  sourceRefs: entry.sourceRefs ?? [],
   tests: entry.tests.map((test) => ({
     specTestId: test.specTestId,
     testId: test.testId,

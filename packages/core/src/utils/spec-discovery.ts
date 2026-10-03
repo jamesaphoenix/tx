@@ -33,6 +33,12 @@ const SKIP_DIRS = new Set([
   ".git",
   "node_modules",
   ".turbo",
+  ".next",
+  ".source",
+  ".worktrees",
+  ".tx",
+  ".vitest",
+  ".cache",
   "dist",
   "coverage",
   "test-results",
@@ -175,7 +181,7 @@ const buildTestId = (testFile: string, testName: string | null, line: number): s
   return `${testFile}::${normalizedName}`
 }
 
-const parseFileAnnotations = (testFile: string, content: string): {
+const parseFileAnnotations = (testFile: string, content: string, sourceOnly = false): {
   tagMatches: DiscoveredTest[]
   commentMatches: DiscoveredTest[]
 } => {
@@ -227,7 +233,7 @@ const parseFileAnnotations = (testFile: string, content: string): {
         .split(/\s*,\s*|\s+/)
         .map((s) => s.trim())
         .filter((s) => s.length > 0)
-      const testName = findNearestTestName(lines, i)
+      const testName = sourceOnly ? null : findNearestTestName(lines, i)
 
       for (const invariantId of invariants) {
         commentMatches.push({
@@ -235,7 +241,7 @@ const parseFileAnnotations = (testFile: string, content: string): {
           testFile,
           testName,
           testId: buildTestId(testFile, testName, i + 1),
-          framework: inferFramework(testFile),
+          framework: sourceOnly ? "source" : inferFramework(testFile),
           discovery: "comment",
         })
       }
@@ -386,7 +392,7 @@ export const discoverSpecTests = async (
     if (!hasSpecComment) continue
 
     sourceFilesScanned += 1
-    const { commentMatches } = parseFileAnnotations(relPath, content)
+    const { commentMatches } = parseFileAnnotations(relPath, content, true)
     commentLinks += commentMatches.length
     discovered.push(...commentMatches)
   }

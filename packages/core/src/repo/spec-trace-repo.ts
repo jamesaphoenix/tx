@@ -86,7 +86,7 @@ export const makeSpecTraceRepositoryLive = (
                ON CONFLICT(projection_key, invariant_id, test_id) DO UPDATE SET
                  test_file = excluded.test_file,
                  test_name = excluded.test_name,
-                 framework = excluded.framework,
+                 framework = CASE WHEN spec_tests.discovery = 'manual' THEN spec_tests.framework ELSE excluded.framework END,
                  -- Never downgrade a manually curated link to an auto-discovered
                  -- source (auto-discovery would otherwise overwrite 'manual' with
                  -- 'tag', after which the prune step could delete it). A manual
@@ -212,7 +212,7 @@ export const makeSpecTraceRepositoryLive = (
                ON CONFLICT(projection_key, invariant_id, test_id) DO UPDATE SET
                  test_file = excluded.test_file,
                  test_name = excluded.test_name,
-                 framework = excluded.framework,
+                 framework = CASE WHEN spec_tests.discovery = 'manual' THEN spec_tests.framework ELSE excluded.framework END,
                  -- Never downgrade a manually curated link to an auto-discovered
                  -- source (auto-discovery would otherwise overwrite 'manual' with
                  -- 'tag', after which the prune step could delete it). A manual
@@ -225,7 +225,12 @@ export const makeSpecTraceRepositoryLive = (
               )
 
               const transaction = runImmediateTransaction(() => {
+                const markSource = db.prepare(`UPDATE spec_tests SET framework = 'source'
+                  WHERE projection_key = ? AND invariant_id = ? AND test_file = ? AND discovery = 'comment'`)
                 for (const row of rows) {
+                  // Reclassify older auto-discovered source annotations in this
+                  // scope, including shifted lines. Keep explicit manual tests.
+                  if (row.framework === "source") markSource.run(projectionKey,row.invariantId,row.testFile)
                   upsert.run(
                     projectionKey,
                     row.invariantId,
@@ -450,6 +455,7 @@ export const makeSpecTraceRepositoryLive = (
                    SELECT 1 FROM spec_tests st
                    WHERE st.projection_key = i.projection_key
                      AND st.invariant_id = i.id
+                     AND (st.framework IS NULL OR st.framework != 'source')
                  )
                ORDER BY i.id`
             ).all(...params)
