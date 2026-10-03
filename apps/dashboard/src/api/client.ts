@@ -432,6 +432,22 @@ const runApi = async <T>(effect: Effect.Effect<T, ApiError>): Promise<T> => {
 export const fetchers = {
   specHealth: (): Promise<SpecHealth> => runApi(fetchJson<SpecHealth>("/api/spec/health")),
   tasks: () => runApi(api.getTasks()),
+  allTasks: async (options?: {signal?: AbortSignal}): Promise<TasksResponse> => {
+    const tasks = new Map<string, TaskWithDeps>()
+    const cursors = new Set<string>()
+    let cursor: string | null = null
+    for (;;) {
+      const params = new URLSearchParams({limit:"100"})
+      if (cursor) params.set("cursor", cursor)
+      const page = await runApi(fetchJson<PaginatedTasksResponse>(`/api/tasks?${params}`, options))
+      for (const task of page.tasks) tasks.set(task.id, task)
+      if (!page.hasMore) return {tasks:[...tasks.values()],summary:page.summary}
+      if (typeof page.nextCursor !== "string" || !page.nextCursor) throw new Error("Task page is missing its next cursor")
+      if (cursors.has(page.nextCursor)) throw new Error("Task pagination returned a repeated cursor")
+      cursors.add(page.nextCursor)
+      cursor = page.nextCursor
+    }
+  },
   ready: () => runApi(api.getReady()),
   taskDetail: (id: string, options?: { signal?: AbortSignal }) => runApi(api.getTaskDetail(id, options)),
   createTask: (payload: TaskMutationPayload & { title: string }) =>

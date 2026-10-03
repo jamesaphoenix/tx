@@ -928,16 +928,16 @@ export function TasksPage({
         selectedIds,
         labels: allLabels,
         cycles,
-        onBulkSetStatus: (status) => void setSelectedTasksStatusStage(status as TaskStatusValue),
+        onBulkSetStatus: (status) => setSelectedTasksStatusStage(status as TaskStatusValue),
         onBulkToggleLabel: (label) => {
-          void (async () => {
+          return (async () => {
             for (const id of selectedIds) {
               await fetchers.assignTaskLabel(id, { labelId: label.id })
             }
             await invalidateTaskQueries()
           })()
         },
-        onBulkMoveToCycle: (cycleId) => void moveTaskToCycle(cycleId, selectedIds),
+        onBulkMoveToCycle: (cycleId) => moveTaskToCycle(cycleId, selectedIds),
       }))
 
       cmds.push({
@@ -1037,7 +1037,7 @@ export function TasksPage({
         group: "Actions",
         icon: "action",
         shortcut: "⌘⇧A",
-        action: () => void toggleSelectedTaskAssigneeType(),
+        action: () => toggleSelectedTaskAssigneeType(),
       },
       {
         id: "tasks:labels-prompt",
@@ -1071,22 +1071,22 @@ export function TasksPage({
       task: selectedTask ? { id: selectedTask.id, labels: selectedTask.labels } : null,
       labels: allLabels,
       cycles,
-      onSetStatus: (status) => void changeTaskStatusStage(status as TaskStatusValue, selectedTask!.id),
-      onToggleLabel: (label) => void toggleLabel(label),
+      onSetStatus: (status) => changeTaskStatusStage(status as TaskStatusValue, selectedTask!.id),
+      onToggleLabel: (label) => toggleLabel(label),
       onSetScore: () => {
         if (!selectedTask) return
         const input = window.prompt("Score:", String(selectedTask.score ?? 0))
         if (input === null) return
         const score = parseInt(input, 10)
         if (Number.isNaN(score)) return
-        void (async () => {
+        return (async () => {
           await fetchers.updateTask(selectedTask.id, { score })
           await invalidateTaskQueries()
         })()
       },
       onMoveToCycle: (cycleId) => {
         if (viewState.taskId) {
-          void moveTaskToCycle(cycleId, [viewState.taskId])
+          return moveTaskToCycle(cycleId, [viewState.taskId])
         }
       },
     }))
@@ -1133,7 +1133,7 @@ export function TasksPage({
           sublabel: `${selectedChildIds.size} selected`,
           group: "Children",
           icon: "delete",
-          action: () => void deleteSelectedChildren(),
+          action: () => deleteSelectedChildren(),
         },
       )
 
@@ -1149,7 +1149,7 @@ export function TasksPage({
           label: stage.label,
           group: "Statuses",
           icon: "action" as const,
-          action: () => void setSelectedChildrenStatusStage(stage.value),
+          action: () => setSelectedChildrenStatusStage(stage.value),
         })),
       })
     }
@@ -1485,11 +1485,11 @@ export function TasksPage({
               onCopyTaskReference={() => { void copySelectedTaskReference() }}
               allLabels={allLabels}
               isLabelAssigned={isAssignedLabel}
-              onToggleLabel={(label) => { void toggleLabel(label) }}
+              onToggleLabel={toggleLabel}
               onCreateLabel={(payload) => createAndAssignLabel(payload)}
               statusStage={selectedTask ? toHumanTaskStage(selectedTask.status) : undefined}
-              onChangeStatusStage={(stage) => { void changeTaskStatusStage(stage) }}
-              onUpdateAssignment={(payload) => { void updateTaskAssignment(payload) }}
+              onChangeStatusStage={(stage) => changeTaskStatusStage(stage)}
+              onUpdateAssignment={(payload) => updateTaskAssignment(payload)}
               selectedChildIds={selectedChildIds}
               onToggleChildSelection={toggleChildSelection}
               onSelectAllChildren={() => setSelectedChildIds(new Set(childTasks.map((task) => task.id)))}

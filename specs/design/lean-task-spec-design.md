@@ -30,6 +30,10 @@ The CLI dispatches tasks through `task-dispatch.ts`. The REST, MCP and SDK use t
 same retained core layer. `getSpecHealth` aggregates docs, invariants and spec
 results without success-shaped fallbacks. Dashboard cycles remain simple planning.
 Skills contain creation, copying and verification guidance; they launch no agents.
+Executed evidence matches the mapped file and assertion within the content checkout.
+Repeated results in one batch retain any failure; shared titles cannot credit a
+different test file. Native reports keep their paths until the service resolves
+them against the checkout.
 The dashboard uses stored relationships and stable versioned document links.
 Its HTTP server is constructed through the same factory used by integration tests,
 accepts local browser origins and binds to loopback. Task controls are hidden while
@@ -39,6 +43,10 @@ compilation so deleted runtime modules cannot remain in npm tarballs.
 Weekly cycles are opt-in. Auto-add settings persist, including an empty selection;
 cycle creation includes all matching tasks in one transaction and never relies on
 the first page of the task list. Editing a task cannot create a future cycle.
+The task picker follows every page and preserves its selection after a failed add.
+Concurrent title and description responses update only their own cache fields.
+The launcher waits for the loopback API before starting Vite, preventing its port
+fallback from taking the API port.
 
 # Interfaces
 ```yaml

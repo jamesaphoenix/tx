@@ -59,6 +59,8 @@ export const selectionActions = {
     selectionStore.setState((s) => ({ ...s, docRefs: toggleInSet(s.docRefs, ref) })),
   selectAllDocs: (refs: string[]) =>
     selectionStore.setState((s) => ({ ...s, docRefs: new Set(refs) })),
+  deselectDoc: (ref: string) =>
+    selectionStore.setState((s) => ({ ...s, docRefs: new Set([...s.docRefs].filter(item => item !== ref)) })),
   clearDocs: () =>
     selectionStore.setState((s) => ({ ...s, docRefs: new Set() })),
 

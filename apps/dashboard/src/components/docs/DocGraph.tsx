@@ -168,9 +168,27 @@ export function DocGraph({ selectedNodeId, onSelectDoc, onSelectTask, fullPage }
     const focusNode = positioned.find((n) => n.id === focusId)
     if (!focusNode) return null
     const ids = new Set<string>([focusNode.id])
+    const descendants = new Map<string,string[]>()
+    const ancestors = new Map<string,string[]>()
     for (const e of edges) {
-      if (e.source === focusNode.id) ids.add(e.target)
-      if (e.target === focusNode.id) ids.add(e.source)
+      // Task attachments describe what a task implements. Display their path
+      // in the document -> task direction used by the layout.
+      const [source,target] = e.source.startsWith("task:") && e.target.startsWith("doc:")
+        ? [e.target,e.source] : [e.source,e.target]
+      descendants.set(source,[...(descendants.get(source) ?? []),target])
+      ancestors.set(target,[...(ancestors.get(target) ?? []),source])
+    }
+    for (const direction of [ancestors,descendants]) {
+      const visited = new Set([focusNode.id])
+      const queue = [focusNode.id]
+      for (let index = 0; index < queue.length; index++) {
+        for (const next of direction.get(queue[index]!) ?? []) {
+          if (visited.has(next)) continue
+          visited.add(next)
+          ids.add(next)
+          queue.push(next)
+        }
+      }
     }
     return ids
   }, [hoveredId, selectedNodeId, positioned, edges])

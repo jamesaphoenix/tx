@@ -34,7 +34,7 @@
       "id": "verify-invariants",
       "title": "Map and verify invariants",
       "installPath": ".codex/skills/verify-invariants",
-      "checksum": "0e0cd020a7c2d1108b7ed5b765ecd37bea9425bacfceff2a9ab405bbc4df2fde",
+      "checksum": "723dfab10c1c83f6500a7a115ea6c8853be675575bb7a77b3d478a6e1d27f344",
       "commandKeys": [],
       "source": "bundled"
     }

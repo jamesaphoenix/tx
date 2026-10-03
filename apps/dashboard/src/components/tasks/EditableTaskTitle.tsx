@@ -13,7 +13,8 @@ export function EditableTaskTitle({taskId, title}: {taskId: string; title: strin
     mutationFn: (nextTitle: string) => fetchers.updateTask(taskId, {title: nextTitle}),
     onSuccess: (updated) => {
       queryClient.setQueriesData<TaskDetailResponse>({queryKey: ["task"]}, existing =>
-        existing?.task.id === updated.id ? {...existing, task: updated} : existing)
+        existing?.task.id === updated.id ? {...existing, task: {...existing.task, title: updated.title}} : existing)
+      void queryClient.invalidateQueries({queryKey: ["task", updated.id]})
       void queryClient.invalidateQueries({queryKey: ["tasks"]})
       void queryClient.invalidateQueries({queryKey: ["task-breadcrumbs"]})
       void queryClient.invalidateQueries({queryKey: ["doc-graph"]})

@@ -23,8 +23,13 @@ tx spec status --doc checkout-design
 Import an actual test report through standard input:
 
 ```bash
-tx spec batch --from vitest < test-results.json
+vitest run --reporter=json --outputFile=.tx/spec-results.json
+tx spec batch --from vitest < .tx/spec-results.json
 ```
+
+Vitest 5 writes JSON to a file. Import failed runs as well as passing ones; in an
+automated check, preserve the test runner's exit code. Results must match the
+mapped file and assertion. A matching title in another file is not evidence.
 
 Use `tx spec --help` for explicit links, scoped results and supported report formats.
 

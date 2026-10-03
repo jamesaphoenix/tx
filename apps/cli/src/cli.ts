@@ -12,7 +12,7 @@ import { makeAppLayer, SqliteClient, resolveWorkspaceContext } from "@jamesaphoe
 import { HELP_TEXT, commandHelp } from "./help.js"
 import { CliExitError } from "./cli-exit.js"
 import { CliUserError, emitCliError, movedCommandError, unknownCommandError, usageError } from "./cli-errors.js"
-import { buildCommandCatalog, buildHelpPayload, buildSchemaPayload, deprecatedCommandMap, resolveCommandKey } from "./help-registry.js"
+import { buildCommandCatalog, buildHelpPayload, buildSchemaPayload, compoundHelpParents, deprecatedCommandMap, resolveCommandKey } from "./help-registry.js"
 import { toJson } from "./output.js"
 import { CLI_VERSION } from "./version.js"
 
@@ -97,21 +97,12 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
 
   sync,
 
-
-
-
-
   // Doc commands (DD-023 docs-as-primitives)
   doc,
   invariant: deprecatedAlias("spec invariant", invariant),
   spec,
 
   triangle: deprecatedAlias("spec health", triangle),
-
-
-
-
-  // Spec-driven task graph creation
 
   // Utility commands (no DB required)
   schema,
@@ -199,7 +190,16 @@ function printSchemaOutput(parts: string[]): void {
 
 // --- Main ---
 
-const { command, positional, flags: parsedFlags } = parseArgs(process.argv)
+const { command, positional, flags: parsedFlags } = (() => {
+  try {return parseArgs(process.argv)}
+  catch (error) {
+    const userError = error instanceof CliUserError ? error : new CliUserError({
+      code:"cli/invalid-arguments",message:error instanceof Error ? error.message : String(error),
+    })
+    emitCliError(userError, process.argv.slice(2).includes("--json"))
+    process.exit(userError.exitCode)
+  }
+})()
 const jsonMode = flag(parsedFlags, "json")
 
 function exitCliUserError(error: unknown): never {
@@ -267,11 +267,23 @@ if (command === "schema") {
   }
 }
 
-// Handle mcp-server separately (will be moved to apps/mcp)
+const commandParts = [command, ...positional]
+const namespaceKey = commandParts.join(" ")
+const usageOnlyNamespaces = new Set(["task","task dep","task bulk","diag","sync","skills","spec"])
+const explicitNamespaceHelp = positional.at(-1) === "help"
+  && (compoundHelpParents as readonly string[]).includes(commandParts.slice(0,-1).join(" "))
+if (usageOnlyNamespaces.has(namespaceKey) || explicitNamespaceHelp) {
+  try {
+    printHelpOutput(explicitNamespaceHelp ? commandParts.slice(0,-1) : commandParts, jsonMode)
+    process.exit(0)
+  } catch (error) {exitCliUserError(error)}
+}
+
+// The MCP executable is shipped by the CLI package.
 if (command === "mcp-server") {
   emitCliError(movedCommandError({
     command,
-    message: "MCP server has been moved to a separate package.",
+    message: "Start the MCP server with the tx-mcp executable.",
     hint: "Use tx-mcp from @jamesaphoenix/tx-cli.",
   }), jsonMode)
   process.exit(1)
@@ -284,6 +296,12 @@ if (!handler) {
     suggestions: suggestCommands(command, Object.keys(commands)),
   }), jsonMode)
   process.exit(1)
+}
+
+if (command === "skills") {
+  const result = await Effect.runPromise(Effect.either(skills(positional, parsedFlags)))
+  if (result._tag === "Left") exitCliUserError(result.left)
+  process.exit(0)
 }
 
 const workspace = resolveWorkspaceContext({
@@ -342,30 +360,13 @@ let _exitCode = 0
 // Map error tags to exit codes (2 = not found, 1 = general error)
 const errorExitCodes: Record<string, number> = {
   TaskNotFoundError: 2,
-  LearningNotFoundError: 2,
-  AnchorNotFoundError: 2,
-  ClaimNotFoundError: 2,
   ValidationError: 1,
   CircularDependencyError: 1,
   DatabaseError: 1,
-  AlreadyClaimedError: 1,
-  LeaseExpiredError: 1,
-  MaxRenewalsExceededError: 1,
-  ExtractionUnavailableError: 1,
-  MessageNotFoundError: 2,
-  MessageAlreadyAckedError: 1,
   DocNotFoundError: 2,
   DocLockedError: 1,
   InvalidDocYamlError: 1,
   InvariantNotFoundError: 2,
-  DecisionNotFoundError: 2,
-  DecisionAlreadyReviewedError: 1,
-  MemoryDocumentNotFoundError: 2,
-  MemorySourceNotFoundError: 2,
-  RetrievalError: 1,
-  EmbeddingDimensionMismatchError: 1,
-  GuardExceededError: 1,
-  VerifyError: 1,
   LabelNotFoundError: 2,
   HasChildrenError: 1,
 }

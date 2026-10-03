@@ -27,6 +27,27 @@ describe("CommandContext", () => {
     vi.clearAllMocks()
   })
 
+  it("uses the latest action when command labels remain the same", () => {
+    const first = vi.fn()
+    const next = vi.fn()
+    const view = (action: () => void) => <CommandProvider><Harness onCreate={action} /></CommandProvider>
+    const {rerender} = render(view(first))
+    fireEvent.keyDown(window,{key:"n",code:"KeyN",metaKey:true})
+    expect(first).toHaveBeenCalledTimes(1)
+    rerender(view(next))
+    fireEvent.keyDown(window,{key:"n",code:"KeyN",metaKey:true})
+    expect(next).toHaveBeenCalledTimes(1)
+    expect(first).toHaveBeenCalledTimes(1)
+  })
+
+  it("shows asynchronous command failures without an unhandled rejection", async () => {
+    render(<CommandProvider><Harness onCreate={async () => {throw new Error("Cannot save the task")}} /></CommandProvider>)
+    fireEvent.keyDown(window,{key:"n",code:"KeyN",metaKey:true})
+    expect(await screen.findByRole("alert")).toHaveTextContent("Create task: Cannot save the task")
+    fireEvent.click(screen.getByRole("button",{name:"Dismiss command error"}))
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+  })
+
   it("registers commands and handles global shortcuts", async () => {
     const onCreate = vi.fn()
 

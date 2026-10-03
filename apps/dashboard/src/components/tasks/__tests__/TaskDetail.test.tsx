@@ -57,10 +57,120 @@ function renderWithProviders(ui: React.ReactElement) {
 describe('TaskDetail', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    server.use(
+      http.get('/api/docs', () => HttpResponse.json({docs:[]})),
+      http.get('/api/docs/graph', () => HttpResponse.json({nodes:[],edges:[]})),
+      http.get('/api/labels', () => HttpResponse.json({labels:[]})),
+    )
   })
 
   afterEach(() => {
     server.resetHandlers()
+  })
+
+  it('persists status from a standalone task detail and exposes failures for retry', async () => {
+    let task = createTask({id:'tx-standalone',status:'active'})
+    let fail = true
+    const patches: unknown[] = []
+    server.use(
+      http.get('/api/tasks/tx-standalone', () => HttpResponse.json({task,blockedByTasks:[],blocksTasks:[],childTasks:[]})),
+      http.patch('/api/tasks/tx-standalone', async ({request}) => {
+        const payload = await request.json() as {status:TaskWithDeps['status']}
+        patches.push(payload)
+        if (fail) return HttpResponse.json({error:'Database unavailable'},{status:503})
+        task = {...task,...payload}
+        return HttpResponse.json(task)
+      }),
+    )
+    const {queryClient} = renderWithProviders(<TaskDetail taskId="tx-standalone" onNavigateToTask={vi.fn()} />)
+    await screen.findByRole('heading',{name:'Test task'})
+    const chooseDone = () => {
+      const input = document.getElementById('react-select-task-detail-status-tx-standalone-input')!
+      fireEvent.keyDown(input,{key:'ArrowDown'})
+      fireEvent.click(document.getElementById('react-select-task-detail-status-tx-standalone-option-7')!)
+    }
+    chooseDone()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Database unavailable')
+    expect(queryClient.getQueryData<TaskDetailResponse>(['task','tx-standalone'])?.task.status).toBe('active')
+    fail = false
+    chooseDone()
+    await waitFor(() => expect(queryClient.getQueryData<TaskDetailResponse>(['task','tx-standalone'])?.task.status).toBe('done'))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(patches).toEqual([{status:'done'},{status:'done'}])
+  })
+
+  it('saves standalone assignments and prevents edits while the save is pending', async () => {
+    let task = createTask({id:'tx-standalone-assignment',assigneeType:'human',assigneeId:'alice'})
+    let release!: () => void
+    const pending = new Promise<void>(resolve => {release = resolve})
+    const patches: unknown[] = []
+    server.use(
+      http.get('/api/tasks/tx-standalone-assignment', () => HttpResponse.json({task,blockedByTasks:[],blocksTasks:[],childTasks:[]})),
+      http.patch('/api/tasks/tx-standalone-assignment', async ({request}) => {
+        const payload = await request.json() as Partial<TaskWithDeps>
+        patches.push(payload)
+        await pending
+        task = {...task,...payload}
+        return HttpResponse.json(task)
+      }),
+    )
+    renderWithProviders(<TaskDetail taskId="tx-standalone-assignment" onNavigateToTask={vi.fn()} />)
+    const input = await screen.findByRole('textbox',{name:'Assignee ID'})
+    await waitFor(() => expect(input).toHaveValue('alice'))
+    fireEvent.change(input,{target:{value:'bob'}})
+    fireEvent.keyDown(input,{key:'Enter'})
+    await waitFor(() => expect(input).toBeDisabled())
+    expect(document.getElementById('react-select-task-detail-assignee-type-tx-standalone-assignment-input')).toBeDisabled()
+    release()
+    await waitFor(() => expect(input).toBeEnabled())
+    expect(input).toHaveValue('bob')
+    expect(patches).toEqual([{assigneeType:'human',assigneeId:'bob',assignedBy:'dashboard:detail'}])
+  })
+
+  it('preserves the assignment error from a rejected parent save', async () => {
+    const task = createTask({id:'tx-assignment-failure',assigneeType:'human'})
+    server.use(http.get('/api/tasks/tx-assignment-failure', () => HttpResponse.json({task,blockedByTasks:[],blocksTasks:[],childTasks:[]})))
+    renderWithProviders(<TaskDetail taskId="tx-assignment-failure" onNavigateToTask={vi.fn()}
+      onUpdateAssignment={async () => {throw new Error('Assignment rejected')}} />)
+    const input = await screen.findByRole('textbox',{name:'Assignee ID'})
+    fireEvent.change(input,{target:{value:'bob'}})
+    fireEvent.keyDown(input,{key:'Enter'})
+    expect(await screen.findByRole('alert')).toHaveTextContent('Assignment rejected')
+    expect(input).toHaveValue('bob')
+  })
+
+  it('refreshes a clean assignee after an external task update', async () => {
+    const task = createTask({id:'tx-assignment-external',assigneeType:'human',assigneeId:'alice'})
+    server.use(http.get('/api/tasks/tx-assignment-external', () => HttpResponse.json({task,blockedByTasks:[],blocksTasks:[],childTasks:[]})))
+    const {queryClient} = renderWithProviders(<TaskDetail taskId="tx-assignment-external" onNavigateToTask={vi.fn()} />)
+    const input = await screen.findByRole('textbox',{name:'Assignee ID'})
+    await waitFor(() => expect(input).toHaveValue('alice'))
+    act(() => queryClient.setQueryData<TaskDetailResponse>(['task','tx-assignment-external'], existing => existing
+      ? {...existing,task:{...existing.task,assigneeId:'bob'}} : existing))
+    await waitFor(() => expect(input).toHaveValue('bob'))
+  })
+
+  it('assigns an existing label without requiring parent callbacks', async () => {
+    const label = {id:7,name:'polish',color:'#336699',createdAt:'2026-01-01',updatedAt:'2026-01-01'}
+    let task = createTask({id:'tx-label-standalone',labels:[]})
+    const assignments: unknown[] = []
+    server.use(
+      http.get('/api/labels', () => HttpResponse.json({labels:[label]})),
+      http.get('/api/tasks/tx-label-standalone', () => HttpResponse.json({task,blockedByTasks:[],blocksTasks:[],childTasks:[]})),
+      http.post('/api/tasks/tx-label-standalone/labels', async ({request}) => {
+        assignments.push(await request.json())
+        task = {...task,labels:[label]}
+        return HttpResponse.json({label})
+      }),
+    )
+    const {queryClient} = renderWithProviders(<TaskDetail taskId="tx-label-standalone" onNavigateToTask={vi.fn()} />)
+    await screen.findByRole('heading',{name:'Test task'})
+    const input = document.getElementById('react-select-task-detail-labels-tx-label-standalone-input')!
+    fireEvent.keyDown(input,{key:'ArrowDown'})
+    const option = await screen.findByText('polish')
+    fireEvent.click(option)
+    await waitFor(() => expect(queryClient.getQueryData<TaskDetailResponse>(['task','tx-label-standalone'])?.task.labels).toEqual([label]))
+    expect(assignments).toEqual([{labelId:7}])
   })
 
   it('renames the title through the task API and updates the detail cache', async () => {
@@ -101,6 +211,60 @@ describe('TaskDetail', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Loading task')
     release()
     await screen.findByRole('heading', {name:'tx-next'})
+  })
+
+  it.each(['title', 'description'] as const)('preserves both fields when a stale %s response arrives last', async (slowField) => {
+    let task = createTask({id:'tx-concurrent', title:'Original title', description:'Original description'})
+    let release!: () => void
+    const pending = new Promise<void>(resolve => {release = resolve})
+    const writes: string[] = []
+    server.use(
+      http.get('/api/tasks/tx-concurrent', () => HttpResponse.json({task,blockedByTasks:[],blocksTasks:[],childTasks:[]})),
+      http.patch('/api/tasks/tx-concurrent', async ({request}) => {
+        const payload = await request.json() as {title?:string;description?:string}
+        const field = payload.title === undefined ? 'description' : 'title'
+        task = {...task,...payload}
+        const snapshot = {...task}
+        writes.push(field)
+        if (field === slowField) await pending
+        return HttpResponse.json(snapshot)
+      }),
+    )
+    const {queryClient} = renderWithProviders(<TaskDetail taskId="tx-concurrent" onNavigateToTask={vi.fn()} />)
+    const description = await screen.findByRole('textbox',{name:'Task description'})
+    const rename = () => {
+      fireEvent.click(screen.getByRole('button',{name:'Original title'}))
+      fireEvent.change(screen.getByRole('textbox',{name:'Task title'}),{target:{value:'Updated title'}})
+      fireEvent.click(screen.getByRole('button',{name:'Save title'}))
+    }
+    if (slowField === 'title') rename()
+    else fireEvent.change(description,{target:{value:'Updated description'}})
+    await waitFor(() => expect(writes).toEqual([slowField]))
+    if (slowField === 'title') fireEvent.change(description,{target:{value:'Updated description'}})
+    else rename()
+    await waitFor(() => expect(writes).toHaveLength(2))
+    await waitFor(() => expect(queryClient.getQueryData<TaskDetailResponse>(['task','tx-concurrent'])?.task[slowField === 'title' ? 'description' : 'title'])
+      .toBe(slowField === 'title' ? 'Updated description' : 'Updated title'))
+    release()
+    await waitFor(() => expect(screen.queryByRole('textbox',{name:'Task title'})).not.toBeInTheDocument())
+    await waitFor(() => expect(queryClient.getQueryData<TaskDetailResponse>(['task','tx-concurrent'])?.task).toMatchObject({title:'Updated title',description:'Updated description'}))
+    expect(description).toHaveValue('Updated description')
+  })
+
+  it('refreshes a clean description after a CLI update without writing it back', async () => {
+    const task = createTask({id:'tx-external', description:'Before CLI update'})
+    const patch = vi.fn()
+    server.use(
+      http.get('/api/tasks/tx-external', () => HttpResponse.json({task,blockedByTasks:[],blocksTasks:[],childTasks:[]})),
+      http.patch('/api/tasks/tx-external', patch),
+    )
+    const {queryClient} = renderWithProviders(<TaskDetail taskId="tx-external" onNavigateToTask={vi.fn()} />)
+    const description = await screen.findByRole('textbox',{name:'Task description'})
+    await waitFor(() => expect(description).toHaveValue('Before CLI update'))
+    act(() => queryClient.setQueryData<TaskDetailResponse>(['task','tx-external'], existing => existing
+      ? {...existing, task:{...existing.task,description:'After CLI update'}} : existing))
+    await waitFor(() => expect(description).toHaveValue('After CLI update'))
+    expect(patch).not.toHaveBeenCalled()
   })
 
   it('serialises description saves so a slow request cannot overwrite the latest draft', async () => {

@@ -1,12 +1,12 @@
 import { Context, Effect, Layer } from "effect"
-import { resolve } from "node:path"
+import { isAbsolute, resolve, win32 } from "node:path"
 import { XMLParser, XMLValidator } from "fast-xml-parser"
 import { SpecTraceRepository, type InvariantSummary, type SpecTraceFilter } from "../repo/spec-trace-repo.js"
 import { DocService } from "../services/doc-service.js"
 import { DatabaseError, ValidationError } from "../errors.js"
 import { defaultSpecTestPatterns, discoverSpecTests } from "../utils/spec-discovery.js"
 import { readTxConfig } from "../utils/toml-config.js"
-import { toNormalizedRelativePath } from "../utils/file-path.js"
+import { resolvePathForComparison, toNormalizedRelativePath } from "../utils/file-path.js"
 import type {
   BatchRunInput,
   DiscoverResult,
@@ -49,13 +49,6 @@ const normalizeDetails = (value: string | null | undefined): string | null => {
   if (typeof value !== "string") return null
   if (value.length <= MAX_RUN_DETAILS_LENGTH) return value
   return value.slice(0, MAX_RUN_DETAILS_LENGTH)
-}
-
-const extractTestNameFromCanonicalId = (testId: string): string | null => {
-  const splitAt = testId.lastIndexOf("::")
-  if (splitAt < 0) return null
-  const name = testId.slice(splitAt + 2).trim()
-  return name.length > 0 ? name : null
 }
 
 const toCanonicalTestId = (testFile: string, testName: string | null): string => {
@@ -183,18 +176,17 @@ export const makeSpecTraceServiceLive = (
     const repo = yield* SpecTraceRepository
     const docService = yield* DocService
 
-    const resolveLinksForTestId = (testId: string) =>
-      Effect.gen(function* () {
-        const direct = yield* repo.findSpecTestsByTestId(testId)
-        if (direct.length > 0) return direct
-
-        const testName = extractTestNameFromCanonicalId(testId)
-        if (!testName) return [] as readonly SpecTest[]
-
-        const byName = yield* repo.findSpecTestsByTestName(testName)
-        // Only accept fallback when unambiguous.
-        return byName.length === 1 ? byName : []
-      })
+    const normalizeEvidenceId = (testId: string): string => {
+      const separator = testId.indexOf("::")
+      if (separator < 0) return testId
+      const file = testId.slice(0, separator).replace(/\\/g, "/")
+      const root = resolvePathForComparison(contentRoot ?? process.cwd())
+      const normalized = toNormalizedRelativePath(root,
+        isAbsolute(file) || win32.isAbsolute(file) ? resolvePathForComparison(file) : file)
+      return `${normalized}::${testId.slice(separator + 2)}`
+    }
+    // Evidence belongs to a file and assertion, not to a title used elsewhere.
+    const resolveLinksForTestId = (testId: string) => repo.findSpecTestsByTestId(normalizeEvidenceId(testId))
 
     const computeFci = (filter?: SpecTraceFilter) =>
       Effect.gen(function* () {
@@ -385,35 +377,20 @@ export const makeSpecTraceServiceLive = (
             }
           }
 
-          const uniqueTestIds = [...new Set(results.map((row) => row.testId))]
+          const uniqueTestIds = [...new Set(results.map((row) => normalizeEvidenceId(row.testId)))]
           const byTestId = yield* repo.findSpecTestsByTestIds(uniqueTestIds)
-          const byNameCache = new Map<string, readonly SpecTest[]>()
 
           const unmatched = new Set<string>()
-          const inserts: Array<{
+          const inserts = new Map<number, {
             specTestId: number
             passed: boolean
             durationMs?: number | null
             details?: string | null
             runAt?: string
-          }> = []
+          }>()
 
           for (const row of results) {
-            let links = byTestId.get(row.testId) ?? []
-
-            if (links.length === 0) {
-              const testName = extractTestNameFromCanonicalId(row.testId)
-              if (testName) {
-                let cached = byNameCache.get(testName)
-                if (!cached) {
-                  cached = yield* repo.findSpecTestsByTestName(testName)
-                  byNameCache.set(testName, cached)
-                }
-                if (cached.length === 1) {
-                  links = cached
-                }
-              }
-            }
+            const links = byTestId.get(normalizeEvidenceId(row.testId)) ?? []
 
             if (links.length === 0) {
               unmatched.add(row.testId)
@@ -421,17 +398,20 @@ export const makeSpecTraceServiceLive = (
             }
 
             for (const link of links) {
-              inserts.push({
+              const previous = inserts.get(link.id)
+              const details = normalizeDetails(row.details ?? null)
+              inserts.set(link.id, {
                 specTestId: link.id,
-                passed: row.passed,
-                durationMs: row.durationMs ?? null,
-                details: normalizeDetails(row.details ?? null),
+                passed: row.passed && (previous?.passed ?? true),
+                durationMs: previous?.durationMs != null || row.durationMs != null
+                  ? (previous?.durationMs ?? 0) + (row.durationMs ?? 0) : null,
+                details: normalizeDetails([previous?.details, details].filter(Boolean).join("\n") || null),
                 runAt: options?.runAt,
               })
             }
           }
 
-          const inserted = yield* repo.insertRunsBatch(inserts)
+          const inserted = yield* repo.insertRunsBatch([...inserts.values()])
 
           return {
             received: results.length,
@@ -579,33 +559,6 @@ const parseGenericBatch = (value: unknown): BatchRunInput[] => {
   return out
 }
 
-/**
- * Strip common absolute path prefixes to produce a relative path.
- * Handles both Unix and Windows paths. Tries to detect the repo root
- * by looking for common project markers in the path.
- */
-const normalizeVitestFilePath = (filePath: string): string => {
-  const normalized = filePath.replace(/\\/g, "/")
-
-  // If already relative, return as-is
-  if (!normalized.startsWith("/") && !/^[A-Za-z]:\//.test(normalized)) {
-    return normalized
-  }
-
-  // Try to find the repo-relative path by detecting common monorepo markers
-  const markers = ["/apps/", "/packages/", "/src/", "/test/", "/tests/", "/lib/"]
-  for (const marker of markers) {
-    const idx = normalized.indexOf(marker)
-    if (idx >= 0) {
-      return normalized.slice(idx + 1)
-    }
-  }
-
-  // Fallback: use just the filename
-  const lastSlash = normalized.lastIndexOf("/")
-  return lastSlash >= 0 ? normalized.slice(lastSlash + 1) : normalized
-}
-
 const parseVitestBatch = (value: unknown): BatchRunInput[] => {
   const out: BatchRunInput[] = []
 
@@ -626,7 +579,8 @@ const parseVitestBatch = (value: unknown): BatchRunInput[] => {
         assertionResults?: unknown
       }
       const rawFileName = typeof fileObj.name === "string" ? fileObj.name.replace(/\\/g, "/") : "vitest"
-      const relFileName = normalizeVitestFilePath(rawFileName)
+      // Preserve the path until the service can resolve it against its content root.
+      const relFileName = rawFileName
       if (!Array.isArray(fileObj.assertionResults)) continue
 
       for (const assertion of fileObj.assertionResults) {

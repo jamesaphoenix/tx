@@ -63,7 +63,7 @@ function parseTimestamp(value: TimestampInput): Date | null {
 
 function formatTimestamp(value: TimestampInput): string {
   const date = parseTimestamp(value)
-    if (!date) return "Not set"
+  if (!date) return "Not set"
   return date.toLocaleString()
 }
 
@@ -207,7 +207,7 @@ export function TaskDetail({
   statusStage,
   onChangeStatusStage,
   onUpdateAssignment,
-  allLabels = [],
+  allLabels,
   isLabelAssigned,
   onToggleLabel,
   onCreateLabel,
@@ -219,6 +219,8 @@ export function TaskDetail({
 }: TaskDetailProps) {
   const queryClient = useQueryClient()
   const debouncedTaskId = useDebounce(taskId, 120)
+  const [statusError, setStatusError] = useState<string | null>(null)
+  const [isSavingStatus, setIsSavingStatus] = useState(false)
   const [isSyncingLabelSelection, setIsSyncingLabelSelection] = useState(false)
   const [createLabelError, setCreateLabelError] = useState<string | null>(null)
   const [descriptionDraft, setDescriptionDraft] = useState("")
@@ -236,13 +238,49 @@ export function TaskDetail({
   })
   const saveSequenceRef = useRef(0)
   const assignmentSaveSequenceRef = useRef(0)
+  const statusSaveSequenceRef = useRef(0)
+  const labelSaveSequenceRef = useRef(0)
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["task", debouncedTaskId],
     queryFn: ({ signal }) => fetchers.taskDetail(debouncedTaskId, { signal }),
     enabled: !!debouncedTaskId,
     placeholderData: keepPreviousData,
+    refetchInterval: 5000,
   })
+
+  const {data: labelsData} = useQuery({
+    queryKey: ["labels"],
+    queryFn: () => fetchers.labels(),
+    enabled: allLabels === undefined,
+  })
+
+  const refreshTaskProperties = useCallback(async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({queryKey: ["task", taskId]}),
+      queryClient.invalidateQueries({queryKey: ["tasks"]}),
+      queryClient.invalidateQueries({queryKey: ["cycles"]}),
+      queryClient.invalidateQueries({queryKey: ["cycle"]}),
+    ])
+  }, [queryClient, taskId])
+
+  const saveStatus = async (stage: HumanTaskStage) => {
+    if (isSavingStatus) return
+    const sequence = ++statusSaveSequenceRef.current
+    setIsSavingStatus(true)
+    setStatusError(null)
+    try {
+      if (onChangeStatusStage) await onChangeStatusStage(stage)
+      else {
+        await fetchers.updateTask(taskId, {status: stage})
+        await refreshTaskProperties()
+      }
+    } catch (error) {
+      if (sequence === statusSaveSequenceRef.current) setStatusError(error instanceof Error ? error.message : "Failed to update status")
+    } finally {
+      if (sequence === statusSaveSequenceRef.current) setIsSavingStatus(false)
+    }
+  }
 
   const parentTaskId = data?.task.parentId ?? null
   const { data: ancestorBreadcrumbs = [] } = useQuery({
@@ -279,6 +317,8 @@ export function TaskDetail({
 
   useEffect(() => {
     setIsSyncingLabelSelection(false)
+    setStatusError(null)
+    setIsSavingStatus(false)
     setCreateLabelError(null)
     setIsSavingDescription(false)
     setDescriptionError(null)
@@ -286,6 +326,8 @@ export function TaskDetail({
     setAssignmentError(null)
     saveSequenceRef.current += 1
     assignmentSaveSequenceRef.current += 1
+    statusSaveSequenceRef.current += 1
+    labelSaveSequenceRef.current += 1
   }, [taskId])
 
   useEffect(() => {
@@ -307,6 +349,27 @@ export function TaskDetail({
     setAssignmentError(null)
     setIsSavingAssignment(false)
   }, [data?.task.id])
+
+  // CLI edits and refetches may update the same task. Refresh clean text only;
+  // a draft or failed save remains owned by the person editing it.
+  useEffect(() => {
+    if (!data || data.task.id !== taskId || isSavingDescription || descriptionError) return
+    if (descriptionDraft !== lastSavedDescriptionRef.current) return
+    const nextDescription = data.task.description ?? ""
+    if (nextDescription === lastSavedDescriptionRef.current) return
+    lastSavedDescriptionRef.current = nextDescription
+    setDescriptionDraft(nextDescription)
+  }, [data?.task.id, data?.task.description, taskId, isSavingDescription, descriptionError])
+
+  useEffect(() => {
+    if (!data || data.task.id !== taskId || isSavingAssignment || assignmentError) return
+    const saved = lastSavedAssignmentRef.current
+    if (selectedAssigneeType !== saved.assigneeType || assigneeIdDraft.trim() !== saved.assigneeId) return
+    const next = {assigneeType: data.task.assigneeType ?? "human", assigneeId: data.task.assigneeId ?? ""}
+    lastSavedAssignmentRef.current = next
+    setSelectedAssigneeType(next.assigneeType)
+    setAssigneeIdDraft(next.assigneeId)
+  }, [data?.task.id, data?.task.assigneeType, data?.task.assigneeId, taskId, isSavingAssignment, assignmentError])
 
   useEffect(() => {
     const input = descriptionInputRef.current
@@ -338,9 +401,10 @@ export function TaskDetail({
             if (!existing || existing.task.id !== updatedTask.id) return existing
             return {
               ...existing,
-              task: updatedTask,
+              task: {...existing.task, description: updatedTask.description},
             }
           })
+          void queryClient.invalidateQueries({queryKey: ["task", updatedTask.id]})
         })
         .catch((error) => {
           if (requestSequence !== saveSequenceRef.current) return
@@ -359,7 +423,7 @@ export function TaskDetail({
     assigneeType: TaskAssigneeType,
     assigneeIdInput: string
   ) => {
-    if (!onUpdateAssignment) return
+    if (isSavingAssignment) return
 
     const normalizedAssigneeId = assigneeIdInput.trim()
     const lastSaved = lastSavedAssignmentRef.current
@@ -372,11 +436,12 @@ export function TaskDetail({
     setAssignmentError(null)
 
     try {
-      await onUpdateAssignment({
-        assigneeType,
-        assigneeId: normalizedAssigneeId || null,
-        assignedBy: "dashboard:detail",
-      })
+      const payload = {assigneeType, assigneeId: normalizedAssigneeId || null, assignedBy: "dashboard:detail"}
+      if (onUpdateAssignment) await onUpdateAssignment(payload)
+      else {
+        await fetchers.updateTask(taskId, payload)
+        await refreshTaskProperties()
+      }
       if (requestSequence !== assignmentSaveSequenceRef.current) return
       lastSavedAssignmentRef.current = {
         assigneeType,
@@ -392,7 +457,7 @@ export function TaskDetail({
         setIsSavingAssignment(false)
       }
     }
-  }, [onUpdateAssignment])
+  }, [onUpdateAssignment, isSavingAssignment, taskId, refreshTaskProperties])
 
   if (isLoading || debouncedTaskId !== taskId || (data && data.task.id !== taskId)) {
     return <div role="status" className="p-4 text-gray-500">Loading task...</div>
@@ -401,7 +466,8 @@ export function TaskDetail({
   if (error) {
     return (
       <div className="p-4 text-red-400">
-        Error loading task: {String(error)}
+        <p role="alert">Error loading task: {error instanceof Error ? error.message : String(error)}</p>
+        <Button className="mt-3" onClick={() => {void refetch()}}>Retry task</Button>
       </div>
     )
   }
@@ -427,7 +493,7 @@ export function TaskDetail({
   const selectedChildrenCount = selectedChildIds.size
   const mergedLabels = (() => {
     const byId = new Map<number, TaskLabel>()
-    for (const label of allLabels) {
+    for (const label of allLabels ?? labelsData?.labels ?? []) {
       byId.set(label.id, label)
     }
     for (const label of task.labels ?? []) {
@@ -466,23 +532,27 @@ export function TaskDetail({
   const breadcrumbs = [...ancestorBreadcrumbs, { id: task.id, title: task.title }]
 
   const syncLabelsFromSelect = async (nextLabelIds: number[]) => {
-    if (!onToggleLabel) return
+    if (isSyncingLabelSelection) return
     const desiredIds = new Set(nextLabelIds)
     const currentIds = new Set(selectedLabelIds)
     const toAdd = mergedLabels.filter((label) => desiredIds.has(label.id) && !currentIds.has(label.id))
     const toRemove = mergedLabels.filter((label) => !desiredIds.has(label.id) && currentIds.has(label.id))
     if (toAdd.length === 0 && toRemove.length === 0) return
 
+    const sequence = ++labelSaveSequenceRef.current
     setIsSyncingLabelSelection(true)
     setCreateLabelError(null)
     try {
       for (const label of [...toAdd, ...toRemove]) {
-        await onToggleLabel(label)
+        if (onToggleLabel) await onToggleLabel(label)
+        else if (currentIds.has(label.id)) await fetchers.unassignTaskLabel(taskId, label.id)
+        else await fetchers.assignTaskLabel(taskId, {labelId: label.id})
       }
     } catch (error) {
-      setCreateLabelError(error instanceof Error ? error.message : "Failed to update labels")
+      if (sequence === labelSaveSequenceRef.current) setCreateLabelError(error instanceof Error ? error.message : "Failed to update labels")
     } finally {
-      setIsSyncingLabelSelection(false)
+      await refreshTaskProperties()
+      if (sequence === labelSaveSequenceRef.current) setIsSyncingLabelSelection(false)
     }
   }
 
@@ -700,12 +770,12 @@ export function TaskDetail({
             <TaskStatusSelect
               instanceId={`task-detail-status-${task.id}`}
               value={currentStatusStage}
-              onChange={(nextStage) => {
-                void onChangeStatusStage?.(nextStage)
-              }}
+              onChange={(nextStage) => {void saveStatus(nextStage)}}
+              disabled={isSavingStatus}
               theme={themeMode}
             />
-            <p className="mt-2 text-[11px] text-gray-500">Internal status: {task.status}</p>
+            <p className="mt-2 text-[11px] text-gray-500">{isSavingStatus ? "Saving status..." : `Internal status: ${task.status}`}</p>
+            {statusError && <p role="alert" className="mt-2 text-xs text-red-400">{statusError}</p>}
           </section>
 
 
@@ -729,6 +799,7 @@ export function TaskDetail({
             <TaskAssigneeTypeSelect
               instanceId={`task-detail-assignee-type-${task.id}`}
               value={selectedAssigneeType}
+              disabled={isSavingAssignment}
               onChange={(nextType) => {
                 setSelectedAssigneeType(nextType)
                 void persistAssignment(nextType, assigneeIdDraft)
@@ -742,6 +813,7 @@ export function TaskDetail({
             <input
               id={`task-detail-assignee-id-${task.id}`}
               value={assigneeIdDraft}
+              disabled={isSavingAssignment}
               onChange={(event) => setAssigneeIdDraft(event.target.value)}
               onBlur={() => {
                 void persistAssignment(selectedAssigneeType, assigneeIdDraft)
@@ -755,6 +827,7 @@ export function TaskDetail({
               className="mt-1 w-full rounded-md border border-gray-600 bg-gray-800 px-2.5 py-2 text-sm text-gray-200 outline-none transition focus:border-blue-400"
             />
 
+            {assignmentError && <p role="alert" className="mt-2 text-xs text-red-400">{assignmentError}</p>}
             <p className="mt-2 text-[11px] text-gray-500">
               Assigned at: {formatTimestamp(task.assignedAt)}
             </p>
@@ -776,9 +849,14 @@ export function TaskDetail({
               onChange={(nextLabelIds) => {
                 void syncLabelsFromSelect(nextLabelIds)
               }}
-              onCreateLabel={onCreateLabel}
+              onCreateLabel={onCreateLabel ?? (async (payload) => {
+                const response = await fetchers.assignTaskLabel(taskId, payload)
+                await queryClient.invalidateQueries({queryKey: ["labels"]})
+                await refreshTaskProperties()
+                return response.label ?? null
+              })}
               theme={themeMode}
-              disabled={isSyncingLabelSelection || (!onToggleLabel && !onCreateLabel)}
+              disabled={isSyncingLabelSelection}
               noOptionsMessage="No labels yet."
             />
 
@@ -786,7 +864,7 @@ export function TaskDetail({
               <p className="mt-2 text-[11px] text-gray-500">Updating labels...</p>
             )}
             {createLabelError && (
-              <p className="mt-2 text-[11px] text-red-400">{createLabelError}</p>
+              <p role="alert" className="mt-2 text-[11px] text-red-400">{createLabelError}</p>
             )}
           </section>
 

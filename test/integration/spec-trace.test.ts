@@ -519,6 +519,57 @@ describe("SpecTraceService Integration", () => {
     expect(result.status.blockers).toEqual(["2 untested invariant(s)"])
   })
 
+  it("cannot credit a different test file merely because its assertion title matches", async () => {
+    const result = await run(Effect.gen(function* () {
+      yield* createDocWithInvariants("spec-wrong-file-doc", [{id:"INV-SPEC-WRONG-FILE",rule:"evidence belongs to the mapped assertion"}])
+      const spec = yield* SpecTraceService
+      yield* spec.link("INV-SPEC-WRONG-FILE","test/ownership.test.ts","requires an owner","vitest")
+      const wrongId = "test/unrelated.test.ts::requires an owner"
+      const single = yield* spec.recordRun(wrongId,true).pipe(Effect.either)
+      const batch = yield* spec.recordBatchRun([{testId:wrongId,passed:true}])
+      const before = yield* spec.fci({doc:"spec-wrong-file-doc"})
+      const exact = yield* spec.recordRun("test/ownership.test.ts::requires an owner",true)
+      const after = yield* spec.fci({doc:"spec-wrong-file-doc"})
+      return {single,batch,before,exact,after}
+    }))
+    expect(result.single._tag).toBe("Left")
+    expect(result.batch).toEqual({received:1,recorded:0,unmatched:["test/unrelated.test.ts::requires an owner"]})
+    expect(result.before).toMatchObject({fci:0,untested:1})
+    expect(result.exact.recorded).toBe(1)
+    expect(result.after).toMatchObject({fci:100,passing:1})
+  })
+
+  it("resolves report paths against the content checkout rather than guessing from directory names", async () => {
+    const result = await run(Effect.gen(function* () {
+      yield* createDocWithInvariants("spec-report-path-doc",[{id:"INV-SPEC-REPORT-PATH",rule:"reports identify the actual checkout test"}])
+      const spec = yield* SpecTraceService
+      writeRelative(process.cwd(),"feature_checks/ownership.test.ts",'it("requires an owner", () => {})')
+      yield* spec.link("INV-SPEC-REPORT-PATH","feature_checks/ownership.test.ts","requires an owner","vitest")
+      const rows = parseBatchRunInput(JSON.stringify({testResults:[{name:join(process.cwd(),"feature_checks/ownership.test.ts"),
+        assertionResults:[{title:"requires an owner",status:"passed"}]}]}),"vitest")
+      const batch = yield* spec.recordBatchRun(rows)
+      const fci = yield* spec.fci({doc:"spec-report-path-doc"})
+      return {batch,fci}
+    }))
+    expect(result.batch.recorded).toBe(1)
+    expect(result.batch.unmatched).toEqual([])
+    expect(result.fci).toMatchObject({fci:100,passing:1})
+  })
+
+  it.each([[false,true],[true,false]])("keeps a failure when a batch repeats the same mapped assertion (%j)", async (first, second) => {
+    const result = await run(Effect.gen(function* () {
+      yield* createDocWithInvariants("spec-duplicate-result-doc",[{id:"INV-SPEC-DUPLICATE",rule:"one failing case cannot be hidden by another pass"}])
+      const spec = yield* SpecTraceService
+      const mapping = yield* spec.link("INV-SPEC-DUPLICATE","test/repeated.test.ts","same assertion","vitest")
+      const batch = yield* spec.recordBatchRun([{testId:mapping.testId,passed:first,details:first ? undefined : "Failure in first case"},
+        {testId:mapping.testId,passed:second,details:second ? undefined : "Failure in second case"}])
+      const fci = yield* spec.fci({doc:"spec-duplicate-result-doc"})
+      return {batch,fci}
+    }))
+    expect(result.batch).toMatchObject({received:2,recorded:1,unmatched:[]})
+    expect(result.fci).toMatchObject({fci:0,failing:1,passing:0})
+  })
+
   it("records framework-adapter batch imports and tracks unmatched IDs", async () => {
     const result = await run(
       Effect.gen(function* () {

@@ -8,7 +8,7 @@
  */
 
 import { Effect } from "effect"
-import { spawn, execSync, type ChildProcess } from "node:child_process"
+import { spawn, execFileSync, type ChildProcess } from "node:child_process"
 import { existsSync } from "node:fs"
 import { createServer } from "node:net"
 import { CliUserError } from "../cli-errors.js"
@@ -35,19 +35,19 @@ function extractViteLocalUrl(output: string): string | null {
 
 function openBrowser(url: string): void {
   try {
-    execSync(`open -a "Brave Browser" "${url}" 2>/dev/null`)
+    execFileSync("open", ["-a", "Brave Browser", url], {stdio:"ignore"})
     console.log("Opened in Brave Browser")
     return
   } catch { /* Brave not available */ }
 
   try {
-    execSync(`open -a "Google Chrome" "${url}" 2>/dev/null`)
+    execFileSync("open", ["-a", "Google Chrome", url], {stdio:"ignore"})
     console.log("Opened in Google Chrome")
     return
   } catch { /* Chrome not available */ }
 
   try {
-    execSync(`open "${url}" 2>/dev/null`)
+    execFileSync("open", [url], {stdio:"ignore"})
     console.log("Opened in default browser")
   } catch {
     console.log(`Open ${url} in your browser`)
@@ -104,9 +104,45 @@ export const dashboard = (_pos: string[], flags: Flags) =>
       detached: false,
     })
 
+    apiProc.stdout?.on("data", (d: Buffer) => process.stdout.write(`[api] ${d}`))
+    apiProc.stderr?.on("data", (d: Buffer) => process.stderr.write(`[api] ${d}`))
+    let startupError: Error | undefined
+    const onStartupError = (error: Error) => { startupError = error }
+    const stopDuringStartup = () => {void stopDashboardChildren([apiProc]).then(() => process.exit(0))}
+    apiProc.on("error", onStartupError)
+    process.once("SIGINT", stopDuringStartup)
+    process.once("SIGTERM", stopDuringStartup)
+    try {
+      // Bind the API before Vite chooses a fallback port. Otherwise Vite can
+      // claim the API's still-free port when the preferred UI port is occupied.
+      const deadline = Date.now() + 15000
+      let ready = false
+      while (Date.now() < deadline) {
+        if (startupError || apiProc.exitCode !== null || apiProc.signalCode !== null) break
+        try {
+          const response = await fetch(`http://127.0.0.1:${apiPort}/api/stats`, {signal:AbortSignal.timeout(1000)})
+          await response.arrayBuffer()
+          if (response.ok) {ready = true; break}
+        } catch { /* API has not finished starting. */ }
+        await new Promise<void>(resolveReady => setTimeout(resolveReady, 50))
+      }
+      if (!ready) throw new CliUserError({code:"cli/dashboard-api-start-failed",
+        message:startupError?.message ?? `Dashboard API did not become ready on port ${apiPort}.`,
+        hint:"Check the API output above and choose a free --port."})
+    } catch (error) {
+      await stopDashboardChildren([apiProc])
+      throw new CliUserError(error instanceof CliUserError ? error : {
+        code:"cli/dashboard-api-start-failed",message:error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      apiProc.off("error", onStartupError)
+      process.off("SIGINT", stopDuringStartup)
+      process.off("SIGTERM", stopDuringStartup)
+    }
+
     // Start Vite dev server
     console.log(`Starting Vite dev server on port ${vitePort}...`)
-    const viteProc = spawn(runtime, ["run", "dev", "--port", String(vitePort)], {
+    const viteProc = spawn(runtime, ["run", "dev", "--host", "127.0.0.1", "--port", String(vitePort)], {
       cwd: DASHBOARD_DIR,
       stdio: "pipe",
       env: { ...process.env, TX_DASHBOARD_API_PORT: String(apiPort) },
@@ -114,7 +150,7 @@ export const dashboard = (_pos: string[], flags: Flags) =>
     })
 
     const children = [apiProc, viteProc]
-    let dashboardUrl = `http://localhost:${vitePort}`
+    let dashboardUrl = `http://127.0.0.1:${vitePort}`
     let announced = false
     let openedUrl: string | null = null
     let shuttingDown = false
@@ -128,7 +164,7 @@ export const dashboard = (_pos: string[], flags: Flags) =>
         openedUrl = dashboardUrl
       }
       console.log("")
-      console.log(`  API:       http://localhost:${apiPort}`)
+      console.log(`  API:       http://127.0.0.1:${apiPort}`)
       console.log(`  Dashboard: ${dashboardUrl}`)
       console.log("")
       console.log("Press Ctrl+C to stop.")
@@ -153,8 +189,6 @@ export const dashboard = (_pos: string[], flags: Flags) =>
     }
 
     // Forward output
-    apiProc.stdout?.on("data", (d: Buffer) => process.stdout.write(`[api] ${d}`))
-    apiProc.stderr?.on("data", (d: Buffer) => process.stderr.write(`[api] ${d}`))
     const onViteData = (prefix: "stdout" | "stderr") => (d: Buffer) => {
       const text = d.toString()
       const viteUrl = extractViteLocalUrl(text)

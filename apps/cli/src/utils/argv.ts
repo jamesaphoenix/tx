@@ -1,9 +1,11 @@
 import { commandHelp } from "../help.js"
 import { buildCommandSchema } from "../help-registry.js"
 import type { Flags } from "./parse.js"
+import { CliUserError } from "../cli-errors.js"
 
 const options = Object.keys(commandHelp).flatMap(key => buildCommandSchema(key).options)
-const valuedFlags = new Set(options.filter(option => option.valueName).flatMap(option => option.flags))
+const valuedFlags = new Set(["--db","--state-root","--content-root",
+  ...options.filter(option => option.valueName).flatMap(option => option.flags)])
 const booleanFlags = new Set([
   "--version", "--help", "-h", "-v",
   ...options.filter(option => !option.valueName).flatMap(option => option.flags).filter(flag => !valuedFlags.has(flag)),
@@ -30,6 +32,10 @@ export function parseArgs(argv: string[]): {command:string; positional:string[];
         value = next
         i++
       }
+      if (value === true && valuedFlags.has(flagName)) throw new CliUserError({
+        code:"cli/missing-flag-value",message:`${flagName} requires a value.`,
+        hint:`Pass ${flagName} <value>, or ${flagName}=<value> when the value starts with a dash.`,
+      })
       const previous = flags[key]
       flags[key] = typeof previous === "string" && typeof value === "string" ? `${previous},${value}` : value
     } else if (command === undefined) command = arg

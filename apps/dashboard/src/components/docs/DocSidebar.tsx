@@ -23,10 +23,10 @@ const STATUS_DOT: Record<string, string> = {
 }
 
 const KIND_LABELS: Record<DocSerialized["kind"], string> = {
-  plan: "Plans",
-  overview: "OV",
+  plan: "Plan",
+  overview: "Overview",
   prd: "PRD",
-  design: "DD",
+  design: "Design",
   requirement: "REQ",
   system_design: "SD",
   runbook: "RB",
@@ -103,33 +103,22 @@ function DocItem({
   onClick: () => void
 }) {
   return (
-    <button
-      onClick={onClick}
-      className={`w-full text-left px-3 py-2 rounded-md transition ${
-        isChecked
-          ? "bg-blue-600/20 border border-blue-500/50"
-          : isSelected
+    <div className="relative">
+      {onToggleCheck && (
+        <input type="checkbox" checked={Boolean(isChecked)}
+          aria-label={`Select ${doc.title || doc.name} (v${doc.version})`}
+          onChange={() => onToggleCheck(docSelectionKey(doc))}
+          className="absolute left-3 top-3 z-10 h-4 w-4 cursor-pointer accent-blue-500" />
+      )}
+      <button
+        type="button" onClick={onClick} aria-current={isSelected ? "page" : undefined}
+        className={`w-full text-left px-3 py-2 rounded-md transition ${onToggleCheck ? "pl-9" : ""} ${
+          isChecked || isSelected
             ? "bg-blue-600/20 border border-blue-500/50"
             : "hover:bg-gray-800/70 border border-transparent"
-      }`}
-    >
+        }`}
+      >
       <div className="flex items-center gap-2">
-        {onToggleCheck && (
-          <span
-            role="checkbox"
-            aria-checked={isChecked}
-            onClick={(e) => { e.stopPropagation(); onToggleCheck(docSelectionKey(doc)) }}
-            className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition cursor-pointer ${
-              isChecked
-                ? "bg-blue-500 border-blue-500 text-white"
-                : "border-gray-500 hover:border-blue-400"
-            }`}
-          >
-            {isChecked && (
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5L8 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-            )}
-          </span>
-        )}
         <span className={`w-2 h-2 rounded-full flex-shrink-0 ${STATUS_DOT[doc.status] ?? "bg-gray-400"}`} />
         <span className="text-sm text-white truncate flex-1">
           {doc.name}
@@ -138,7 +127,7 @@ function DocItem({
           className="text-[10px] px-1.5 py-0.5 rounded border font-semibold"
           style={{ backgroundColor: "#334155", color: "#f8fafc", borderColor: "#64748b" }}
         >
-          {KIND_LABELS[doc.kind]}
+          {KIND_LABELS[doc.kind] ?? doc.kind}
         </span>
         <span
           className="text-[10px] px-1.5 py-0.5 rounded border font-semibold"
@@ -150,7 +139,8 @@ function DocItem({
       <div className="text-xs text-gray-500 ml-4 mt-0.5 truncate">
         {doc.title}
       </div>
-    </button>
+      </button>
+    </div>
   )
 }
 
@@ -158,19 +148,16 @@ export function DocSidebar({ selectedDocRef, onSelectDoc, showMap, onToggleMap, 
   const [searchQuery, setSearchQuery] = useState("")
 
   const docsQuery = useQuery({
-    queryKey: ["docs", kindFilter, statusFilter],
-    queryFn: () =>
-      fetchers.docs({
-        kind: kindFilter || undefined,
-        status: statusFilter || undefined,
-      }),
-    refetchInterval: 5000,
+    queryKey: ["docs"],
+    queryFn: () => fetchers.docs(),
+    refetchInterval: 10000,
   })
 
   const docs = docsQuery.data?.docs ?? []
   const filteredDocs = useMemo(
-    () => docs.filter((doc) => matchesDocQuery(doc, searchQuery)),
-    [docs, searchQuery],
+    () => docs.filter((doc) => (!kindFilter || doc.kind === kindFilter)
+      && (!statusFilter || doc.status === statusFilter) && matchesDocQuery(doc, searchQuery)),
+    [docs, kindFilter, statusFilter, searchQuery],
   )
   const { topLevel, groups } = useMemo(() => groupDocs(filteredDocs), [filteredDocs])
 
@@ -260,6 +247,7 @@ export function DocSidebar({ selectedDocRef, onSelectDoc, showMap, onToggleMap, 
           <div className="text-center py-8 text-red-300">
             <div className="text-sm">Unable to load docs</div>
             <div className="text-xs mt-1 text-red-400/80">{loadError}</div>
+            <Button className="mt-3" onClick={() => {void docsQuery.refetch()}}>Retry documents</Button>
           </div>
         ) : (
           <>

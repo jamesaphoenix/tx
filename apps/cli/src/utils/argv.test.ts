@@ -17,4 +17,8 @@ describe("CLI argument parsing", () => {
   it("uses the documented value for batch result formats", () => {
     expect(parse("spec","batch","--from","vitest","--json")).toEqual({command:"spec",positional:["batch"],flags:{from:"vitest",json:true}})
   })
+  it.each(["--score","--description","--db","--content-root"])("rejects a missing value for %s",option => {
+    expect(() => parse("task","add","A task",option)).toThrow(`${option} requires a value`)
+    expect(() => parse("task","add","A task",option,"--json")).toThrow(`${option} requires a value`)
+  })
 })

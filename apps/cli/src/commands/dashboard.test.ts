@@ -116,7 +116,9 @@ describe("tx diag dashboard", () => {
     const port = await listen(blocker)
     const { apiPort } = await start(port)
     const ui = await ready(apiPort)
+    expect(new URL(ui).hostname).toBe("127.0.0.1")
     expect(new URL(ui).port).not.toBe(String(port))
+    expect(output.indexOf("Dashboard API running")).toBeLessThan(output.indexOf("Starting Vite dev server"))
     expect(await fetch(`http://localhost:${port}`).then(r => r.text())).toBe("existing UI")
   }, 25000)
 

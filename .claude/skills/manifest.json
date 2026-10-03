@@ -34,7 +34,7 @@
       "id": "verify-invariants",
       "title": "Map and verify invariants",
       "installPath": ".claude/skills/verify-invariants",
-      "checksum": "2583423aa719961ae67f8a8bea15b9d8dfe1c7973a4fca9e3ea64ebad106fc01",
+      "checksum": "1dd57d49f5a73e16462170c5fd13af5a443de6357ea37b4f8d16f5a21751240f",
       "commandKeys": [],
       "source": "bundled"
     }

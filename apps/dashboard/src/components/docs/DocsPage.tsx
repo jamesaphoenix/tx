@@ -45,6 +45,7 @@ export function DocsPage() {
   })
   const allDocs = docsData?.docs ?? []
   const docs = allDocs.filter(doc => (!kindFilter || doc.kind === kindFilter) && (!statusFilter || doc.status === statusFilter))
+  const selectedDocuments = allDocs.filter(doc => selectedDocRefs.has(docSelectionKey(doc)))
   const selectedDoc = selectedDocRef
     ? allDocs.find((doc) => docSelectionKey(doc) === selectedDocRef) ?? null
     : null
@@ -75,17 +76,16 @@ export function DocsPage() {
         action: () => selectionActions.selectAllDocs(docs.map((doc) => docSelectionKey(doc))),
       })
     }
-    if (selectedDocRefs.size > 0) {
+    if (selectedDocuments.length > 0) {
       cmds.push({
         id: "action:copy-selected-docs",
         label: "Copy selected doc names",
-        sublabel: `${selectedDocRefs.size} selected`,
+        sublabel: `${selectedDocuments.length} selected`,
         group: "Actions",
         icon: "copy",
         shortcut: "⌘C",
         action: async () => {
-          const text = docs
-            .filter((doc) => selectedDocRefs.has(docSelectionKey(doc)))
+          const text = selectedDocuments
             .map(d => `${d.name} (${d.kind}) - ${d.title}`)
             .join("\n")
           await navigator.clipboard.writeText(text)
@@ -94,27 +94,32 @@ export function DocsPage() {
       cmds.push({
         id: "action:delete-selected-docs",
         label: "Delete selected docs",
-        sublabel: `${selectedDocRefs.size} selected`,
+        sublabel: `${selectedDocuments.length} selected`,
         group: "Actions",
         icon: "delete",
         action: async () => {
-          if (confirm(`Delete ${selectedDocRefs.size} selected doc(s)? This cannot be undone.`)) {
-            for (const doc of docs) {
-              if (!selectedDocRefs.has(docSelectionKey(doc))) continue
+          if (!confirm(`Delete ${selectedDocuments.length} selected doc(s)? This cannot be undone.`)) return
+          try {
+            for (const doc of selectedDocuments) {
               await fetchers.deleteDoc(doc.docId, doc.version)
+              const ref = docSelectionKey(doc)
+              selectionActions.deselectDoc(ref)
+              if (ref === selectedDocRef) setSelectedDocRef(null)
             }
-            selectionActions.clearDocs()
-            if (selectedDocRef && selectedDocRefs.has(selectedDocRef)) {
-              setSelectedDocRef(null)
-            }
-            queryClient.invalidateQueries({ queryKey: ["docs"] })
+          } finally {
+            await Promise.all([
+              queryClient.invalidateQueries({queryKey: ["docs"]}),
+              queryClient.invalidateQueries({queryKey: ["doc"]}),
+              queryClient.invalidateQueries({queryKey: ["doc-graph"]}),
+              queryClient.invalidateQueries({queryKey: ["doc-health"]}),
+            ])
           }
         },
       })
       cmds.push({
         id: "action:clear-doc-selection",
         label: "Clear doc selection",
-        sublabel: `${selectedDocRefs.size} selected`,
+        sublabel: `${selectedDocuments.length} selected`,
         group: "Actions",
         icon: "action",
         action: () => selectionActions.clearDocs(),
@@ -166,7 +171,7 @@ export function DocsPage() {
     }
 
     return cmds
-  }, [docs, selectedDoc, selectedDocRef, selectedDocRefs, showMap, queryClient])
+  }, [docs, selectedDocuments, selectedDoc, selectedDocRef, selectedDocRefs, showMap, queryClient, setSelectedDocRef])
 
   useCommands(commands)
 
@@ -200,8 +205,10 @@ export function DocsPage() {
             selectedNodeId={selectedDoc ? `doc:${selectedDoc.id}` : null}
             onSelectTask={taskId => window.location.assign(`/?${new URLSearchParams({ view: "list", taskId })}`)}
             onSelectDoc={(docDbId) => {
-              const doc = docs.find((candidate) => candidate.id === docDbId)
+              const doc = allDocs.find((candidate) => candidate.id === docDbId)
               if (!doc) return
+              setKindFilter("")
+              setStatusFilter("")
               setSelectedDocRef(docSelectionKey(doc))
               setShowMap(false)
             }}

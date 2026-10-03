@@ -111,4 +111,24 @@ describe("DocGraph", () => {
     expect(screen.queryByText("Runbook")).not.toBeInTheDocument()
   })
 
+  it("keeps the full design and task path visible without highlighting a sibling plan",async () => {
+    server.use(http.get("/api/docs/graph",() => HttpResponse.json({nodes:[
+      {id:"doc:1",label:"Product contract",kind:"prd"},
+      {id:"doc:2",label:"Shared design",kind:"design"},
+      {id:"doc:3",label:"Selected plan",kind:"plan"},
+      {id:"doc:4",label:"Sibling plan",kind:"plan"},
+      {id:"task:tx-step",label:"Linked step",kind:"task"},
+    ],edges:[
+      {source:"doc:1",target:"doc:2",type:"prd_to_design"},
+      {source:"doc:2",target:"doc:3",type:"spec_to_plan"},
+      {source:"doc:2",target:"doc:4",type:"spec_to_plan"},
+      {source:"task:tx-step",target:"doc:3",type:"implements"},
+    ]})))
+    renderWithProviders(<DocGraph selectedNodeId="doc:3" onSelectDoc={vi.fn()} onSelectTask={vi.fn()} fullPage />)
+    expect(await screen.findByRole("button",{name:"prd: Product contract"})).toHaveStyle({opacity:"1"})
+    expect(screen.getByRole("button",{name:"design: Shared design"})).toHaveStyle({opacity:"1"})
+    expect(screen.getByRole("button",{name:"task: Linked step"})).toHaveStyle({opacity:"1"})
+    expect(screen.getByRole("button",{name:"plan: Sibling plan"})).toHaveStyle({opacity:"0.25"})
+  })
+
 })

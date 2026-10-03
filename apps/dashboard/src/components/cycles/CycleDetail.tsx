@@ -159,7 +159,7 @@ export function CycleDetail({
 
   const tasksQuery = useQuery({
     queryKey: ["tasks", "cycle-picker"],
-    queryFn: fetchers.tasks,
+    queryFn: ({signal}) => fetchers.allTasks({signal}),
     enabled: isTaskPickerOpen,
     staleTime: 30_000,
   })
@@ -471,7 +471,7 @@ export function CycleDetail({
           icon: "delete",
           action: () => {
             if (!window.confirm(`Remove ${selectedInCycle.length} task${selectedInCycle.length === 1 ? "" : "s"} from this cycle?`)) return
-            void (async () => {
+            return (async () => {
               for (const id of selectedInCycle) {
                 await fetchers.removeTaskFromCycle(cycleId, id)
               }
@@ -488,7 +488,7 @@ export function CycleDetail({
         selectedIds: selectedInCycle,
         cycles: allCycles,
         onBulkSetStatus: (status) => {
-          void (async () => {
+          return (async () => {
             for (const id of selectedInCycle) {
               await fetchers.updateTask(id, { status })
             }
@@ -497,7 +497,7 @@ export function CycleDetail({
           })()
         },
         onBulkMoveToCycle: (targetCycleId) => {
-          void (async () => {
+          return (async () => {
             await fetchers.addTasksToCycle(targetCycleId, selectedInCycle)
             selectionActions.clearIssues()
             await invalidateCycleData()
@@ -515,7 +515,7 @@ export function CycleDetail({
       cycles: allCycles,
       onSetStatus: (status) => {
         if (!focusedTask) return
-        void (async () => {
+        return (async () => {
           await fetchers.updateTask(focusedTask.id, { status })
           await invalidateCycleData()
         })()
@@ -523,7 +523,7 @@ export function CycleDetail({
       onToggleLabel: (label) => {
         if (!focusedTask) return
         const assigned = (focusedTask.labels ?? []).some((l) => l.id === label.id)
-        void (async () => {
+        return (async () => {
           if (assigned) {
             await fetchers.unassignTaskLabel(focusedTask.id, label.id)
           } else {
@@ -538,14 +538,14 @@ export function CycleDetail({
         if (input === null) return
         const score = parseInt(input, 10)
         if (Number.isNaN(score)) return
-        void (async () => {
+        return (async () => {
           await fetchers.updateTask(focusedTask.id, { score })
           await invalidateCycleData()
         })()
       },
       onMoveToCycle: (targetCycleId) => {
         if (!focusedTask) return
-        void (async () => {
+        return (async () => {
           await fetchers.addTasksToCycle(targetCycleId, [focusedTask.id])
           await invalidateCycleData()
           await queryClient.invalidateQueries({ queryKey: ["cycles"] })
@@ -988,6 +988,10 @@ export function CycleDetail({
                   </Button>
                 </div>
               </div>
+
+              {addTasksMutation.error && <p role="alert" className="text-sm text-red-300">
+                Could not add selected tasks: {addTasksMutation.error.message}
+              </p>}
             </div>
           </div>
         </div>

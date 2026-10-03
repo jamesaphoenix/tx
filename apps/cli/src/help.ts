@@ -625,13 +625,12 @@ Running 'tx doc' with no subcommand defaults to 'tx doc list'.
 Use 'tx spec lint' for comprehensive doc/spec checking (drift, EARS, coverage).
 
 Examples:
-  tx doc add prd auth-flow --title "Authentication Flow"
-  tx doc show auth-flow --json
-  tx doc list --kind design --status changing
-  tx doc rm auth-flow
-  tx doc lock auth-flow
-  tx doc version auth-flow
-  tx doc attach tx-abc123 auth-flow`,
+  tx doc add design checkout-design --title "Checkout design"
+  tx doc add plan checkout-plan --title "Checkout plan"
+  tx doc link checkout-design checkout-plan
+  tx doc show checkout-design --md
+  tx doc sync checkout-design
+  tx doc attach <task-id> checkout-plan`,
   "doc add": `tx doc add - Create a new doc
 
 Usage: tx doc add <kind> <name> [--title <title>] [--json]
@@ -919,7 +918,8 @@ Examples:
   tx spec health
   tx spec fci --doc auth-flow
   tx spec run test/core.test.ts::"ready returns unblocked" --passed
-  vitest run --reporter=json | tx spec batch --from vitest
+  vitest run --reporter=json --outputFile=.tx/spec-results.json
+  tx spec batch --from vitest < .tx/spec-results.json
   tx spec complete --doc auth-flow --by james`,
   "spec invariant": `tx spec invariant - Inspect document invariants
 
@@ -1047,8 +1047,10 @@ Input must be piped via stdin. Generic format:
 
 Examples:
   echo '[{"testId":"test/a.test.ts::works","passed":true}]' | tx spec batch
-  vitest run --reporter=json | tx spec batch --from vitest
-  pytest --json-report | tx spec batch --from pytest
+  vitest run --reporter=json --outputFile=.tx/spec-results.json
+  tx spec batch --from vitest < .tx/spec-results.json
+  pytest --json-report --json-report-file=.tx/pytest-results.json
+  tx spec batch --from pytest < .tx/pytest-results.json
   go test -json ./... | tx spec batch --from go`,
   "spec matrix": `tx spec matrix - Full invariant-to-test traceability matrix
 
