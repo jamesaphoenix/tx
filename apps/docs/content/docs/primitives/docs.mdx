@@ -43,7 +43,21 @@ ears_requirements:
 Design [invariants](./invariants) define what must remain true in the code. Preserve
 the generated sections and use `tx spec lint` to catch schema and section issues.
 The four built-in document kinds are `prd`, `design`, `overview` and `plan`; projects
-can configure other kinds. Lock reviewed documents with `tx doc lock` before creating a new version.
+can configure other kinds. Sync your edits with `tx doc sync`, then lock reviewed
+documents before creating a new version:
+
+```bash
+tx doc sync checkout-design
+tx doc lock checkout-design
+tx doc version checkout-design
+tx doc show checkout-design --doc-version 1 --md
+```
+
+A new version keeps the previous locked source in `specs/.versions/` and leaves the
+current editable Markdown at its usual path. Commit both paths. Repository-wide
+`tx doc sync` updates working documents and skips locked history. Versions created
+before v0.20 may share their original source path; tx cannot reconstruct past
+content that was already overwritten.
 
 Save your coding agent's [plan](./plans), link the specification to it, then create
 [task](./tasks) attachments: **spec -> plan -> tasks**. Use [tx spec](./spec-trace)

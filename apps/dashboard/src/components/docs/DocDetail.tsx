@@ -12,7 +12,7 @@ interface DocDetailProps {
   onNavigateToDoc: (docId: string, version: number) => void
 }
 
-const KIND_LABELS: Record<string, string> = {
+const KIND_LABELS = new Map<string, string>(Object.entries({
   overview: "OVERVIEW DOCUMENT",
   prd: "PRODUCT REQUIREMENTS",
   design: "DESIGN DOCUMENT",
@@ -21,7 +21,7 @@ const KIND_LABELS: Record<string, string> = {
   system_design: "SYSTEM DESIGN",
   runbook: "RUNBOOK",
   decision: "DECISION RECORD",
-}
+}))
 
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
@@ -58,9 +58,10 @@ export function DocDetail({ docId, version, onNavigateToDoc }: DocDetailProps) {
   // Strip leading title and Kind/Status/Version lines from rendered content
   // since we already show them in the header above
   const rendered = useMemo(() => {
-    let text = sourceData?.renderedContent ?? ""
+    let text = (sourceData?.renderedContent ?? "").trimStart()
     // Strip leading "# Title\n" line
-    text = text.replace(/^#\s+[^\n]+\n+/, "")
+    const leadingHeading = text.match(/^#\s+([^\n]+)\n+/)
+    if (leadingHeading && doc && leadingHeading[1].trim() === doc.title.trim()) text = text.slice(leadingHeading[0].length)
     // Strip "**Kind**: ..." line
     text = text.replace(/^\*\*Kind\*\*:\s*\w+\n+/, "")
     // Strip "**Status**: ..." line
@@ -70,7 +71,7 @@ export function DocDetail({ docId, version, onNavigateToDoc }: DocDetailProps) {
     // Strip "**Implements**: ..." line
     text = text.replace(/^\*\*Implements\*\*:\s*[^\n]+\n+/, "")
     return text.trim()
-  }, [sourceData])
+  }, [sourceData, doc?.title])
 
   if (docLoading) {
     return (
@@ -95,7 +96,7 @@ export function DocDetail({ docId, version, onNavigateToDoc }: DocDetailProps) {
     <div className="p-8 pb-20">
       {/* Kind label */}
       <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-widest mb-3">
-        {KIND_LABELS[doc.kind] ?? doc.kind.toUpperCase()}
+        {KIND_LABELS.get(doc.kind) ?? doc.kind.toUpperCase()}
       </div>
 
       {/* Title + status + version */}

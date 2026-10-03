@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
-import { render, screen, waitFor } from "@testing-library/react"
+import { render, screen, waitFor, within } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { http, HttpResponse } from "msw"
 import { server } from "../../../../test/setup"
@@ -118,6 +118,14 @@ describe("DocSidebar", () => {
     server.resetHandlers()
   })
 
+  it("lists configured kinds alongside the four built-ins without prototype collisions", async () => {
+    server.use(http.get("/api/docs", () => HttpResponse.json({docs:[{...docsFixture[0],kind:"constructor",name:"building-notes",title:"Construction notes"}]})))
+    renderWithProviders()
+    expect(await screen.findByRole("option",{name:"constructor"})).toHaveValue("constructor")
+    expect(screen.getByRole("button",{name:/Construction notes/})).toBeInTheDocument()
+    for (const label of ["Overview","PRD","Design","Plan"]) expect(screen.getByRole("option",{name:label})).toBeInTheDocument()
+  })
+
   it("renders grouped docs view by default", async () => {
     renderWithProviders()
 
@@ -139,9 +147,9 @@ describe("DocSidebar", () => {
     })
 
     // Verify kind badges are rendered
-    expect(screen.getByText("Overview")).toBeInTheDocument()
-    expect(screen.getByText("PRD")).toBeInTheDocument()
-    expect(screen.getByText("Design")).toBeInTheDocument()
+    expect(within(screen.getByRole("button",{name:/Dashboard Overview/})).getByText("Overview")).toBeInTheDocument()
+    expect(within(screen.getByRole("button",{name:/Dashboard Product Requirements/})).getByText("PRD")).toBeInTheDocument()
+    expect(within(screen.getByRole("button",{name:/Dashboard Design/})).getByText("Design")).toBeInTheDocument()
     expect(screen.getByText("DD-001-dashboard")).toBeInTheDocument()
   })
 

@@ -39,6 +39,7 @@ import {
 import { resolvePathWithin } from "../utils/file-path.js"
 import {
   DOC_KINDS,
+  SPEC_TYPE_NAME_PATTERN,
   asDocKind,
 } from "../types/index.js"
 import type {
@@ -132,8 +133,8 @@ const parseKindScopedDocReference = (
         ? "system_design"
         : rawKind
 
-  if (!docKindStrings.includes(kind)) return null
-  return { kind: kind as DocKind, name }
+  if (!SPEC_TYPE_NAME_PATTERN.test(kind)) return null
+  return { kind: asDocKind(kind), name }
 }
 
 const splitMarkdownFrontmatter = (
@@ -705,10 +706,9 @@ export const makeDocServiceLive = (
       Effect.gen(function* () {
         const scoped = parseKindScopedDocReference(ref)
         if (scoped) {
-          const scopedDoc = yield* docRepo.findLatestByKindAndName(
-            scoped.kind,
-            scoped.name
-          )
+          const scopedDoc = version === undefined
+            ? yield* docRepo.findLatestByKindAndName(scoped.kind, scoped.name)
+            : (yield* docRepo.findAllByName(scoped.name, version)).find(doc => doc.kind === scoped.kind)
           if (!scopedDoc) {
             return yield* Effect.fail(new DocNotFoundError({ name: ref }))
           }
@@ -1343,7 +1343,12 @@ export const makeDocServiceLive = (
           if (!stillReferenced) {
             const docPath = resolveRegisteredDocPath(docsPath, doc)
             try {
-              if (existsSync(docPath)) unlinkSync(docPath)
+              const previous = remainingDocs.filter(candidate => candidate.docId === doc.docId)
+                .sort((a, b) => b.version - a.version)[0]
+              if (previous) {
+                const previousPath = resolveRegisteredDocPath(docsPath, previous)
+                if (existsSync(previousPath)) writeFileSync(docPath, readFileSync(previousPath, "utf8"), "utf8")
+              } else if (existsSync(docPath)) unlinkSync(docPath)
             } catch {
               /* non-fatal */
             }
@@ -1373,6 +1378,7 @@ export const makeDocServiceLive = (
           return rendered
         }),
 
+      // @spec INV-LEAN-006 Locked source and metadata advance together or are restored together.
       createVersion: (name) =>
         Effect.gen(function* () {
           const doc = yield* resolveDocReference(name)
@@ -1393,27 +1399,57 @@ export const makeDocServiceLive = (
             )
           }
           const content = readFileSync(docPath, "utf8")
-          const hash = computeDocHash(content)
+          if (computeDocHash(content) !== doc.hash) {
+            return yield* Effect.fail(new ValidationError({
+              reason: `Locked doc '${name}' has changed on disk. Restore its locked content before creating a version. Sync working documents before locking them.`,
+            }))
+          }
           const newVersion = doc.version + 1
-
           const versionSub = kindSubdir(doc.kind, getSpecRegistry())
-          const relPath = versionSub
-            ? join(versionSub, `${doc.name}.md`)
-            : `${doc.name}.md`
-
-          const newDoc = yield* docRepo.insert({
-            docId: doc.docId,
-            hash,
-            kind: doc.kind,
-            name: doc.name,
-            title: doc.title,
-            version: newVersion,
-            filePath: relPath,
-            parentDocId: doc.id,
-          })
-
-          yield* generateIndexEffect(docsPath)
-          return newDoc
+          const relPath = versionSub ? join(versionSub, `${doc.name}.md`) : `${doc.name}.md`
+          const archiveRelPath = join(".versions", doc.docId, `v${doc.version}.md`)
+          const archivePath = resolveRegisteredDocPath(docsPath, { ...doc, filePath: archiveRelPath })
+          const workingPath = resolveRegisteredDocPath(docsPath, { ...doc, filePath: relPath })
+          const split = splitMarkdownFrontmatter(content)
+          if (!split) return yield* Effect.fail(new ValidationError({reason: "Missing Markdown frontmatter."}))
+          const frontmatter = split.frontmatter.replace(/^version\s*:[^\r\n]*(\r?)$/m, `version: ${newVersion}$1`)
+          const newContent = `---${split.newline}${frontmatter}${split.newline}---${split.newline}${split.body}`
+          if (existsSync(archivePath) && readFileSync(archivePath, "utf8") !== content) {
+            return yield* Effect.fail(new ValidationError({reason: `Historical source already exists with different content at ${archiveRelPath}.`}))
+          }
+          const paths = [archivePath, workingPath, resolve(docsPath, "index.md"), resolve(docsPath, "index.yml")]
+          const backups = new Map(paths.map(path => [path, existsSync(path) ? readFileSync(path, "utf8") : null]))
+          yield* docRepo.beginImmediate()
+          return yield* Effect.gen(function* () {
+            ensureDir(archivePath)
+            writeFileSync(archivePath, content, "utf8")
+            ensureDir(workingPath)
+            writeFileSync(workingPath, newContent, "utf8")
+            yield* docRepo.update(doc.id, {filePath: archiveRelPath})
+            const newDoc = yield* docRepo.insert({
+              docId: doc.docId,
+              hash: computeDocHash(newContent),
+              kind: doc.kind,
+              name: doc.name,
+              title: doc.title,
+              version: newVersion,
+              filePath: relPath,
+              parentDocId: doc.id,
+            })
+            yield* generateIndexEffect(docsPath)
+            yield* docRepo.commit()
+            return newDoc
+          }).pipe(Effect.onError(() => docRepo.rollback().pipe(
+            Effect.catchAll(() => Effect.void),
+            Effect.zipRight(Effect.sync(() => {
+              for (const [path, backup] of backups) {
+                try {
+                  if (backup === null) { if (existsSync(path)) unlinkSync(path) }
+                  else writeFileSync(path, backup, "utf8")
+                } catch { /* Preserve the original transaction failure. */ }
+              }
+            }))
+          )))
         }),
 
       linkDocs: (fromName, toName, linkType?) =>
@@ -1614,7 +1650,7 @@ export const makeDocServiceLive = (
         Effect.gen(function* () {
           const docs = docName
             ? [yield* resolveDocReference(docName)]
-            : yield* docRepo.findAll()
+            : yield* docRepo.findAll({status: "changing"})
           const missing: Doc[] = []
           const prepared: Array<ReturnType<typeof prepareDocContent>> = []
 

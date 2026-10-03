@@ -10,7 +10,7 @@ interface DocGraphProps {
   fullPage?: boolean
 }
 
-const KIND_COLORS: Record<string, string> = {
+const KIND_COLORS = new Map<string, string>(Object.entries({
   overview: "#60A5FA",
   prd: "#34D399",
   design: "#A78BFA",
@@ -20,9 +20,9 @@ const KIND_COLORS: Record<string, string> = {
   decision: "#EAB308",
   plan: "#38BDF8",
   task: "#FBBF24",
-}
+}))
 
-const KIND_LABELS: Record<string, string> = {
+const KIND_LABELS = new Map<string, string>(Object.entries({
   overview: "Overview",
   prd: "PRD",
   design: "Design",
@@ -32,7 +32,7 @@ const KIND_LABELS: Record<string, string> = {
   decision: "Decision",
   plan: "Plan",
   task: "Task",
-}
+}))
 
 interface PositionedNode extends DocGraphNode {
   x: number
@@ -45,17 +45,18 @@ interface PositionedNode extends DocGraphNode {
 function layoutNodes(nodes: DocGraphNode[], _edges: DocGraphEdge[], w: number, h: number): PositionedNode[] {
   if (nodes.length === 0) return []
 
-  const layers: Record<string, DocGraphNode[]> = {
-    overview: [], requirement: [], prd: [], system_design: [], design: [], runbook: [], decision: [], plan: [], task: [],
-  }
+  const builtinOrder = ["overview", "requirement", "prd", "system_design", "design", "runbook", "decision"]
+  const customKinds = [...new Set(nodes.map(node => node.kind))]
+    .filter(kind => !builtinOrder.includes(kind) && kind !== "plan" && kind !== "task").sort()
+  const layerOrder = [...builtinOrder, ...customKinds, "plan", "task"]
+  const layers = new Map<string, DocGraphNode[]>()
   for (const node of nodes) {
-    const kind = node.kind in layers ? node.kind : "task"
-    layers[kind].push(node)
+    const layer = layers.get(node.kind) ?? []
+    layer.push(node)
+    layers.set(node.kind, layer)
   }
-
   const positioned: PositionedNode[] = []
-  const layerOrder = ["overview", "requirement", "prd", "system_design", "design", "runbook", "decision", "plan", "task"]
-  const activeLayers = layerOrder.filter((k) => layers[k].length > 0)
+  const activeLayers = layerOrder.filter(kind => layers.has(kind))
 
   const padX = w * 0.1
 
@@ -73,7 +74,7 @@ function layoutNodes(nodes: DocGraphNode[], _edges: DocGraphEdge[], w: number, h
 
   for (let li = 0; li < activeLayers.length; li++) {
     const kind = activeLayers[li]
-    const layerNodes = layers[kind]
+    const layerNodes = layers.get(kind)!
     const y = startY + li * yStep
 
     const rawSpacing = usableW / (layerNodes.length + 1)
@@ -293,13 +294,13 @@ export function DocGraph({ selectedNodeId, onSelectDoc, onSelectTask, fullPage }
           {positioned.map((node) => {
             const isSelected = selectedNodeId === node.id
             const isHovered = hoveredId === node.id
-            const color = KIND_COLORS[node.kind] ?? "#9CA3AF"
+            const color = KIND_COLORS.get(node.kind) ?? "#9CA3AF"
             const dimmed = connectedToFocus && !connectedToFocus.has(node.id)
             const truncated = node.label.length > labelMaxLen
               ? node.label.slice(0, labelMaxLen - 1) + "\u2026"
               : node.label
             const r = isSelected || isHovered ? selectedR : nodeR
-            const interactive = node.kind === "task" ? Boolean(onSelectTask) : Boolean(onSelectDoc)
+            const interactive = node.id.startsWith("task:") ? Boolean(onSelectTask) : Boolean(onSelectDoc)
             const selectNode = () => {
               if (node.id.startsWith("task:")) { onSelectTask?.(node.id.slice(5)); return }
               if (!node.id.startsWith("doc:")) return
@@ -377,8 +378,8 @@ export function DocGraph({ selectedNodeId, onSelectDoc, onSelectTask, fullPage }
           <div className="space-y-1">
             {Array.from(new Set(nodes.map(node => node.kind))).map(kind => (
               <div key={kind} className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: KIND_COLORS[kind] ?? "#9CA3AF" }} />
-                <span>{KIND_LABELS[kind] ?? kind}</span>
+                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: KIND_COLORS.get(kind) ?? "#9CA3AF" }} />
+                <span>{KIND_LABELS.get(kind) ?? kind}</span>
               </div>
             ))}
           </div>

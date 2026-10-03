@@ -24,15 +24,15 @@
 
 ## Invariant Summary
 
-**Total invariants**: 10
+**Total invariants**: 11
 
 **By enforcement type**:
 
-- integration_test: 10
+- integration_test: 11
 
 **By subsystem**:
 
-- design: 5
+- design: 6
 - prd: 5
 
 ## Document Links

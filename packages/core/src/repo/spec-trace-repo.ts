@@ -189,17 +189,6 @@ export const makeSpecTraceRepositoryLive = (
           catch: (cause) => new DatabaseError({ cause }),
         }),
 
-      findSpecTestsByTestName: (testName) =>
-        Effect.try({
-          try: () => {
-            const rows = db.prepare<SpecTestRow>(
-              "SELECT * FROM spec_tests WHERE projection_key = ? AND test_name = ? ORDER BY invariant_id"
-            ).all(projectionKey, testName)
-            return rows.map(rowToSpecTest)
-          },
-          catch: (cause) => new DatabaseError({ cause }),
-        }),
-
       previewDiscoveredSpecTestPrune: ({ rows, invariantIds }) =>
         Effect.try({
           try: () => listPrunable(rows, invariantIds),

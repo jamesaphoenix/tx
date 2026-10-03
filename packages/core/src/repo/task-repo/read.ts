@@ -88,16 +88,6 @@ export const createTaskRepositoryReadService = (
           params.push(filter.cursor.score, filter.cursor.score, filter.cursor.id)
         }
 
-        // Exclude tasks with active, non-expired claims (thundering herd prevention).
-        // Also checks lease_expires_at so that tasks with expired leases (where the
-        // sweeper hasn't yet reconciled status) are still returned as workable.
-        // NOTE: lease_expires_at is stored as an ISO-8601 string (toISOString,
-        // e.g. "2026-06-24T15:51:33.946Z"). It must be compared against an ISO
-        // bound param, NOT datetime('now') (which yields "2026-06-24 15:51:33").
-        // SQLite compares text bytewise, and 'T' (0x54) > ' ' (0x20), so a lease
-        // that expired earlier the same UTC day would compare as still-active.
-
-
         // Label filters: include tasks with ALL specified labels
         if (filter?.labels && filter.labels.length > 0) {
           for (const label of filter.labels) {
@@ -260,11 +250,6 @@ export const createTaskRepositoryReadService = (
           conditions.push("(title LIKE ? ESCAPE '\\' COLLATE NOCASE OR description LIKE ? ESCAPE '\\' COLLATE NOCASE)")
           params.push(searchPattern, searchPattern)
         }
-
-        // Exclude claimed tasks (same as findAll — also checks lease expiry).
-        // Uses an ISO bound param (not datetime('now')) so same-day-expired
-        // leases compare correctly; see the matching note in findAll above.
-
 
         // Label filters (same as findAll)
         if (filter?.labels && filter.labels.length > 0) {

@@ -25,6 +25,16 @@ Follow missing mappings to [tx spec](./spec-trace), run tests for missing eviden
 and reconcile changed docs before review. Mapping code or tests does not record a
 passing result. Test evidence and human sign-off remain separate.
 
+Health lists the latest version of each document once, with its stable ID,
+version, invariant count, passing/failing/missing results and review blockers.
+Follow a dashboard row to that exact document version. Plans without invariants
+show **No invariants** and need no verification sign-off. Historical versions
+remain accessible through Documents or `tx doc show --doc-version <n>`.
+
+Coverage counts mapped invariants, even if their tests have not run. Use the
+passing, failing and missing-evidence counts to judge execution. A mapped test is
+not proof that an invariant holds.
+
 Failed evidence reads return an error. An empty workspace says that no specs exist.
 The dashboard's Document Checks panel checks document structure; Spec Health also
 includes execution evidence and sign-off.

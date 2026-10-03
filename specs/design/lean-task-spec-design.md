@@ -46,7 +46,18 @@ the first page of the task list. Editing a task cannot create a future cycle.
 The task picker follows every page and preserves its selection after a failed add.
 Concurrent title and description responses update only their own cache fields.
 The launcher waits for the loopback API before starting Vite, preventing its port
-fallback from taking the API port.
+fallback from taking the API port. It announces only a complete URL emitted by
+Vite, never a guessed preferred port. Both startup stages are bounded and stop
+only their owned processes on failure.
+Document kind maps accept configured identifiers without object-prototype
+collisions. Spec Health lists the latest version of each document with stable
+identity, evidence counts and review blockers.
+Creating a version archives locked Markdown under the configured docs root in
+`.versions/<doc-id>/v<n>.md`, increments the working copy frontmatter and updates
+metadata in one recoverable transaction. The copied plan body stays unchanged.
+Whole-repository sync skips locked history. Editors reject locked documents before
+launch. Historical versions already overwritten before this release cannot be
+reconstructed.
 
 # Interfaces
 ```yaml
@@ -99,6 +110,11 @@ invariants:
     severity: high
     verified_by:
       - test/integration/plan-hierarchy.test.ts
+  - id: INV-LEAN-006
+    statement: document version creation preserves locked source and rolls back files with metadata on failure
+    severity: high
+    verified_by:
+      - test/integration/doc-cli.test.ts
 ```
 
 # Failure Modes

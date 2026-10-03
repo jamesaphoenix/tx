@@ -29,6 +29,18 @@ describe("dashboardSpecHealth", () => {
     expect(await dashboardSpecHealth(join(cwd, ".tx/tasks.db"), cwd)).toEqual(expected)
   })
 
+  it("reports the latest version once and includes its stable navigation identity", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "tx-dashboard-health-version-")); roots.push(cwd)
+    const first = tx(cwd, ["doc", "add", "design", "checkout", "--title", "Checkout design"])
+    tx(cwd, ["doc", "lock", first.docId])
+    const second = tx(cwd, ["doc", "version", first.docId])
+    expect(second.version).toBe(2)
+    const health = tx(cwd, ["spec", "health"])
+    expect(health.docDrift.totalDocs).toBe(1)
+    expect(health.docs).toEqual([expect.objectContaining({name:"design/checkout",title:"Checkout design",docId:first.docId,version:2})])
+    expect(await dashboardSpecHealth(join(cwd,".tx/tasks.db"),cwd)).toEqual(health)
+  })
+
   it("honours an explicit content root while using shared task state [INV-LEAN-004]", async () => {
     const state = mkdtempSync(join(tmpdir(), "tx-dashboard-state-")); roots.push(state)
     const content = mkdtempSync(join(tmpdir(), "tx-dashboard-content-")); roots.push(content)

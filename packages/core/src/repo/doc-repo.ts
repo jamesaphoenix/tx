@@ -287,6 +287,10 @@ export const makeDocRepositoryLive = (
           try: () => {
             const sets: string[] = []
             const params: unknown[] = []
+            if (input.filePath !== undefined) {
+              sets.push("file_path = ?")
+              params.push(input.filePath)
+            }
             if (input.docId !== undefined) {
               sets.push("doc_id = ?")
               params.push(input.docId)

@@ -58,6 +58,20 @@ describe("DocGraph", () => {
     expect(onSelectDoc).toHaveBeenCalledWith(1)
   })
 
+  it("renders configured document kinds without treating object property names as built-ins", async () => {
+    server.use(http.get("/api/docs/graph", () => HttpResponse.json({nodes:[
+      {id:"doc:9",label:"Construction notes",kind:"constructor"},
+      {id:"doc:10",label:"Implementation plan",kind:"plan"},
+    ],edges:[]})))
+    const selectDoc = vi.fn()
+    renderWithProviders(<DocGraph onSelectDoc={selectDoc} fullPage />)
+    const node = await screen.findByRole("button",{name:"constructor: Construction notes"})
+    fireEvent.keyDown(node,{key:"Enter"})
+    expect(selectDoc).toHaveBeenCalledWith(9)
+    expect(screen.getByText("constructor")).toBeInTheDocument()
+    expect(node.querySelector('circle')).toHaveAttribute("fill","#9CA3AF")
+  })
+
   it("shows empty-state text when graph has no nodes", async () => {
     server.use(
       http.get("/api/docs/graph", () => HttpResponse.json({ nodes: [], edges: [] })),

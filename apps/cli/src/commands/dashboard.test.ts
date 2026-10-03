@@ -4,13 +4,13 @@ import { createServer, type Server } from "node:http"
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { stopDashboardChildren } from "./dashboard.js"
+import { stopDashboardChildren, createViteUrlReader } from "./dashboard.js"
 
 const CLI_SRC = resolve(import.meta.dirname, "../cli.ts")
 const wait = (ms: number) => new Promise<void>(r => setTimeout(r, ms))
 const listen = (server: Server): Promise<number> => new Promise((resolvePort, reject) => {
   server.once("error", reject)
-  server.listen(0, () => resolvePort((server.address() as { port: number }).port))
+  server.listen(0, "127.0.0.1", () => resolvePort((server.address() as { port: number }).port))
 })
 const freePort = async () => {
   const server = createServer()
@@ -117,7 +117,9 @@ describe("tx diag dashboard", () => {
     const { apiPort } = await start(port)
     const ui = await ready(apiPort)
     expect(new URL(ui).hostname).toBe("127.0.0.1")
-    expect(new URL(ui).port).not.toBe(String(port))
+    expect(new URL(ui).port, output).not.toBe(String(port))
+    expect(output).toMatch(/Local:/)
+    expect(await fetch(`${ui}/api/stats`).then(r => r.json())).toEqual(expect.objectContaining({ tasks: expect.any(Number) }))
     expect(output.indexOf("Dashboard API running")).toBeLessThan(output.indexOf("Starting Vite dev server"))
     expect(await fetch(`http://localhost:${port}`).then(r => r.text())).toBe("existing UI")
   }, 25000)
@@ -211,5 +213,21 @@ describe("dashboard process ownership", () => {
       if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL")
       await exit
     }
+  })
+})
+
+
+describe("Vite startup output", () => {
+  it("waits for the complete Local line when output arrives in chunks", () => {
+    const read = createViteUrlReader()
+    expect(read("  Local:   http://127.0.0.1:51")).toEqual([])
+    expect(read("74/\n  Network: disabled\n")).toEqual(["http://127.0.0.1:5174/"])
+    expect(read("  ready in 35ms\n")).toEqual([])
+  })
+
+  it("ignores unrelated output and strips terminal colour codes", () => {
+    const read = createViteUrlReader()
+    expect(read("Installing dependencies\n")).toEqual([])
+    expect(read("  \u001b[32mLocal:\u001b[39m   \u001b[36mhttp://127.0.0.1:5175/\u001b[39m\r\n")).toEqual(["http://127.0.0.1:5175/"])
   })
 })

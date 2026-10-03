@@ -99,6 +99,22 @@ describe("DocDetail", () => {
     expect(screen.getByText(docFixture.name)).toBeInTheDocument()
   })
 
+  it("does not render the copied plan title twice when the body starts with a blank line", async () => {
+    server.use(http.get(`/api/docs/by-id/${docFixture.docId}/source`, () => HttpResponse.json({...sourceFixture,
+      renderedContent:`\n# ${docFixture.title}\n\n## Steps\n\n1. Implement the change.\n`})))
+    renderWithProviders(<DocDetail docId={docFixture.docId} version={3} onNavigateToDoc={vi.fn()} />)
+    await screen.findByText("Implement the change.")
+    expect(screen.getAllByRole("heading",{level:1,name:docFixture.title})).toHaveLength(1)
+    expect(screen.getByRole("heading",{name:"Steps"})).toBeInTheDocument()
+  })
+
+  it("preserves an opening section heading that is not the document title", async () => {
+    server.use(http.get(`/api/docs/by-id/${docFixture.docId}/source`, () => HttpResponse.json({...sourceFixture,
+      renderedContent:"# Context\n\nDesign context remains meaningful.\n"})))
+    renderWithProviders(<DocDetail docId={docFixture.docId} version={3} onNavigateToDoc={vi.fn()} />)
+    expect(await screen.findByRole("heading",{name:"Context"})).toBeInTheDocument()
+  })
+
   it("uses stored design and task links even when document names have no shared prefix", async () => {
     const plan = { ...docFixture, id: 2, docId: "doc-222222222222", kind: "plan", name: "agent-plan", title: "Agent's implementation plan", version: 1 }
     const samePrefix = { ...docFixture, id: 3, docId: "doc-333333333333", kind: "design", name: "DD-001-unrelated", title: "Unrelated design" }

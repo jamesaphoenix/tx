@@ -34,13 +34,6 @@ export const TASK_STATUSES = [
 export const TASK_ASSIGNEE_TYPES = ["human", "agent"] as const;
 
 /**
- * Orchestration status values derived from task_claims.
- * This is a computed second layer alongside the workflow status.
- * Not stored in the database — derived at enrichment time from claim state.
- */
-
-
-/**
  * Regex pattern for valid task IDs.
  */
 export const TASK_ID_PATTERN = /^tx-[a-z0-9]{6,12}$/;
@@ -71,8 +64,6 @@ export type TaskStatus = typeof TaskStatusSchema.Type
 /** Task assignment intent type. */
 export const TaskAssigneeTypeSchema = Schema.Literal(...TASK_ASSIGNEE_TYPES)
 export type TaskAssigneeType = typeof TaskAssigneeTypeSchema.Type
-
-/** Orchestration status — derived from claim state, not stored directly. */
 
 /** Task ID - branded string matching tx-[a-z0-9]{6,12}. */
 export const TaskIdSchema = Schema.String.pipe(

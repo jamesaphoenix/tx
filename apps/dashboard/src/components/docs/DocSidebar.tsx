@@ -22,7 +22,7 @@ const STATUS_DOT: Record<string, string> = {
   locked: "bg-green-400",
 }
 
-const KIND_LABELS: Record<DocSerialized["kind"], string> = {
+const KIND_LABELS = new Map<string, string>(Object.entries({
   plan: "Plan",
   overview: "Overview",
   prd: "PRD",
@@ -31,7 +31,7 @@ const KIND_LABELS: Record<DocSerialized["kind"], string> = {
   system_design: "SD",
   runbook: "RB",
   decision: "DEC",
-}
+}))
 
 interface DocGroup {
   label: string
@@ -127,7 +127,7 @@ function DocItem({
           className="text-[10px] px-1.5 py-0.5 rounded border font-semibold"
           style={{ backgroundColor: "#334155", color: "#f8fafc", borderColor: "#64748b" }}
         >
-          {KIND_LABELS[doc.kind] ?? doc.kind}
+          {KIND_LABELS.get(doc.kind) ?? doc.kind}
         </span>
         <span
           className="text-[10px] px-1.5 py-0.5 rounded border font-semibold"
@@ -215,10 +215,12 @@ export function DocSidebar({ selectedDocRef, onSelectDoc, showMap, onToggleMap, 
           className="flex-1 bg-gray-800 border border-gray-700 text-xs text-gray-300 rounded px-2 py-1.5"
         >
           <option value="">All kinds</option>
-          <option value="overview">overview</option>
-          <option value="prd">prd</option>
-          <option value="design">design</option>
-          <option value="plan">plan</option>
+          <option value="overview">Overview</option>
+          <option value="prd">PRD</option>
+          <option value="design">Design</option>
+          <option value="plan">Plan</option>
+          {[...new Set(docs.map(doc => doc.kind))].filter(kind => !["overview","prd","design","plan"].includes(kind)).sort().map(kind =>
+            <option key={kind} value={kind}>{KIND_LABELS.get(kind) ?? kind}</option>)}
         </select>
         <select
           aria-label="Document status"
@@ -227,8 +229,8 @@ export function DocSidebar({ selectedDocRef, onSelectDoc, showMap, onToggleMap, 
           className="flex-1 bg-gray-800 border border-gray-700 text-xs text-gray-300 rounded px-2 py-1.5"
         >
           <option value="">All statuses</option>
-          <option value="changing">changing</option>
-          <option value="locked">locked</option>
+          <option value="changing">Changing</option>
+          <option value="locked">Locked</option>
         </select>
       </div>
 

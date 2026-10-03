@@ -151,7 +151,7 @@ export interface SerializedTaskWithDeps {
     docId: string
     name: string
     title: string
-    kind: "overview" | "prd" | "design" | "requirement" | "system_design" | "runbook" | "decision" | "plan"
+    kind: string
     version: number
     status: "changing" | "locked"
     filePath: string

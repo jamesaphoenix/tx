@@ -104,6 +104,19 @@ afterEach(() => {
 })
 
 describe("configurable spec types", () => {
+  it("resolves configured kinds through scoped references and includes them in health", () => {
+    appendConfig('[spec.types.adr]\nsubdir = "architecture"\nsections = []')
+    const created = runTx(["doc","add","adr","checkout","--title","Checkout notes","--json"],projectDir)
+    expect(created.status,created.stderr).toBe(0)
+    const doc = JSON.parse(created.stdout)
+    const shown = runTx(["doc","show","adr/checkout","--json"],projectDir)
+    expect(shown.status,shown.stdout + shown.stderr).toBe(0)
+    expect(JSON.parse(shown.stdout)).toMatchObject({docId:doc.docId,kind:"adr",filePath:"architecture/checkout.md"})
+    const health = runTx(["spec","health","--json"],projectDir)
+    expect(health.status,health.stdout + health.stderr).toBe(0)
+    expect(JSON.parse(health.stdout).docs).toContainEqual(expect.objectContaining({docId:doc.docId,name:"adr/checkout"}))
+  })
+
   it("1. [INV-SPECCFG-001] default config: a scaffolded PRD lints clean", () => {
     expect(runTx(["doc", "add", "prd", "auth-prd", "--title", "Auth"], projectDir).status).toBe(0)
 

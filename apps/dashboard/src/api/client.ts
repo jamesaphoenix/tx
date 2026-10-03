@@ -352,7 +352,7 @@ export interface DocSerialized {
   id: number
   docId: string
   hash: string
-  kind: "overview" | "prd" | "design" | "requirement" | "system_design" | "runbook" | "decision" | "plan"
+  kind: string
   name: string
   title: string
   version: number
@@ -366,7 +366,7 @@ export interface DocSerialized {
 export interface DocGraphNode {
   id: string
   label: string
-  kind: "overview" | "prd" | "design" | "requirement" | "system_design" | "runbook" | "decision" | "plan" | "task"
+  kind: string
   status?: string
 }
 

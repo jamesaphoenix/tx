@@ -4,7 +4,7 @@ import type { Flags } from "./parse.js"
 import { CliUserError } from "../cli-errors.js"
 
 const options = Object.keys(commandHelp).flatMap(key => buildCommandSchema(key).options)
-const valuedFlags = new Set(["--db","--state-root","--content-root",
+const valuedFlags = new Set(["--db","--state-root","--content-root","--doc-version",
   ...options.filter(option => option.valueName).flatMap(option => option.flags)])
 const booleanFlags = new Set([
   "--version", "--help", "-h", "-v",

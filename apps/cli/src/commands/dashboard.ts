@@ -25,12 +25,26 @@ const DASHBOARD_DIR = resolve(PROJECT_ROOT, "apps/dashboard")
 const portAvailable = (port: number): Promise<boolean> => new Promise((resolvePort) => {
   const probe = createServer()
   probe.once("error", () => resolvePort(false))
-  probe.listen(port, () => probe.close(() => resolvePort(true)))
+  probe.listen(port, "127.0.0.1", () => probe.close(() => resolvePort(true)))
 })
 
-function extractViteLocalUrl(output: string): string | null {
-  const match = output.match(/Local:\s*(https?:\/\/[^\s]+)/)
-  return match?.[1] ?? null
+// A pipe chunk can end halfway through a URL. Only complete output lines
+// identify the server Vite actually bound, including its fallback port.
+export function createViteUrlReader(): (chunk: string) => string[] {
+  let pending = ""
+  return (chunk) => {
+    pending += chunk
+    const lines = pending.split("\n")
+    pending = lines.pop() ?? ""
+    // Keep malformed or very verbose child output from accumulating forever.
+    if (pending.length > 65536) pending = pending.slice(-65536)
+    return lines.flatMap(line => {
+      // eslint-disable-next-line no-control-regex -- Vite emits ANSI terminal colour sequences.
+      const plain = line.replace(/\u001b\[[0-9;]*m/g, "")
+      const match = plain.match(/Local:\s*(https?:\/\/[^\s]+)/)
+      return match ? [match[1]!] : []
+    })
+  }
 }
 
 function openBrowser(url: string): void {
@@ -154,7 +168,7 @@ export const dashboard = (_pos: string[], flags: Flags) =>
     let announced = false
     let openedUrl: string | null = null
     let shuttingDown = false
-    let fallbackAnnounceTimer: ReturnType<typeof setTimeout> | undefined
+    let startupTimer: ReturnType<typeof setTimeout> | undefined
 
     const announce = () => {
       if (announced) return
@@ -188,15 +202,15 @@ export const dashboard = (_pos: string[], flags: Flags) =>
       }
     }
 
-    // Forward output
-    const onViteData = (prefix: "stdout" | "stderr") => (d: Buffer) => {
-      const text = d.toString()
-      const viteUrl = extractViteLocalUrl(text)
-      if (viteUrl) {
-        onDetectedDashboardUrl(viteUrl)
+    // stdout and stderr are independent streams; never join their chunks.
+    const onViteData = (prefix: "stdout" | "stderr") => {
+      const readUrls = createViteUrlReader()
+      return (d: Buffer) => {
+        const text = d.toString()
+        for (const viteUrl of readUrls(text)) onDetectedDashboardUrl(viteUrl)
+        const sink = prefix === "stdout" ? process.stdout : process.stderr
+        sink.write(`[vite] ${text}`)
       }
-      const sink = prefix === "stdout" ? process.stdout : process.stderr
-      sink.write(`[vite] ${text}`)
     }
     viteProc.stdout?.on("data", onViteData("stdout"))
     viteProc.stderr?.on("data", onViteData("stderr"))
@@ -205,7 +219,7 @@ export const dashboard = (_pos: string[], flags: Flags) =>
     const cleanup = (exitCode: number) => {
       if (shuttingDown) return
       shuttingDown = true
-      if (fallbackAnnounceTimer) clearTimeout(fallbackAnnounceTimer)
+      if (startupTimer) clearTimeout(startupTimer)
       console.log("\nShutting down dashboard...")
       void stopDashboardChildren(children).then(() => process.exit(exitCode))
     }
@@ -237,8 +251,12 @@ export const dashboard = (_pos: string[], flags: Flags) =>
     process.on("SIGINT", () => cleanup(0))
     process.on("SIGTERM", () => cleanup(0))
 
-    // Fallback: announce even if we didn't parse Vite "Local" line yet.
-    fallbackAnnounceTimer = setTimeout(() => {
-      if (!shuttingDown) announce()
-    }, 6000)
+    // A guessed URL could belong to another process. Report startup failure
+    // instead of opening that service when Vite never reports its bound URL.
+    startupTimer = setTimeout(() => {
+      if (!shuttingDown && !announced) {
+        console.error("Vite did not report a dashboard URL within 30 seconds. Check the Vite output above.")
+        cleanup(1)
+      }
+    }, 30000)
   })

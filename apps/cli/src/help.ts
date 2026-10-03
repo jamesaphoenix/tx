@@ -693,22 +693,24 @@ Examples:
   EDITOR=code tx doc edit auth-flow`,
   "doc show": `tx doc show - Show doc details
 
-Usage: tx doc show <name> [--md] [--json]
+Usage: tx doc show <ref> [--doc-version <n>] [--md] [--json]
 
-Shows doc metadata. With --md, renders and displays Markdown content.
+Shows the latest doc metadata, or an explicit historical version. With --md, displays its Markdown source.
 
 Arguments:
-  <name>    Required. Doc name
+  <ref>     Required. Stable doc ID, kind/name, or unambiguous name
 
 Options:
-  --md      Render and display Markdown content
+  --doc-version <n>  Show this version instead of the latest
+  --md      Display Markdown content
   --json    Output as JSON
   --help    Show this help
 
 Examples:
   tx doc show auth-flow
   tx doc show auth-flow --md
-  tx doc show auth-flow --json`,
+  tx doc show auth-flow --json
+  tx doc show design/auth-flow --doc-version 1 --md`,
   "doc list": `tx doc list - List all docs
 
 Usage: tx doc list [--kind <kind>] [--status <status>] [--json]
@@ -764,7 +766,7 @@ Examples:
 
 Usage: tx doc lock <name> [--json]
 
-Locks a doc, making it immutable. Also renders final Markdown.
+Locks the current version against tx edits. Sync Markdown edits first with tx doc sync.
 Use 'tx doc version' to create a new editable version from a locked doc.
 
 Arguments:
@@ -782,6 +784,9 @@ Examples:
 Usage: tx doc version <name> [--json]
 
 Creates a new editable version of a locked doc. The doc must be locked first.
+Preserves the locked source in specs/.versions/ and increments frontmatter on
+its working copy. Commit both files. Changed locked source must be restored
+before creating a version; tx cannot recover overwritten historical content.
 
 Arguments:
   <name>    Required. Doc name (must be locked)
@@ -873,6 +878,7 @@ Validates all selected markdown first, then refreshes document hashes,
 checkout-scoped document-derived invariants, and specs/index.md as one unit.
 If any selected document or index write fails, database and generated-file
 changes are rolled back. Use this after editing specs directly.
+Without a name, only working documents are synced; locked history is skipped.
 
 Arguments:
   [name]  Optional. Sync a single doc by name. Omit to sync all docs.
@@ -1159,7 +1165,11 @@ Dimensions:
   Spec -> Test    Linked coverage across active invariants
   Spec State      Passing, failing, untested, uncovered invariants
   Doc Closure     COMPLETE vs HARDEN vs BUILD across docs with invariants
-  Doc Drift       Documents changed since their last sync
+  Doc Drift       Latest versions changed since their last sync
+
+Each document includes its stable ID, version, evidence counts and blockers.
+Plans without invariants need no verification sign-off. Historical versions
+remain available with tx doc show --doc-version <n>.
 
 Options:
   --json    Output as JSON
