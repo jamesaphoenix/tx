@@ -18,7 +18,7 @@ const CLI_SRC = resolve(REPO_ROOT, "apps/cli/src/cli.ts")
 const sandboxes: string[] = []
 
 function makeSandbox(): string {
-  const dir = mkdtempSync(join(tmpdir(), "tx-skills-sync-"))
+  const dir = mkdtempSync(join(tmpdir(), "tx-tx-docs-"))
   sandboxes.push(dir)
   return dir
 }
@@ -74,10 +74,10 @@ describe("tx skills sync", () => {
     expect(existsSync(join(sandbox, ".claude", "skills", "manifest.json"))).toBe(true)
     expect(existsSync(join(sandbox, ".codex", "skills", "manifest.json"))).toBe(true)
 
-    const codexSyncSkill = readFileSync(join(sandbox, ".codex", "skills", "skills-sync", "SKILL.md"), "utf-8")
-    const claudeSyncSkill = readFileSync(join(sandbox, ".claude", "skills", "skills-sync", "SKILL.md"), "utf-8")
-    expect(codexSyncSkill).toContain("tx skills sync")
-    expect(claudeSyncSkill).toContain("tx skills sync")
+    const codexSyncSkill = readFileSync(join(sandbox, ".codex", "skills", "tx-docs", "SKILL.md"), "utf-8")
+    const claudeSyncSkill = readFileSync(join(sandbox, ".claude", "skills", "tx-docs", "SKILL.md"), "utf-8")
+    expect(codexSyncSkill).toContain("tx doc add")
+    expect(claudeSyncSkill).toContain("tx doc add")
   })
 
   it("updates changed tx-managed skills in place, preserves custom skills, and honors target filters", () => {
@@ -87,7 +87,7 @@ describe("tx skills sync", () => {
     expect(first.status).toBe(0)
     expect(existsSync(join(sandbox, ".claude"))).toBe(false)
 
-    const managedSkill = join(sandbox, ".codex", "skills", "skills-sync", "SKILL.md")
+    const managedSkill = join(sandbox, ".codex", "skills", "tx-docs", "SKILL.md")
     writeFileSync(managedSkill, "# drifted\n")
 
     const customSkillDir = join(sandbox, ".codex", "skills", "custom-local")
@@ -108,10 +108,10 @@ describe("tx skills sync", () => {
 
     expect(parsed.targets).toHaveLength(1)
     expect(parsed.targets[0]?.target).toBe("codex")
-    expect(parsed.targets[0]?.updated).toContain(".codex/skills/skills-sync/SKILL.md")
+    expect(parsed.targets[0]?.updated).toContain(".codex/skills/tx-docs/SKILL.md")
 
     const restoredManagedSkill = readFileSync(managedSkill, "utf-8")
-    expect(restoredManagedSkill).toContain("Use this skill when the user wants to install or refresh")
+    expect(restoredManagedSkill).toContain("Create documents")
     expect(readFileSync(join(customSkillDir, "SKILL.md"), "utf-8")).toBe("# custom local skill\n")
     expect(existsSync(join(sandbox, ".claude"))).toBe(false)
   })
@@ -134,7 +134,7 @@ describe("tx skills sync", () => {
 
     expect(first.status).toBe(0)
 
-    const managedSkill = join(sandbox, ".codex", "skills", "skills-sync", "SKILL.md")
+    const managedSkill = join(sandbox, ".codex", "skills", "tx-docs", "SKILL.md")
     const redirectedTarget = join(sandbox, "redirected-skill.md")
     writeFileSync(redirectedTarget, "# redirected\n")
     unlinkSync(managedSkill)

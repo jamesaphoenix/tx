@@ -136,9 +136,9 @@ tx init
 Optional agent onboarding scaffolds:
 
 ```bash
-tx init --claude            # generated .claude/skills bundle
-tx init --codex             # generated .codex/skills bundle + .codex/rules
-tx init --claude --codex    # scaffold both generated bundles
+tx init --claude            # three guides in .claude/skills
+tx init --codex             # three guides in .codex/skills
+tx init --claude --codex    # install the three guides for both hosts
 tx init --watchdog          # later only: watchdog scripts + launcher + service templates
 tx init --watchdog --watchdog-runtime codex
 ```
@@ -675,7 +675,6 @@ your-project/
 ├── AGENTS.md              # Codex instructions (optional)
 ├── .claude/skills/        # Generated Claude skill bundle (optional)
 ├── .codex/skills/         # Generated Codex skill bundle (optional)
-├── .codex/rules/          # Codex command policy rules (optional)
 └── ...your code
 ```
 
@@ -691,7 +690,7 @@ You now have tx running. Keep moving in this order so each step builds on the la
 6. **Observability**: add [`tx trace`](/docs/primitives/traces), [`tx spec health`](/docs/primitives/decision), and the [Headful Experience](/docs/headful) when you need repo-level visibility.
 
 If you later need generated agent bundles or manual long-running loops, continue
-with **[tx skills](/docs/primitives/skills)** and **[Ralph Loop](/docs/ralph-loop)**.
+with **[tx skills](/docs/primitives/skills)**. Existing repository loops are separate optional integrations.
 
 If you later need detached supervision and recovery playbooks, use the **[Watchdog Runbook](/docs/watchdog-runbook)**.
 

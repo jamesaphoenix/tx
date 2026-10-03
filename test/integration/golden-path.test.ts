@@ -58,8 +58,8 @@ describe("CLI golden path", { timeout: SUITE_TIMEOUT }, () => {
   it("supports the recommended first task loop and docs-first spec loop", () => {
     expectOk(runTx(cwd, ["init", "--codex"]), "tx init --codex")
     expect(existsSync(join(cwd, ".codex", "skills", "manifest.json"))).toBe(true)
-    expect(existsSync(join(cwd, ".codex", "skills", "tx-core-loop", "SKILL.md"))).toBe(true)
-    expect(existsSync(join(cwd, ".codex", "rules", "default.rules"))).toBe(true)
+    expect(existsSync(join(cwd, ".codex", "skills", "tx-tasks", "SKILL.md"))).toBe(true)
+    expect(existsSync(join(cwd, ".codex", "rules", "default.rules"))).toBe(false)
 
     writeRelative(cwd, ".tx/config.toml", [
       "[docs]",
@@ -201,8 +201,8 @@ describe("CLI golden path", { timeout: SUITE_TIMEOUT }, () => {
     expect(existsSync(join(cwd, ".tx", "stream.json"))).toBe(true)
     expect(existsSync(join(cwd, ".tx", "streams"))).toBe(true)
 
-    const codexSkillContent = readFileSync(join(cwd, ".codex", "skills", "tx-core-loop", "SKILL.md"), "utf-8")
-    expect(codexSkillContent).toContain("Quick Start")
-    expect(codexSkillContent).toContain("tx ready --limit 1 --json")
+    const codexSkillContent = readFileSync(join(cwd, ".codex", "skills", "tx-tasks", "SKILL.md"), "utf-8")
+    expect(codexSkillContent).toContain("Create tasks")
+    expect(codexSkillContent).toContain("tx add")
   })
 })

@@ -93,7 +93,6 @@ interface SkillSelectionOptions {
 
 export interface ClaudeOptions extends SkillSelectionOptions {
   claudeMd?: boolean
-  ralphScript?: boolean
 }
 
 interface CodexOptions extends SkillSelectionOptions {
@@ -417,7 +416,7 @@ function scaffoldGeneratedSkills(
  * Scaffold Claude Code integration into the current project.
  */
 export function scaffoldClaude(projectDir: string, options?: ClaudeOptions): ScaffoldResult {
-  const opts = { claudeMd: false, ralphScript: false, ...options }
+  const opts = { claudeMd: false, ...options }
   const allCopied: string[] = []
   const allSkipped: string[] = []
   const templates = templatesDir()
@@ -425,15 +424,6 @@ export function scaffoldClaude(projectDir: string, options?: ClaudeOptions): Sca
   const generated = scaffoldGeneratedSkills(projectDir, "claude", { skills: opts.skills })
   allCopied.push(...generated.copied)
   allSkipped.push(...generated.skipped)
-
-  // Copy ralph script
-  if (opts.ralphScript) {
-    const scriptsSrc = join(templates, "claude", "scripts")
-    const scriptsDest = join(projectDir, "scripts")
-    const result = copyTree(scriptsSrc, scriptsDest)
-    allCopied.push(...result.copied.map(p => `scripts/${p}`))
-    allSkipped.push(...result.skipped.map(p => `scripts/${p}`))
-  }
 
   // Copy/create CLAUDE.md
   if (opts.claudeMd) {
@@ -470,13 +460,6 @@ export function scaffoldCodex(projectDir: string, options?: CodexOptions): Scaff
   const generated = scaffoldGeneratedSkills(projectDir, "codex", { skills: opts.skills })
   allCopied.push(...generated.copied)
   allSkipped.push(...generated.skipped)
-
-  // Copy codex command policy rules
-  const codexRulesSrc = join(templates, "codex", "rules")
-  const codexRulesDest = join(projectDir, ".codex", "rules")
-  const rulesResult = copyTree(codexRulesSrc, codexRulesDest)
-  allCopied.push(...rulesResult.copied.map(p => `.codex/rules/${p}`))
-  allSkipped.push(...rulesResult.skipped.map(p => `.codex/rules/${p}`))
 
   if (opts.agentsMd) {
     const agentsMdSrc = join(templates, "codex", "AGENTS.md")
@@ -572,15 +555,8 @@ export async function interactiveScaffold(projectDir: string, options?: Interact
     const selectedClaudeSkills = await promptForSkills("claude")
     if (p.isCancel(selectedClaudeSkills)) { p.cancel("Setup cancelled."); return }
 
-    const wantsRalph = await p.confirm({
-      message: "Include ralph script? (autonomous task loop)",
-      initialValue: false,
-    })
-    if (p.isCancel(wantsRalph)) { p.cancel("Setup cancelled."); return }
-
     const result = scaffoldClaude(projectDir, {
       claudeMd: false,
-      ralphScript: !!wantsRalph,
       skills: [...selectedClaudeSkills],
     })
     results.push(result)
@@ -590,7 +566,7 @@ export async function interactiveScaffold(projectDir: string, options?: Interact
   }
 
   const wantsCodex = await p.confirm({
-    message: "Add Codex integration? (generated .codex/skills + .codex/rules)",
+    message: "Add Codex integration? (.codex/skills only)",
     initialValue: true,
   })
   if (p.isCancel(wantsCodex)) { p.cancel("Setup cancelled."); return }

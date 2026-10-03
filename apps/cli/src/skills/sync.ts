@@ -12,7 +12,7 @@ import {
 } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join, relative, resolve } from "node:path"
-import { generateSkillBundles, type SkillTarget, type SkillTargetSelection } from "./generate.js"
+import { generateSkillBundles, retiredSkillIds, type SkillTarget, type SkillTargetSelection } from "./generate.js"
 
 class SkillSyncError extends Error {
   readonly _tag = "SkillSyncError" as const
@@ -25,6 +25,7 @@ export interface SkillSyncTargetSummary {
   added: string[]
   updated: string[]
   unchanged: string[]
+  removed: string[]
 }
 
 export interface SkillSyncResult {
@@ -86,11 +87,11 @@ function assertNoSymlinkSegments(projectDir: string, candidatePath: string): voi
   let current = projectDir
   for (const segment of relativePath.split(/[/\\]+/).filter(Boolean)) {
     current = join(current, segment)
-    if (!existsSync(current)) {
-      continue
+    let stat
+    try { stat = lstatSync(current) } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue
+      throw new SkillSyncError((error as Error).message)
     }
-
-    const stat = lstatSync(current)
     if (stat.isSymbolicLink()) {
       throw new SkillSyncError(
         `Cannot sync '${relative(projectDir, current) || "."}': symlinked destination paths are not supported.`
@@ -177,6 +178,38 @@ function syncTree(src: string, dest: string, projectDir: string): TreeSyncSummar
   return { added: [], updated: [relPath], unchanged: [] }
 }
 
+/** Only known retired tx entries in a valid prior manifest may be pruned. */
+// @spec INV-MINIMAL-002
+function retiredPaths(projectDir: string, target: SkillTarget): string[] {
+  const root = installRoot(target), manifestPath = join(projectDir, root, "manifest.json")
+  assertNoSymlinkSegments(projectDir, manifestPath)
+  if (!existsSync(manifestPath)) return []
+  const manifest: unknown = JSON.parse(readFileSync(manifestPath, "utf8"))
+  if (!manifest || typeof manifest !== "object" || !("generator" in manifest) || manifest.generator !== "tx skills generate" || !("skills" in manifest) || !Array.isArray(manifest.skills)) {
+    throw new SkillSyncError("Invalid previous tx skill manifest.")
+  }
+  const paths: string[] = []
+  for (const entry of manifest.skills) {
+    if (!entry || typeof entry !== "object" || typeof entry.id !== "string" || typeof entry.installPath !== "string" || !/^[a-z0-9-]+$/.test(entry.id) || entry.installPath !== `${root}/${entry.id}`) {
+      throw new SkillSyncError("Invalid install path in previous tx skill manifest.")
+    }
+    assertNoSymlinkSegments(projectDir, join(projectDir, entry.installPath))
+    if (retiredSkillIds.has(entry.id)) paths.push(entry.installPath)
+  }
+  return paths
+}
+
+function preflightTree(src: string, dest: string, projectDir: string): void {
+  assertNoSymlinkSegments(projectDir, dest)
+  const source = statSync(src)
+  if (existsSync(dest) && source.isDirectory() !== statSync(dest).isDirectory()) {
+    throw new SkillSyncError(`Cannot sync '${relative(projectDir, dest)}': destination type conflicts with generated bundle.`)
+  }
+  if (source.isDirectory()) {
+    for (const entry of readdirSync(src)) preflightTree(join(src, entry), join(dest, entry), projectDir)
+  }
+}
+
 export function syncSkillBundles(options?: {
   target?: SkillTargetSelection
   projectDir?: string
@@ -192,14 +225,21 @@ export function syncSkillBundles(options?: {
       target: targetSelection,
       outputDir: tempDir,
       clean: true,
-      // Render this project's configured spec sections into the skills.
+      // Guides consult the destination project's configuration at use time.
       contentRoot: projectDir,
     })
 
+    // Preflight all targets before writes or deletions.
+    const removals = new Map(selectedTargets(targetSelection).map(target => [target, retiredPaths(projectDir, target)]))
+    for (const target of selectedTargets(targetSelection)) {
+      preflightTree(join(tempDir, target, installRoot(target)), join(projectDir, installRoot(target)), projectDir)
+    }
     const targets = selectedTargets(targetSelection).map((target): SkillSyncTargetSummary => {
       const root = installRoot(target)
       const srcRoot = join(tempDir, target, root)
       const destRoot = join(projectDir, root)
+      const removed = removals.get(target) ?? []
+      for (const path of removed) rmSync(join(projectDir, path), { recursive: true, force: true })
       const summary = syncTree(srcRoot, destRoot, projectDir)
 
       return {
@@ -209,6 +249,7 @@ export function syncSkillBundles(options?: {
         added: summary.added,
         updated: summary.updated,
         unchanged: summary.unchanged,
+        removed,
       }
     })
 
@@ -229,7 +270,7 @@ export function formatSkillSyncResult(result: SkillSyncResult, baseDir: string =
 
   for (const target of result.targets) {
     lines.push(
-      `  - ${target.target}: added=${target.added.length}, updated=${target.updated.length}, unchanged=${target.unchanged.length}`,
+      `  - ${target.target}: added=${target.added.length}, updated=${target.updated.length}, unchanged=${target.unchanged.length}, removed=${target.removed.length}`,
       `    root: ${target.installRoot}`,
       `    manifest: ${relative(baseDir, target.manifestPath) || "."}`,
     )

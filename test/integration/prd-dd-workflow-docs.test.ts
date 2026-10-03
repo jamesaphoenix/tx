@@ -47,29 +47,13 @@ describe("PRD/DD workflow docs", () => {
     }
   })
 
-  it("treats tx tasks as the execution plan in planner and skill guidance", () => {
-    const plannerFiles = [
-      ".codex/agents/tx-planner.md",
-      ".claude/agents/tx-planner.md",
-      "apps/cli/src/templates/codex/agents/tx-planner.md",
-    ]
-
-    for (const file of plannerFiles) {
-      const content = readRepoFile(file)
-      expect(content, `${file} should not talk about standalone implementation plans`).not.toContain("Create an implementation plan")
-      expect(content, `${file} should point to the task graph`).toContain("tx task graph is the execution plan")
-    }
-
-    const skillFiles = [
-      ".codex/skills/task-spec-loop/SKILL.md",
-      "apps/cli/src/templates/shared-skills/task-spec-loop/SKILL.md",
-    ]
-
-    for (const file of skillFiles) {
-      const content = readRepoFile(file)
-      expect(content, `${file} should avoid implementation-plan language`).not.toContain("implementation plans")
-      expect(content, `${file} should teach PRD attachment`).toContain("tx doc attach <task-id> <prd-doc> --type implements")
-      expect(content, `${file} should teach design attachment`).toContain("tx doc attach <task-id> <design-doc> --type references")
-    }
+  it("ships creation and mapping guidance without agent templates", () => {
+    const docs = readRepoFile("apps/cli/src/templates/shared-skills/tx-docs/SKILL.md")
+    expect(docs).toContain("tx doc add prd")
+    expect(docs).toContain("tx doc add design")
+    const verify = readRepoFile("apps/cli/src/templates/shared-skills/verify-invariants/SKILL.md")
+    expect(verify).toContain("// @spec INV-AUTH-001")
+    expect(verify).toContain("[INV-AUTH-001]")
+    expect(verify).toContain("not a passing result")
   })
 })

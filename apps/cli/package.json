@@ -1,6 +1,6 @@
 {
   "name": "@jamesaphoenix/tx-cli",
-  "version": "0.18.0",
+  "version": "0.19.0",
   "description": "TX command line tool - task management for AI agents and humans",
   "type": "module",
   "main": "./dist/cli.js",
@@ -92,7 +92,8 @@
     "build:all": "bun run build:darwin-arm64 && bun run build:darwin-x64 && bun run build:linux-x64 && bun run build:linux-arm64",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
-    "test": "bunx --bun vitest run --passWithNoTests"
+    "test": "bunx --bun vitest run --passWithNoTests",
+    "prebuild": "node ../../scripts/bundle-skills.js"
   },
   "dependencies": {
     "@clack/prompts": "^1.0.1",

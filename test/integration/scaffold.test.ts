@@ -15,7 +15,7 @@ import { scaffoldClaude, scaffoldCodex, scaffoldWatchdog } from "../../apps/cli/
 
 let testDir = ""
 
-const BUNDLED_SPEC_SKILLS = ["decompose-spec", "design-doc", "overview-spec", "prd", "ralph-loop", "task-spec-loop", "verify-invariants"] as const
+const BUNDLED_SPEC_SKILLS = ["tx-tasks", "tx-docs", "verify-invariants"] as const
 
 function cleanup() {
   if (existsSync(testDir)) {
@@ -66,7 +66,7 @@ describe("scaffold", () => {
   })
 
   describe("scaffoldClaude", () => {
-    it("installs generated Claude skills and bundled spec skills by default", () => {
+    it("installs the three Claude guides by default", () => {
       const result = scaffoldClaude(testDir)
       const root = skillRoot("claude")
 
@@ -76,17 +76,17 @@ describe("scaffold", () => {
 
       expect(existsSync(join(testDir, "CLAUDE.md"))).toBe(false)
       expect(existsSync(join(root, "manifest.json"))).toBe(true)
-      expect(existsSync(join(root, "tx-core-loop", "SKILL.md"))).toBe(true)
-      expect(existsSync(join(root, "tx-core-loop", "references", "commands.md"))).toBe(true)
+      expect(existsSync(join(root, "tx-tasks", "SKILL.md"))).toBe(true)
+      expect(existsSync(join(root, "tx-tasks", "references", "commands.md"))).toBe(false)
       expect(existsSync(join(root, "tx-workflow", "SKILL.md"))).toBe(false)
 
-      const coreSkill = readFileSync(join(root, "tx-core-loop", "SKILL.md"), "utf-8")
-      expect(coreSkill).toContain("tx Core Loop")
-      expect(coreSkill).toContain("Claude Code")
+      const coreSkill = readFileSync(join(root, "tx-tasks", "SKILL.md"), "utf-8")
+      expect(coreSkill).toContain("Create tasks")
+      expect(coreSkill).toContain("tx add")
 
-      const prdSkill = readFileSync(join(root, "prd", "SKILL.md"), "utf-8")
-      expect(prdSkill).toContain("~/.claude/plans/")
-      expect(existsSync(join(root, "skills-sync", "SKILL.md"))).toBe(true)
+      const prdSkill = readFileSync(join(root, "tx-docs", "SKILL.md"), "utf-8")
+      expect(prdSkill).toContain("tx doc add prd")
+      expect(existsSync(join(root, "tx-docs", "SKILL.md"))).toBe(true)
 
       expectBundledSpecSkills("claude")
     })
@@ -98,27 +98,27 @@ describe("scaffold", () => {
 
       expect(result.copied).toEqual([])
       expect(result.skipped).toContain(".claude/skills/manifest.json")
-      expect(result.skipped.some((file) => file.startsWith(".claude/skills/tx-core-loop/"))).toBe(true)
+      expect(result.skipped.some((file) => file.startsWith(".claude/skills/tx-tasks/"))).toBe(true)
     })
 
     it("lets onboarding install only the selected Claude skills", () => {
       const result = scaffoldClaude(testDir, {
-        skills: ["tx-core-loop", "skills-sync", "design-doc"],
+        skills: ["tx-tasks", "tx-docs", "verify-invariants"],
       })
 
       expect(result.copied).toContain(".claude/skills/manifest.json")
-      expect(existsSync(join(skillRoot("claude"), "tx-core-loop", "SKILL.md"))).toBe(true)
-      expect(existsSync(join(skillRoot("claude"), "skills-sync", "SKILL.md"))).toBe(true)
-      expect(existsSync(join(skillRoot("claude"), "design-doc", "SKILL.md"))).toBe(true)
+      expect(existsSync(join(skillRoot("claude"), "tx-tasks", "SKILL.md"))).toBe(true)
+      expect(existsSync(join(skillRoot("claude"), "tx-docs", "SKILL.md"))).toBe(true)
+      expect(existsSync(join(skillRoot("claude"), "tx-docs", "SKILL.md"))).toBe(true)
       expect(existsSync(join(skillRoot("claude"), "tx-docs-specs", "SKILL.md"))).toBe(false)
       expect(existsSync(join(skillRoot("claude"), "ralph-loop", "SKILL.md"))).toBe(false)
 
       const manifest = readManifest("claude")
       expect(manifest.skillCount).toBe(3)
       expect(manifest.skills.map((skill) => skill.id)).toEqual([
-        "tx-core-loop",
-        "design-doc",
-        "skills-sync",
+        "tx-tasks",
+        "tx-docs",
+        "verify-invariants",
       ])
     })
 
@@ -144,23 +144,6 @@ describe("scaffold", () => {
       expect(content.match(/Headless, Local Infra for AI Agents/g)?.length ?? 0).toBe(1)
     })
 
-    it("copies ralph script when ralphScript option is true", () => {
-      const result = scaffoldClaude(testDir, { ralphScript: true })
-
-      const ralphScript = join(testDir, "scripts", "ralph.sh")
-      expect(existsSync(ralphScript)).toBe(true)
-      expect(result.copied.some((file) => file.includes("ralph.sh"))).toBe(true)
-
-      if (process.platform !== "win32") {
-        const stat = statSync(ralphScript)
-        expect(stat.mode & 0o100).toBeTruthy()
-      }
-
-      const content = readFileSync(ralphScript, "utf-8")
-      expect(content).toContain("set -o noclobber")
-      expect(content).toContain("remove_owned_lock_file")
-    })
-
     it("does not copy ralph script by default", () => {
       scaffoldClaude(testDir)
 
@@ -169,7 +152,7 @@ describe("scaffold", () => {
   })
 
   describe("scaffoldCodex", () => {
-    it("installs generated Codex skills, bundled spec skills, and rules by default", () => {
+    it("installs the three Codex guides without rules by default", () => {
       const result = scaffoldCodex(testDir)
       const root = skillRoot("codex")
 
@@ -180,16 +163,16 @@ describe("scaffold", () => {
       expect(existsSync(join(testDir, "AGENTS.md"))).toBe(false)
       expect(existsSync(join(testDir, ".codex", "agents"))).toBe(false)
       expect(existsSync(join(root, "manifest.json"))).toBe(true)
-      expect(existsSync(join(root, "tx-core-loop", "SKILL.md"))).toBe(true)
-      expect(existsSync(join(root, "tx-core-loop", "references", "commands.md"))).toBe(true)
-      expect(existsSync(join(testDir, ".codex", "rules", "default.rules"))).toBe(true)
+      expect(existsSync(join(root, "tx-tasks", "SKILL.md"))).toBe(true)
+      expect(existsSync(join(root, "tx-tasks", "references", "commands.md"))).toBe(false)
+      expect(existsSync(join(testDir, ".codex", "rules", "default.rules"))).toBe(false)
 
-      const designDocSkill = readFileSync(join(root, "design-doc", "SKILL.md"), "utf-8")
-      expect(designDocSkill).toContain("~/.codex/plans/")
+      const designDocSkill = readFileSync(join(root, "tx-docs", "SKILL.md"), "utf-8")
+      expect(designDocSkill).toContain("tx doc add design")
       expect(designDocSkill).not.toContain("~/.claude/plans/")
       expect(designDocSkill).toContain("project instructions")
-      expect(designDocSkill).toContain("`prd`")
-      expect(existsSync(join(root, "skills-sync", "SKILL.md"))).toBe(true)
+      expect(designDocSkill).toContain("tx doc add prd")
+      expect(existsSync(join(root, "tx-docs", "SKILL.md"))).toBe(true)
 
       expectBundledSpecSkills("codex")
     })
@@ -201,26 +184,26 @@ describe("scaffold", () => {
 
       expect(result.copied).toEqual([])
       expect(result.skipped).toContain(".codex/skills/manifest.json")
-      expect(result.skipped.some((file) => file.startsWith(".codex/skills/tx-core-loop/"))).toBe(true)
-      expect(result.skipped.some((file) => file.startsWith(".codex/rules/"))).toBe(true)
+      expect(result.skipped.some((file) => file.startsWith(".codex/skills/tx-tasks/"))).toBe(true)
+      expect(result.skipped.some((file) => file.startsWith(".codex/rules/"))).toBe(false)
     })
 
     it("lets onboarding install only the selected Codex skills while keeping rules", () => {
       const result = scaffoldCodex(testDir, {
-        skills: ["tx-core-loop", "ralph-loop"],
+        skills: ["tx-tasks", "verify-invariants"],
       })
 
       expect(result.copied).toContain(".codex/skills/manifest.json")
-      expect(existsSync(join(skillRoot("codex"), "tx-core-loop", "SKILL.md"))).toBe(true)
-      expect(existsSync(join(skillRoot("codex"), "ralph-loop", "SKILL.md"))).toBe(true)
-      expect(existsSync(join(skillRoot("codex"), "skills-sync", "SKILL.md"))).toBe(false)
-      expect(existsSync(join(testDir, ".codex", "rules", "default.rules"))).toBe(true)
+      expect(existsSync(join(skillRoot("codex"), "tx-tasks", "SKILL.md"))).toBe(true)
+      expect(existsSync(join(skillRoot("codex"), "verify-invariants", "SKILL.md"))).toBe(true)
+      expect(existsSync(join(skillRoot("codex"), "tx-docs", "SKILL.md"))).toBe(false)
+      expect(existsSync(join(testDir, ".codex", "rules", "default.rules"))).toBe(false)
 
       const manifest = readManifest("codex")
       expect(manifest.skillCount).toBe(2)
       expect(manifest.skills.map((skill) => skill.id)).toEqual([
-        "tx-core-loop",
-        "ralph-loop",
+        "tx-tasks",
+        "verify-invariants",
       ])
     })
 
