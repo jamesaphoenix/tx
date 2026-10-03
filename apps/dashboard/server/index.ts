@@ -1,4 +1,4 @@
-import { getSpecHealth } from "@jamesaphoenix/tx"
+import { dashboardSpecHealth } from "./spec-health"
 import { Database } from "bun:sqlite"
 import { randomUUID } from "node:crypto"
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs"
@@ -7,7 +7,6 @@ import { resolve, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
 import { TASK_STATUSES, type TaskRow, type DependencyRow } from "@jamesaphoenix/tx/types"
 import { parse as parseYaml } from "yaml"
-import { Effect } from "effect"
 import {
   applyMigrations,
   asDocKind,
@@ -15,7 +14,6 @@ import {
   deriveDocStableId,
   escapeLikePattern,
   isValidDocKind,
-  makeMinimalLayer,
   MdDocParseError,
   parseMdDocSync,
   readTxConfig,
@@ -3376,7 +3374,7 @@ app.get("/api/tasks/:id", (c) => {
 
 // =============================================================================
 app.get("/api/spec/health", async (c) => {
-  try { return c.json(await Effect.runPromise(getSpecHealth().pipe(Effect.provide(makeMinimalLayer(dbPath))))) }
+  try { return c.json(await dashboardSpecHealth(dbPath)) }
   catch (error) { console.error("Spec health failed", error); return c.json({ error: "Could not load spec health" }, 500) }
 })
 
