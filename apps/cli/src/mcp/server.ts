@@ -175,7 +175,9 @@ Environment:
 }
 
 // Run if executed directly
-main().catch((error) => {
-  console.error(`Fatal error:\n${formatErrorWithStack(error)}`)
-  process.exit(1)
-})
+if (import.meta.main) {
+  main().catch((error) => {
+    console.error(`Fatal error:\n${formatErrorWithStack(error)}`)
+    process.exit(1)
+  })
+}
