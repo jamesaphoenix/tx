@@ -223,42 +223,6 @@ describe("TxClient", () => {
       expect(typeof client.tasks.tree).toBe("function")
     })
 
-    it("exposes learnings namespace", () => {
-      const client = new TxClient({ apiUrl: "http://localhost:3456" })
-      expect(client.learnings).toBeDefined()
-      expect(typeof client.learnings.search).toBe("function")
-      expect(typeof client.learnings.get).toBe("function")
-      expect(typeof client.learnings.add).toBe("function")
-      expect(typeof client.learnings.helpful).toBe("function")
-    })
-
-    it("exposes fileLearnings namespace", () => {
-      const client = new TxClient({ apiUrl: "http://localhost:3456" })
-      expect(client.fileLearnings).toBeDefined()
-      expect(typeof client.fileLearnings.list).toBe("function")
-      expect(typeof client.fileLearnings.recall).toBe("function")
-      expect(typeof client.fileLearnings.add).toBe("function")
-    })
-
-    it("exposes context namespace", () => {
-      const client = new TxClient({ apiUrl: "http://localhost:3456" })
-      expect(client.context).toBeDefined()
-      expect(typeof client.context.forTask).toBe("function")
-    })
-
-    it("exposes runs namespace", () => {
-      const client = new TxClient({ apiUrl: "http://localhost:3456" })
-      expect(client.runs).toBeDefined()
-      expect(typeof client.runs.list).toBe("function")
-      expect(typeof client.runs.get).toBe("function")
-      expect(typeof client.runs.transcript).toBe("function")
-      expect(typeof client.runs.stderr).toBe("function")
-      expect(typeof client.runs.errors).toBe("function")
-      expect(typeof client.runs.heartbeat).toBe("function")
-      expect(typeof client.runs.stalled).toBe("function")
-      expect(typeof client.runs.reap).toBe("function")
-    })
-
     it("exposes spec namespace", () => {
       const client = new TxClient({ apiUrl: "http://localhost:3456" })
       expect(client.spec).toBeDefined()

@@ -8,7 +8,7 @@ status: draft
 version: 1
 owners:
   - docs-team
-summary: "Three portable guides with safe retirement of tx-owned legacy skills."
+summary: "Four portable guides with safe retirement of tx-owned legacy skills."
 domain: minimal-agent-skills
 tags:
   - design
@@ -22,11 +22,11 @@ last_reviewed_at: 2026-10-03
 ---
 
 # Summary
-Bundle three canonical Markdown guides and embed their content as generated TypeScript
+Bundle four canonical Markdown guides and embed their content as generated TypeScript
 for identical standalone binary and Node behaviour. A parity test detects stale embeds.
 
 # Architecture
-`skills/generate.ts` declares the three IDs and writes deterministic manifests.
+`skills/generate.ts` declares the four IDs and writes deterministic manifests.
 `skills/sync.ts` validates previous manifest entries and destination trees for all
 selected targets before mutation. It prunes only retired IDs with exact owned paths.
 Default scaffold calls that pipeline without agent, rule or Ralph copies.
@@ -36,14 +36,14 @@ CLI generate/sync and existing init target flags remain. Sync summaries add `rem
 Guides use live CLI help and document templates instead of a command catalogue.
 
 # Data Model
-Manifest shape is retained. The bundle has three entries and no embedded command index.
+Manifest shape is retained. The bundle has four entries and no embedded command index.
 Task state remains in the main repository; content roots select isolated checkouts.
 
 # Invariants
 ```yaml
 invariants:
   - id: INV-MINIMAL-001
-    statement: default onboarding ships exactly three guides without harness files
+    statement: default onboarding ships exactly four guides without harness files
     severity: high
     verified_by:
       - test/integration/minimal-skills.test.ts
@@ -81,11 +81,11 @@ failure_modes:
 
 # Verification
 Executable integration tests cover inventory, pruning, idempotence, path rejection,
-configuration changes and template parity. Smoke-check compiled and built built npm CLIs
+configuration changes and template parity. Smoke-check compiled and built npm CLIs
 from an unrelated directory. Release CI validates the exact commit before publication.
 
 # Testing Strategy
-Retain task/spec golden-path and opt-in watchdog tests. Replace only assertions for
+Retain task/spec golden-path tests and retire watchdog tests with the feature. Replace only assertions for
 intentionally removed default outputs. Check lint, types and build before publication.
 
 # Open Questions

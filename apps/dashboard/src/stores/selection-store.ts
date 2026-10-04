@@ -9,8 +9,6 @@ import { Store } from "@tanstack/store"
 export interface SelectionState {
   /** Selected task IDs on the Tasks page */
   taskIds: Set<string>
-  /** Selected run IDs on the Runs page */
-  runIds: Set<string>
   /** Selected doc refs on the Docs page (`docId:version`) */
   docRefs: Set<string>
   /** Selected issue IDs on the Cycles page */
@@ -19,7 +17,6 @@ export interface SelectionState {
 
 const createInitialSelectionState = (): SelectionState => ({
   taskIds: new Set(),
-  runIds: new Set(),
   docRefs: new Set(),
   issueIds: new Set(),
 })
@@ -46,19 +43,13 @@ export const selectionActions = {
   clearTasks: () =>
     selectionStore.setState((s) => ({ ...s, taskIds: new Set() })),
 
-  // Runs
-  toggleRun: (id: string) =>
-    selectionStore.setState((s) => ({ ...s, runIds: toggleInSet(s.runIds, id) })),
-  selectAllRuns: (ids: string[]) =>
-    selectionStore.setState((s) => ({ ...s, runIds: new Set(ids) })),
-  clearRuns: () =>
-    selectionStore.setState((s) => ({ ...s, runIds: new Set() })),
-
   // Docs
   toggleDoc: (ref: string) =>
     selectionStore.setState((s) => ({ ...s, docRefs: toggleInSet(s.docRefs, ref) })),
   selectAllDocs: (refs: string[]) =>
     selectionStore.setState((s) => ({ ...s, docRefs: new Set(refs) })),
+  deselectDoc: (ref: string) =>
+    selectionStore.setState((s) => ({ ...s, docRefs: new Set([...s.docRefs].filter(item => item !== ref)) })),
   clearDocs: () =>
     selectionStore.setState((s) => ({ ...s, docRefs: new Set() })),
 

@@ -9,12 +9,6 @@ import type {
 
 export type SyncEntityImportContract = {
   readonly importTaskOps: (path?: string) => Effect.Effect<ImportResult, ValidationError | DatabaseError | TaskNotFoundError>
-  readonly importLearnings: (path?: string) => Effect.Effect<EntityImportResult, ValidationError | DatabaseError>
-  readonly importFileLearnings: (path?: string) => Effect.Effect<EntityImportResult, ValidationError | DatabaseError>
-  readonly importAttempts: (path?: string) => Effect.Effect<EntityImportResult, ValidationError | DatabaseError>
-  readonly importPins: (path?: string) => Effect.Effect<EntityImportResult, ValidationError | DatabaseError>
-  readonly importAnchors: (path?: string) => Effect.Effect<EntityImportResult, ValidationError | DatabaseError>
-  readonly importEdges: (path?: string) => Effect.Effect<EntityImportResult, ValidationError | DatabaseError>
   readonly importDocs: (path?: string) => Effect.Effect<EntityImportResult, ValidationError | DatabaseError>
   readonly importLabels: (path?: string) => Effect.Effect<EntityImportResult, ValidationError | DatabaseError>
   readonly importDecisions: (path?: string) => Effect.Effect<EntityImportResult, ValidationError | DatabaseError>
@@ -27,12 +21,6 @@ export type SyncEntityImportContract = {
 
 export const ENTITY_IMPORT_METHODS = [
   "importTaskOps",
-  "importLearnings",
-  "importFileLearnings",
-  "importAttempts",
-  "importPins",
-  "importAnchors",
-  "importEdges",
   "importDocs",
   "importLabels",
   "importDecisions",

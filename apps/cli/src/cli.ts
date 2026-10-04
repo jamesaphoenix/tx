@@ -5,95 +5,34 @@
  * Main entry point for the tx command line tool.
  */
 
-import { Effect, Cause, Option, Layer } from "effect"
+import { Effect, Cause, Option } from "effect"
 import { resolve } from "node:path"
 import { existsSync, mkdirSync, writeFileSync } from "node:fs"
-import { makeAppLayer, AgentServiceLive, CycleScanServiceLive, SqliteClient, resolveWorkspaceContext } from "@jamesaphoenix/tx"
+import { makeAppLayer, SqliteClient, resolveWorkspaceContext } from "@jamesaphoenix/tx"
 import { HELP_TEXT, commandHelp } from "./help.js"
 import { CliExitError } from "./cli-exit.js"
 import { CliUserError, emitCliError, movedCommandError, unknownCommandError, usageError } from "./cli-errors.js"
-import { buildCommandCatalog, buildHelpPayload, buildSchemaPayload, deprecatedCommandMap, resolveCommandKey } from "./help-registry.js"
+import { buildCommandCatalog, buildHelpPayload, buildSchemaPayload, compoundHelpParents, deprecatedCommandMap, resolveCommandKey } from "./help-registry.js"
 import { toJson } from "./output.js"
 import { CLI_VERSION } from "./version.js"
 
 // Command imports
-import { add, list, ready, show, update, done, deleteTask, reset } from "./commands/task.js"
-import { dep } from "./commands/dep-compound.js"
+import { taskCommand } from "./commands/task-dispatch.js"
 import { sync } from "./commands/sync.js"
-import { cycle } from "./commands/cycle.js"
-import { trace } from "./commands/trace.js"
-import { claim } from "./commands/claim.js"
-import { bulk } from "./commands/bulk.js"
-import { msg } from "./commands/msg.js"
 import { doc } from "./commands/doc.js"
 import { invariant } from "./commands/invariant.js"
 import { spec } from "./commands/spec.js"
-import { decision } from "./commands/decision.js"
 import { triangle } from "./commands/triangle.js"
-import { groupContext } from "./commands/group-context.js"
-import { scaffoldClaude, scaffoldCodex, scaffoldWatchdog, parseWatchdogRuntimeMode, interactiveScaffold } from "./commands/scaffold.js"
+import { scaffoldClaude, scaffoldCodex, interactiveScaffold } from "./commands/scaffold.js"
 import { scaffoldConfigToml, upgradeConfigToml } from "@jamesaphoenix/tx"
-import { memory } from "./commands/memory.js"
-import { pin } from "./commands/pin.js"
-import { mdExport } from "./commands/md-export.js"
-import { utils } from "./commands/utils.js"
 import { diag } from "./commands/diag.js"
-import { auto } from "./commands/auto.js"
 import { skills } from "./commands/skills.js"
-import { decompose } from "./commands/decompose.js"
 import { schema } from "./commands/schema.js"
 import * as p from "@clack/prompts"
+import { parseArgs } from "./utils/argv.js"
 
 // --- Argv parsing helpers ---
 
-function parseArgs(argv: string[]): { command: string; positional: string[]; flags: Record<string, string | boolean> } {
-  const args = argv.slice(2)
-  const positional: string[] = []
-  const flags: Record<string, string | boolean> = {}
-
-  // Parse a flag at index idx, using valueCheckPrefix to determine if next arg is a value
-  // Returns number of args consumed (1 for boolean flag, 2 for flag with value)
-  function consumeFlag(idx: number, valueCheckPrefix: string): number {
-    const arg = args[idx]
-    const key = arg.startsWith("--") ? arg.slice(2) : arg.slice(1)
-    const next = args[idx + 1]
-    if (next && !next.startsWith(valueCheckPrefix)) {
-      // Accumulate repeated flags with comma (e.g., --prop a=1 --prop b=2 → "a=1,b=2")
-      const existing = flags[key]
-      flags[key] = typeof existing === "string" ? `${existing},${next}` : next
-      return 2
-    }
-    flags[key] = true
-    return 1
-  }
-
-  // Find the command (first non-flag argument), parsing any leading flags
-  let command = "help"
-  let startIdx = 0
-  for (let i = 0; i < args.length; i++) {
-    if (args[i].startsWith("-")) {
-      i += consumeFlag(i, "-") - 1
-    } else {
-      command = args[i]
-      startIdx = i + 1
-      break
-    }
-  }
-
-  // Parse remaining args: positional arguments and flags after command
-  for (let i = startIdx; i < args.length; i++) {
-    const arg = args[i]
-    if (arg.startsWith("--")) {
-      i += consumeFlag(i, "--") - 1
-    } else if (arg.startsWith("-")) {
-      i += consumeFlag(i, "-") - 1
-    } else {
-      positional.push(arg)
-    }
-  }
-
-  return { command, positional, flags }
-}
 
 function flag(flags: Record<string, string | boolean>, ...names: string[]): boolean {
   return names.some(n => flags[n] === true)
@@ -127,29 +66,12 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
 
       p.intro("tx init")
       p.log.success(`Database ready (${tables.length} tables, SQLite WAL mode)`)
-      p.log.info(`${projectDir}/.tx/tasks.db`)
+      p.log.info(String(initFlags.db))
 
       // Non-interactive mode: explicit init flags skip prompts
       const forceClaude = flag(initFlags, "claude")
       const forceCodex = flag(initFlags, "codex")
-      const forceWatchdog = flag(initFlags, "watchdog")
-
-      if (initFlags["watchdog-runtime"] !== undefined && !forceWatchdog) {
-        return yield* Effect.fail(usageError({
-          code: "cli/missing-flag",
-          command: "init",
-          message: "--watchdog-runtime requires --watchdog.",
-          hint: "Pass --watchdog or remove --watchdog-runtime.",
-          usage: "tx init [--watchdog] [--watchdog-runtime <auto|codex|claude|both>]",
-          examples: [
-            "tx init --watchdog",
-            "tx init --watchdog --watchdog-runtime both",
-          ],
-        }))
-      }
-      const watchdogRuntimeMode = parseWatchdogRuntimeMode(initFlags["watchdog-runtime"])
-
-      if (forceClaude || forceCodex || forceWatchdog) {
+      if (forceClaude || forceCodex) {
         const results: string[] = []
         if (forceClaude) {
           const r = scaffoldClaude(projectDir)
@@ -159,115 +81,31 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
           const r = scaffoldCodex(projectDir)
           results.push(...r.copied.map(f => `+ ${f}`), ...r.skipped.map(f => `~ ${f} (exists)`))
         }
-        if (forceWatchdog) {
-          const r = scaffoldWatchdog(projectDir, { runtimeMode: watchdogRuntimeMode })
-          results.push(...r.copied.map(f => `+ ${f}`), ...r.skipped.map(f => `~ ${f} (exists)`))
-          for (const warning of r.warnings) {
-            p.log.warn(warning)
-          }
-        }
         if (results.length > 0) p.note(results.join("\n"), "Files")
-        p.outro('Done! Start with: tx add "First task" && tx ready')
+        p.outro('Done! Start with: tx task add "First task" && tx task ready')
         return
       }
 
       // Interactive mode
-      yield* Effect.tryPromise(() => interactiveScaffold(projectDir, { watchdogRuntimeMode }))
-      p.outro('Done! Start with: tx add "First task" && tx ready')
+      yield* Effect.tryPromise(() => interactiveScaffold(projectDir))
+      p.outro('Done! Start with: tx task add "First task" && tx task ready')
     }),
 
-  add,
-  list,
-  ready,
-  show,
-  update,
-  done,
-  reset,
-  delete: deleteTask,
-  // New compound commands
-  dep,
-  msg,
+  task: taskCommand,
   diag,
-  auto,
   skills,
 
-  // Legacy top-level commands (deprecated aliases → compound commands)
-  block: deprecatedAlias("dep block", (pos, flags) => dep(["block", ...pos], flags)),
-  unblock: deprecatedAlias("dep unblock", (pos, flags) => dep(["unblock", ...pos], flags)),
-  children: deprecatedAlias("dep children", (pos, flags) => dep(["children", ...pos], flags)),
-  tree: deprecatedAlias("dep tree", (pos, flags) => dep(["tree", ...pos], flags)),
-  send: deprecatedAlias("msg send", (pos, flags) => msg(["send", ...pos], flags)),
-  inbox: deprecatedAlias("msg inbox", (pos, flags) => msg(["inbox", ...pos], flags)),
-  ack: deprecatedAlias("msg ack", (pos, flags) => msg(["ack", ...pos], flags)),
-  outbox: deprecatedAlias("msg pending|gc", (pos, flags) => {
-    // Route outbox subcommands through msg
-    const sub = pos[0]
-    if (sub === "pending") return msg(["pending", ...pos.slice(1)], flags)
-    if (sub === "gc") return msg(["gc", ...pos.slice(1)], flags)
-    // No subcommand or unknown → show msg help
-    return msg([], flags)
-  }),
-  stats: deprecatedAlias("diag stats", (pos, flags) => diag(["stats", ...pos], flags)),
-  doctor: deprecatedAlias("diag doctor", (pos, flags) => diag(["doctor", ...pos], flags)),
-  validate: deprecatedAlias("diag doctor", (pos, flags) => diag(["doctor", ...pos], flags)),
-  dashboard: deprecatedAlias("diag dashboard", (pos, flags) => diag(["dashboard", ...pos], flags)),
-  compact: deprecatedAlias("sync compact", (pos, flags) => sync(["compact", ...pos], flags)),
-  history: deprecatedAlias("sync history", (pos, flags) => sync(["history", ...pos], flags)),
-  guard: deprecatedAlias("auto guard", (pos, flags) => auto(["guard", ...pos], flags)),
-  gate: deprecatedAlias("auto gate", (pos, flags) => auto(["gate", ...pos], flags)),
-  verify: deprecatedAlias("auto verify", (pos, flags) => auto(["verify", ...pos], flags)),
-  label: deprecatedAlias("auto label", (pos, flags) => auto(["label", ...pos], flags)),
-  reflect: deprecatedAlias("auto reflect", (pos, flags) => auto(["reflect", ...pos], flags)),
-
   sync,
-  migrate: deprecatedAlias("sync migrate", (pos, flags) => sync(["migrate", ...pos], flags)),
-  "group-context": groupContext,
-
-  // Cycle scan (PRD-023)
-  cycle,
-
-  // Claim commands (PRD-018) — claim dispatches release/renew subcommands
-  claim,
-
-  // Trace command (with subcommands)
-  trace,
-
-  // Bulk operations
-  bulk,
 
   // Doc commands (DD-023 docs-as-primitives)
   doc,
-  invariant: deprecatedAlias("spec", invariant),
+  invariant: deprecatedAlias("spec invariant", invariant),
   spec,
 
-  // Decision commands
-  decision,
   triangle: deprecatedAlias("spec health", triangle),
 
-  // Memory commands (filesystem-backed memory)
-  memory,
-
-  // Pin commands (context pins for agent memory injection)
-  pin,
-
-  // Markdown export (file-based agent loops)
-  "md-export": mdExport,
-
-  // Spec-driven task graph creation
-  decompose,
-
   // Utility commands (no DB required)
-  utils,
   schema,
-
-  // --- Deprecated colon-style aliases (emit warning, delegate to new syntax) ---
-  "claim:release": deprecatedAlias("claim release", (pos, flags) => claim(["release", ...pos], flags)),
-  "claim:renew": deprecatedAlias("claim renew", (pos, flags) => claim(["renew", ...pos], flags)),
-  "group-context:set": deprecatedAlias("group-context set", (pos, flags) => groupContext(["set", ...pos], flags)),
-  "group-context:clear": deprecatedAlias("group-context clear", (pos, flags) => groupContext(["clear", ...pos], flags)),
-  "ack:all": deprecatedAlias("msg ack all", (pos, flags) => msg(["ack", "all", ...pos], flags)),
-  "outbox:pending": deprecatedAlias("msg pending", (pos, flags) => msg(["pending", ...pos], flags)),
-  "outbox:gc": deprecatedAlias("msg gc", (pos, flags) => msg(["gc", ...pos], flags)),
 
   // Help command
   help: (pos) =>
@@ -352,8 +190,17 @@ function printSchemaOutput(parts: string[]): void {
 
 // --- Main ---
 
-const { command, positional, flags: parsedFlags } = parseArgs(process.argv)
-const jsonMode = flag(parsedFlags, "json")
+const { command, positional, flags: parsedFlags } = (() => {
+  try {return parseArgs(process.argv)}
+  catch (error) {
+    const userError = error instanceof CliUserError ? error : new CliUserError({
+      code:"cli/invalid-arguments",message:error instanceof Error ? error.message : String(error),
+    })
+    emitCliError(userError, process.argv.slice(2).includes("--json"))
+    process.exit(userError.exitCode)
+  }
+})()
+const jsonMode = flag(parsedFlags, "json") || command === "schema"
 
 function exitCliUserError(error: unknown): never {
   if (error instanceof CliUserError) {
@@ -369,14 +216,27 @@ function exitCliUserError(error: unknown): never {
 }
 
 // Handle --version early, before any command processing
-if (flag(parsedFlags, "version") || flag(parsedFlags, "v")) {
+if (flag(parsedFlags, "version") || (flag(parsedFlags, "v") && !(command === "diag" && positional[0] === "doctor"))) {
   console.log(`tx v${CLI_VERSION}`)
   process.exit(0)
 }
 
+const oldTaskCommands: Record<string, string> = { "md-export": "export", add: "add", list: "list", ready: "ready", show: "show", update: "update", done: "done", reset: "reset", delete: "delete", dep: "dep", bulk: "bulk", label: "label", block: "dep block", unblock: "dep unblock", children: "dep children", tree: "dep tree" }
+// @spec INV-LEAN-001 Reject retired mutations before storage initialisation.
+if (Object.hasOwn(oldTaskCommands, command)) {
+  emitCliError(movedCommandError({ command, message: 'Task commands now use the task namespace.', hint: 'Use tx task ' + oldTaskCommands[command] + '.' }), jsonMode)
+  process.exit(1)
+}
+for (const retiredFlag of ["watchdog", "watchdog-runtime", "verify", "claim", "lease"]) {
+  if (parsedFlags[retiredFlag] !== undefined) {
+    emitCliError(usageError({ command, code: "cli/removed-option", message: '--' + retiredFlag + ' was removed in v0.20.0.', usage: 'tx help ' + command }), jsonMode)
+    process.exit(1)
+  }
+}
+
 // Handle --help for specific command (tx add --help) or help command (tx help / tx help add)
 if (flag(parsedFlags, "help") || flag(parsedFlags, "h")) {
-  if (command in deprecatedCommandMap) {
+  if (Object.hasOwn(deprecatedCommandMap, command)) {
     console.warn(`[deprecated] Use "tx ${deprecatedCommandMap[command]}" instead.`)
   }
   try {
@@ -407,23 +267,41 @@ if (command === "schema") {
   }
 }
 
-// Handle mcp-server separately (will be moved to apps/mcp)
+const commandParts = [command, ...positional]
+const namespaceKey = commandParts.join(" ")
+const usageOnlyNamespaces = new Set(["task","task dep","task bulk","diag","sync","sync migrate","skills","spec","spec invariant"])
+const explicitNamespaceHelp = positional.at(-1) === "help"
+  && (compoundHelpParents as readonly string[]).includes(commandParts.slice(0,-1).join(" "))
+if (usageOnlyNamespaces.has(namespaceKey) || explicitNamespaceHelp) {
+  try {
+    printHelpOutput(explicitNamespaceHelp ? commandParts.slice(0,-1) : commandParts, jsonMode)
+    process.exit(0)
+  } catch (error) {exitCliUserError(error)}
+}
+
+// The MCP executable is shipped by the CLI package.
 if (command === "mcp-server") {
   emitCliError(movedCommandError({
     command,
-    message: "MCP server has been moved to a separate package.",
-    hint: "Use the @tx/mcp package or run the MCP server from the monorepo root.",
+    message: "Start the MCP server with the tx-mcp executable.",
+    hint: "Use tx-mcp from @jamesaphoenix/tx-cli.",
   }), jsonMode)
   process.exit(1)
 }
 
-const handler = commands[command]
+const handler = Object.hasOwn(commands, command) ? commands[command] : undefined
 if (!handler) {
   emitCliError(unknownCommandError({
     command,
     suggestions: suggestCommands(command, Object.keys(commands)),
   }), jsonMode)
   process.exit(1)
+}
+
+if (command === "skills") {
+  const result = await Effect.runPromise(Effect.either(skills(positional, parsedFlags)))
+  if (result._tag === "Left") exitCliUserError(result.left)
+  process.exit(0)
 }
 
 const workspace = resolveWorkspaceContext({
@@ -472,9 +350,7 @@ const layer = makeAppLayer(dbPath, {
 const program = handler(positional, parsedFlags)
 
 // Runtime-backed commands that are not part of the default app layer need overlays.
-const fullLayer = command === "cycle"
-  ? Layer.merge(layer, CycleScanServiceLive.pipe(Layer.provide(Layer.merge(layer, AgentServiceLive))))
-  : layer
+const fullLayer = layer
 
 const runnable = Effect.provide(program, fullLayer) as Effect.Effect<void, unknown>
 
@@ -484,30 +360,13 @@ let _exitCode = 0
 // Map error tags to exit codes (2 = not found, 1 = general error)
 const errorExitCodes: Record<string, number> = {
   TaskNotFoundError: 2,
-  LearningNotFoundError: 2,
-  AnchorNotFoundError: 2,
-  ClaimNotFoundError: 2,
   ValidationError: 1,
   CircularDependencyError: 1,
   DatabaseError: 1,
-  AlreadyClaimedError: 1,
-  LeaseExpiredError: 1,
-  MaxRenewalsExceededError: 1,
-  ExtractionUnavailableError: 1,
-  MessageNotFoundError: 2,
-  MessageAlreadyAckedError: 1,
   DocNotFoundError: 2,
   DocLockedError: 1,
   InvalidDocYamlError: 1,
   InvariantNotFoundError: 2,
-  DecisionNotFoundError: 2,
-  DecisionAlreadyReviewedError: 1,
-  MemoryDocumentNotFoundError: 2,
-  MemorySourceNotFoundError: 2,
-  RetrievalError: 1,
-  EmbeddingDimensionMismatchError: 1,
-  GuardExceededError: 1,
-  VerifyError: 1,
   LabelNotFoundError: 2,
   HasChildrenError: 1,
 }

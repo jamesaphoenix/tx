@@ -44,19 +44,17 @@ export default defineConfig({
       "packages/core/src/utils/md-doc-parser.test.ts",
     ],
     exclude: [
-      // Commands not yet registered in CLI — tests exist ahead of implementation
-      "test/integration/daemon-cli.test.ts",
-      "test/integration/cli-graph.test.ts",
-      "test/integration/cli-test-cache.test.ts",
       // npm binary distribution test: slow (npm pack + install), run explicitly
-      "test/integration/cli-npm-binary.test.ts",
+      ...(process.env.TX_TEST_NPM === "1" ? [] : ["test/integration/cli-npm-binary.test.ts"]),
       // install script test: requires network access to GitHub
       "test/integration/install-script.test.ts",
       // utils usage tests: require real CLIs + network (run explicitly)
       "test/integration/utils-usage.test.ts",
       // docs build/server tests: require full Next.js build (slow, stdout corrupts JSON reporter)
-      "test/integration/docs-build.test.ts",
-      "test/integration/docs-search-route.test.ts",
+      ...(process.env.TX_TEST_DOCS === "1" ? [] : [
+        "test/integration/docs-build.test.ts",
+        "test/integration/docs-search-route.test.ts",
+      ]),
     ],
     setupFiles: ["./vitest.setup.ts"],
     environment: "node",

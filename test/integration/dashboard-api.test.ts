@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll, vi } from "vitest"
-import { Hono } from "hono"
+import { createDashboardServer } from "../../apps/dashboard/server/index.js"
+import type { Server } from "node:http"
+import type { AddressInfo } from "node:net"
+import {mkdtempSync, rmSync} from "node:fs"
+import {join} from "node:path"
+import {tmpdir} from "node:os"
 import { createSharedTestLayer, wrapDbAsTestDatabase, type SharedTestLayerResult, type TestDatabase } from "@jamesaphoenix/tx/testing"
-import { isPathWithin } from "@jamesaphoenix/tx"
 import { seedFixtures, FIXTURES, fixtureId } from "../fixtures.js"
-import { writeFileSync, readFileSync, mkdirSync, rmSync, existsSync, symlinkSync } from "node:fs"
-import { resolve } from "node:path"
-import { homedir } from "node:os"
-import { tmpdir } from "node:os"
 
 // Types matching the server
 interface TaskRow {
@@ -29,440 +29,80 @@ interface TaskWithDeps extends TaskRow {
   isReady: boolean
 }
 
-interface TaskDependencySnapshot {
-  blockedByMap: Map<string, string[]>
-  blocksMap: Map<string, string[]>
-  childrenMap: Map<string, string[]>
-  statusMap: Map<string, string>
+// Exercise the actual dashboard HTTP implementation, using the shared SQLite fixture.
+async function request(app: Server, path: string, options?: RequestInit) {
+  if (!app.listening) await new Promise<void>((resolve) => app.listen(0, "127.0.0.1", resolve))
+  const port = (app.address() as AddressInfo).port
+  return fetch(`http://127.0.0.1:${port}${path}`, {...options, signal:AbortSignal.timeout(5_000)})
 }
 
-const WORKABLE_TASK_STATUSES = new Set<string>(["backlog", "ready", "planning"])
-
-// Create test app with injected database
-function createTestApp(
-  db: TestDatabase,
-  txDir: string,
-  transcriptRoots: ReadonlyArray<string> = [resolve(homedir(), ".claude")]
-) {
-  const app = new Hono()
-
-  // Path validation helper (mirrors server logic)
-  const resolvedTxDir = resolve(txDir)
-  const allowedTranscriptRoots = [resolvedTxDir, ...transcriptRoots.map(root => resolve(root))]
-  const validateTranscriptPath = (filePath: string): string | null => {
-    const resolved = resolve(filePath)
-    const isWithinAllowedRoot = allowedTranscriptRoots.some((root) =>
-      isPathWithin(root, resolved, { useRealpath: true })
-    )
-    return isWithinAllowedRoot ? resolved : null
-  }
-
-  function pushToMapList(map: Map<string, string[]>, key: string, value: string): void {
-    const existing = map.get(key)
-    if (existing) {
-      existing.push(value)
-      return
-    }
-    map.set(key, [value])
-  }
-
-  function buildDependencySnapshot(
-    allTasks?: ReadonlyArray<Pick<TaskRow, "id" | "parent_id" | "status">>
-  ): TaskDependencySnapshot {
-    const deps = db.db.prepare("SELECT blocker_id, blocked_id FROM task_dependencies").all() as Array<{
-      blocker_id: string
-      blocked_id: string
-    }>
-    const blockedByMap = new Map<string, string[]>()
-    const blocksMap = new Map<string, string[]>()
-
-    for (const dep of deps) {
-      pushToMapList(blockedByMap, dep.blocked_id, dep.blocker_id)
-      pushToMapList(blocksMap, dep.blocker_id, dep.blocked_id)
-    }
-
-    const tasksForSnapshot = allTasks
-      ?? (db.db.prepare("SELECT id, parent_id, status FROM tasks").all() as Array<{
-        id: string
-        parent_id: string | null
-        status: string
-      }>)
-
-    const childrenMap = new Map<string, string[]>()
-    const statusMap = new Map<string, string>()
-    for (const task of tasksForSnapshot) {
-      statusMap.set(task.id, task.status)
-      if (task.parent_id) {
-        pushToMapList(childrenMap, task.parent_id, task.id)
-      }
-    }
-
-    return { blockedByMap, blocksMap, childrenMap, statusMap }
-  }
-
-  // Helper to enrich tasks with dependency info (mirrors server logic)
-  function enrichTasksWithDeps(
-    tasks: TaskRow[],
-    snapshot?: TaskDependencySnapshot
-  ): TaskWithDeps[] {
-    const dependencySnapshot = snapshot ?? buildDependencySnapshot()
-
-    return tasks.map(task => {
-      const blockedBy = dependencySnapshot.blockedByMap.get(task.id) ?? []
-      const blocks = dependencySnapshot.blocksMap.get(task.id) ?? []
-      const children = dependencySnapshot.childrenMap.get(task.id) ?? []
-      const allBlockersDone = blockedBy.every(id => dependencySnapshot.statusMap.get(id) === "done")
-      const isReady = WORKABLE_TASK_STATUSES.has(task.status) && allBlockersDone
-
-      return { ...task, blockedBy, blocks, children, isReady }
-    })
-  }
-
-  // Cursor helpers
-  function parseTaskCursor(cursor: string): { score: number; id: string } {
-    const colonIndex = cursor.lastIndexOf(':')
-    return {
-      score: parseInt(cursor.slice(0, colonIndex), 10),
-      id: cursor.slice(colonIndex + 1),
-    }
-  }
-
-  function parseRunCursor(cursor: string): { startedAt: string; id: string } {
-    const match = cursor.match(/^(.+):(run-.+)$/)
-    if (!match) {
-      return { startedAt: cursor, id: '' }
-    }
-    return { startedAt: match[1]!, id: match[2]! }
-  }
-
-  function buildTaskCursor(task: TaskRow): string {
-    return `${task.score}:${task.id}`
-  }
-
-  function buildRunCursor(run: { started_at: string; id: string }): string {
-    return `${run.started_at}:${run.id}`
-  }
-
-  // GET /api/tasks
-  app.get("/api/tasks", (c) => {
-    try {
-      const cursor = c.req.query("cursor")
-      const limit = Math.min(parseInt(c.req.query("limit") ?? "20", 10) || 20, 100)
-      const statusFilter = c.req.query("status")?.split(",").filter(Boolean)
-      const search = c.req.query("search")
-
-      const conditions: string[] = []
-      const params: (string | number)[] = []
-
-      if (statusFilter?.length) {
-        conditions.push(`status IN (${statusFilter.map(() => "?").join(",")})`)
-        params.push(...statusFilter)
-      }
-
-      if (search) {
-        conditions.push("(title LIKE ? OR description LIKE ?)")
-        params.push(`%${search}%`, `%${search}%`)
-      }
-
-      if (cursor) {
-        const { score, id } = parseTaskCursor(cursor)
-        conditions.push("(score < ? OR (score = ? AND id > ?))")
-        params.push(score, score, id)
-      }
-
-      const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""
-
-      const sql = `
-        SELECT * FROM tasks
-        ${whereClause}
-        ORDER BY score DESC, id ASC
-        LIMIT ?
-      `
-      params.push(limit + 1)
-
-      const rows = db.db.prepare(sql).all(...params) as TaskRow[]
-      const hasMore = rows.length > limit
-      const tasks = hasMore ? rows.slice(0, limit) : rows
-
-      const countConditions = conditions.filter((_, i) => {
-        return !cursor || i < conditions.length - 1
-      })
-      const countParams = cursor ? params.slice(0, -4) : params.slice(0, -1)
-      const countWhereClause = countConditions.length ? `WHERE ${countConditions.join(" AND ")}` : ""
-      const total = (db.db.prepare(`SELECT COUNT(*) as count FROM tasks ${countWhereClause}`).get(...countParams) as { count: number }).count
-
-      const dependencySnapshot = buildDependencySnapshot()
-      const enriched = enrichTasksWithDeps(tasks, dependencySnapshot)
-
-      const summaryRows = db.db.prepare(`SELECT status, COUNT(*) as count FROM tasks ${countWhereClause} GROUP BY status`).all(...countParams) as Array<{ status: string; count: number }>
-      const byStatus = summaryRows.reduce((acc, r) => {
-        acc[r.status] = r.count
-        return acc
-      }, {} as Record<string, number>)
-
-      return c.json({
-        tasks: enriched,
-        nextCursor: hasMore && tasks.length ? buildTaskCursor(tasks[tasks.length - 1]!) : null,
-        hasMore,
-        total,
-        summary: { total, byStatus },
-      })
-    } catch (e) {
-      return c.json({ error: String(e) }, 500)
-    }
-  })
-
-  // GET /api/tasks/ready
-  app.get("/api/tasks/ready", (c) => {
-    try {
-      const tasks = db.db.prepare("SELECT * FROM tasks ORDER BY score DESC").all() as TaskRow[]
-      const dependencySnapshot = buildDependencySnapshot(tasks)
-      const ready = tasks.filter(task => {
-        const blockedBy = dependencySnapshot.blockedByMap.get(task.id) ?? []
-        const allBlockersDone = blockedBy.every(id => dependencySnapshot.statusMap.get(id) === "done")
-        return WORKABLE_TASK_STATUSES.has(task.status) && allBlockersDone
-      })
-      const enriched = enrichTasksWithDeps(ready, dependencySnapshot)
-
-      return c.json({ tasks: enriched })
-    } catch (e) {
-      return c.json({ error: String(e) }, 500)
-    }
-  })
-
-  // GET /api/tasks/:id
-  app.get("/api/tasks/:id", (c) => {
-    try {
-      const id = c.req.param("id")
-
-      const task = db.db.prepare("SELECT * FROM tasks WHERE id = ?").get(id) as TaskRow | undefined
-      if (!task) {
-        return c.json({ error: "Task not found" }, 404)
-      }
-
-      const dependencySnapshot = buildDependencySnapshot()
-      const blockedByIds = dependencySnapshot.blockedByMap.get(id) ?? []
-      const blocksIds = dependencySnapshot.blocksMap.get(id) ?? []
-      const childIds = dependencySnapshot.childrenMap.get(id) ?? []
-
-      const fetchTasksByIds = (ids: string[]): TaskWithDeps[] => {
-        if (ids.length === 0) return []
-        const placeholders = ids.map(() => "?").join(",")
-        const tasks = db.db.prepare(`SELECT * FROM tasks WHERE id IN (${placeholders})`).all(...ids) as TaskRow[]
-        return enrichTasksWithDeps(tasks, dependencySnapshot)
-      }
-
-      const blockedByTasks = fetchTasksByIds(blockedByIds)
-      const blocksTasks = fetchTasksByIds(blocksIds)
-      const childTasks = fetchTasksByIds(childIds)
-
-      const [enrichedTask] = enrichTasksWithDeps([task], dependencySnapshot)
-
-      return c.json({
-        task: enrichedTask,
-        blockedByTasks,
-        blocksTasks,
-        childTasks,
-      })
-    } catch (e) {
-      return c.json({ error: String(e) }, 500)
-    }
-  })
-
-  // GET /api/runs
-  app.get("/api/runs", (c) => {
-    try {
-      const cursor = c.req.query("cursor")
-      const limit = Math.min(parseInt(c.req.query("limit") ?? "20", 10) || 20, 100)
-      const agentFilter = c.req.query("agent")
-      const statusFilter = c.req.query("status")?.split(",").filter(Boolean)
-
-      const conditions: string[] = []
-      const params: (string | number)[] = []
-
-      if (agentFilter) {
-        conditions.push("agent = ?")
-        params.push(agentFilter)
-      }
-
-      if (statusFilter?.length) {
-        conditions.push(`status IN (${statusFilter.map(() => "?").join(",")})`)
-        params.push(...statusFilter)
-      }
-
-      if (cursor) {
-        const { startedAt, id } = parseRunCursor(cursor)
-        conditions.push("(started_at < ? OR (started_at = ? AND id > ?))")
-        params.push(startedAt, startedAt, id)
-      }
-
-      const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""
-
-      let runs: Array<{
-        id: string
-        task_id: string | null
-        agent: string
-        started_at: string
-        ended_at: string | null
-        status: string
-        exit_code: number | null
-        transcript_path: string | null
-        summary: string | null
-        error_message: string | null
-      }> = []
-
-      try {
-        const sql = `
-          SELECT id, task_id, agent, started_at, ended_at, status, exit_code, transcript_path, summary, error_message
-          FROM runs
-          ${whereClause}
-          ORDER BY started_at DESC, id ASC
-          LIMIT ?
-        `
-        params.push(limit + 1)
-        runs = db.db.prepare(sql).all(...params) as typeof runs
-      } catch {
-        return c.json({ runs: [], nextCursor: null, hasMore: false })
-      }
-
-      const hasMore = runs.length > limit
-      const pagedRuns = hasMore ? runs.slice(0, limit) : runs
-
-      // Batch fetch task titles to avoid N+1 queries
-      const taskIds = [...new Set(pagedRuns.map(r => r.task_id).filter((id): id is string => id !== null))]
-      const taskTitleMap = new Map<string, string>()
-      if (taskIds.length > 0) {
-        const placeholders = taskIds.map(() => "?").join(",")
-        const rows = db.db.prepare(`SELECT id, title FROM tasks WHERE id IN (${placeholders})`).all(...taskIds) as Array<{ id: string; title: string }>
-        for (const row of rows) {
-          taskTitleMap.set(row.id, row.title)
-        }
-      }
-
-      const enriched = pagedRuns.map(run => ({
-        ...run,
-        taskTitle: run.task_id ? (taskTitleMap.get(run.task_id) ?? null) : null,
-      }))
-
-      return c.json({
-        runs: enriched,
-        nextCursor: hasMore && pagedRuns.length ? buildRunCursor(pagedRuns[pagedRuns.length - 1]!) : null,
-        hasMore,
-      })
-    } catch (e) {
-      return c.json({ error: String(e) }, 500)
-    }
-  })
-
-  // GET /api/runs/:id
-  app.get("/api/runs/:id", (c) => {
-    try {
-      const id = c.req.param("id")
-
-      const run = db.db.prepare("SELECT * FROM runs WHERE id = ?").get(id) as {
-        id: string
-        task_id: string | null
-        agent: string
-        started_at: string
-        ended_at: string | null
-        status: string
-        exit_code: number | null
-        pid: number | null
-        transcript_path: string | null
-        context_injected: string | null
-        summary: string | null
-        error_message: string | null
-        metadata: string
-      } | undefined
-
-      if (!run) {
-        return c.json({ error: "Run not found" }, 404)
-      }
-
-      let transcript: string | null = null
-      if (run.transcript_path) {
-        const validatedPath = validateTranscriptPath(run.transcript_path)
-        if (validatedPath && existsSync(validatedPath)) {
-              transcript = readFileSync(validatedPath, "utf-8")
-        }
-      }
-
-      return c.json({ run, transcript })
-    } catch (e) {
-      return c.json({ error: String(e) }, 500)
-    }
-  })
-
-  // GET /api/ralph (simplified for testing - no pid/log file checking)
-  app.get("/api/ralph", (c) => {
-    return c.json({
-      running: false,
-      pid: null,
-      currentIteration: 0,
-      currentTask: null,
-      recentActivity: [],
-    })
-  })
-
-  // GET /api/stats
-  app.get("/api/stats", (c) => {
-    try {
-      const taskCount = (db.db.prepare("SELECT COUNT(*) as count FROM tasks").get() as { count: number }).count
-      const doneCount = (db.db.prepare("SELECT COUNT(*) as count FROM tasks WHERE status = 'done'").get() as { count: number }).count
-      const readyCount = (db.db.prepare(`
-        SELECT COUNT(*) as count FROM tasks t
-        WHERE t.status IN ('backlog', 'ready', 'planning')
-        AND NOT EXISTS (
-          SELECT 1 FROM task_dependencies d
-          JOIN tasks blocker ON d.blocker_id = blocker.id
-          WHERE d.blocked_id = t.id AND blocker.status != 'done'
-        )
-      `).get() as { count: number }).count
-
-      let learningsCount = 0
-      try {
-        learningsCount = (db.db.prepare("SELECT COUNT(*) as count FROM learnings").get() as { count: number }).count
-      } catch {
-        // Table doesn't exist
-      }
-
-      let runsRunning = 0
-      let runsTotal = 0
-      try {
-        runsRunning = (db.db.prepare("SELECT COUNT(*) as count FROM runs WHERE status = 'running'").get() as { count: number }).count
-        runsTotal = (db.db.prepare("SELECT COUNT(*) as count FROM runs").get() as { count: number }).count
-      } catch {
-        // Table doesn't exist
-      }
-
-      return c.json({
-        tasks: taskCount,
-        done: doneCount,
-        ready: readyCount,
-        learnings: learningsCount,
-        runsRunning,
-        runsTotal,
-      })
-    } catch (e) {
-      return c.json({ error: String(e) }, 500)
-    }
-  })
-
-  return app
-}
-
-// Helper to make requests to the test app
-async function request(app: Hono, path: string, options?: RequestInit) {
-  const url = `http://localhost${path}`
-  const req = new Request(url, options)
-  const res = await app.fetch(req)
-  return {
-    status: res.status,
-    json: () => res.json(),
-  }
+async function closeServer(app: Server): Promise<void> {
+  if (!app.listening) return
+  await new Promise<void>((resolve, reject) => app.close(error => error ? reject(error) : resolve()))
 }
 
 const DEPENDENCY_SNAPSHOT_SQL = "select blocker_id, blocked_id from task_dependencies"
+
+describe("Dashboard API settings persistence", () => {
+  let shared: SharedTestLayerResult
+  let app: Server
+  let root: string
+  beforeAll(async () => { shared = await createSharedTestLayer() })
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(),"tx-dashboard-settings-"))
+    app = createDashboardServer({db:shared.getDb(),contentRoot:root})
+  })
+  afterEach(async () => { await closeServer(app); rmSync(root,{recursive:true,force:true}); await shared.reset() })
+  afterAll(async () => { await shared.close() })
+
+  it("persists auto-add statuses including an explicitly empty selection across restarts", async () => {
+    for (const statuses of [["planning","ready"], []]) {
+      const saved = await request(app,"/api/settings", {method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({dashboard:{cycles:{autoAddStatuses:statuses}}})})
+      expect(saved.status, await saved.text()).toBe(200)
+      await closeServer(app)
+      app = createDashboardServer({db:shared.getDb(),contentRoot:root})
+      const loaded = await request(app,"/api/settings")
+      expect((await loaded.json()).dashboard.cycles.autoAddStatuses).toEqual(statuses)
+    }
+  })
+
+  it.each(["ready", [null], ["made-up"]])("rejects malformed cycle status selections without writing them: %j", async (statuses) => {
+    const saved = await request(app,"/api/settings", {method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({dashboard:{cycles:{carryStatuses:statuses}}})})
+    expect(saved.status).toBe(400)
+    const loaded = await request(app,"/api/settings")
+    expect((await loaded.json()).dashboard.cycles.carryStatuses).toContain("active")
+  })
+
+  it("keeps cycles opt-in and auto-adds matching tasks beyond the first page", async () => {
+    seedFixtures(wrapDbAsTestDatabase(shared.getDb()))
+    for (let i = 0; i < 25; i++) shared.getDb().prepare("INSERT INTO tasks(id,title,status,created_at,updated_at) VALUES(?,?,?,datetime('now'),datetime('now'))").run(fixtureId(`cycle-auto-${i}`),`Ready task ${i}`,"ready")
+    const before = await request(app,"/api/cycles")
+    expect((await before.json()).cycles).toEqual([])
+    const created = await request(app,"/api/cycles",{method:"POST"})
+    expect(created.status).toBe(201)
+    const cycle = await created.json()
+    expect(cycle.taskCount).toBe(30)
+    const detail = await request(app,`/api/cycles/${cycle.id}`)
+    expect((await detail.json()).tasks).toHaveLength(30)
+    const disabled = await request(app,"/api/settings",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({dashboard:{cycles:{autoAddStatuses:[]}}})})
+    expect(disabled.status).toBe(200)
+    const newTask = await request(app,"/api/tasks",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({title:"Unscheduled work",status:"active"})})
+    expect(newTask.status).toBe(201)
+    const task = await newTask.json()
+    expect(shared.getDb().prepare("SELECT * FROM cycle_tasks WHERE task_id=?").all(task.id)).toEqual([])
+    const after = await request(app,"/api/cycles")
+    expect((await after.json()).cycles).toHaveLength(1)
+  })
+
+  it("rolls back a new cycle when automatic task membership cannot be saved", async () => {
+    seedFixtures(wrapDbAsTestDatabase(shared.getDb()))
+    shared.getDb().exec("CREATE TRIGGER reject_cycle_task BEFORE INSERT ON cycle_tasks BEGIN SELECT RAISE(FAIL, 'Membership unavailable'); END")
+    const created = await request(app,"/api/cycles",{method:"POST"})
+    expect(created.status).toBe(500)
+    expect(shared.getDb().prepare("SELECT * FROM cycles").all()).toEqual([])
+    shared.getDb().exec("DROP TRIGGER reject_cycle_task")
+  })
+})
 
 function normalizeSql(sql: string): string {
   return sql.replace(/\s+/g, " ").trim().toLowerCase()
@@ -646,211 +286,10 @@ function explainTaskListQueryPlan(db: TestDatabase, options: TaskListQueryPlanOp
   return rows.map(row => row.detail).join(" | ")
 }
 
-interface RunsEventsQueryPlanFixtures {
-  orphanActiveTaskId: string
-  primaryWorker: string
-  traceCutoffIso: string
-}
-
-interface RunsListQueryPlanOptions {
-  statuses?: string[]
-  agent?: string
-  limit?: number
-}
-
-const HOT_QUERY_PLAN_INDEXES = {
-  dashboardRunsOrder: "idx_runs_started_id",
-  dashboardRunsStatusOrder: "idx_runs_status_started_id",
-  dashboardRunsAgentOrder: "idx_runs_agent_started_id",
-  watchdogOrphanActive: "idx_runs_task_status",
-  watchdogWorkerBurst: "idx_runs_worker_status_started",
-  traceErrorSpans: "idx_events_type_metadata_status_timestamp",
-} as const
-
-function seedRunsEventsQueryPlanFixtures(
-  db: TestDatabase,
-  prefix: string,
-  runCount = 360,
-  eventCount = 640
-): RunsEventsQueryPlanFixtures {
-  const now = new Date()
-  const nowIso = now.toISOString()
-  const primaryWorker = `${prefix}-codex-main`
-  const secondaryWorker = `${prefix}-claude-main`
-
-  const insertTask = db.db.prepare(
-    `INSERT INTO tasks (id, title, description, status, parent_id, score, created_at, updated_at, completed_at, metadata)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  )
-  const activeTaskIds: string[] = []
-  for (let i = 0; i < 24; i++) {
-    const id = fixtureId(`${prefix}-active-task-${i}`)
-    insertTask.run(
-      id,
-      `Active fixture task ${i}`,
-      `Active fixture task for runs/events query plan regression ${i}`,
-      "active",
-      FIXTURES.TASK_ROOT,
-      350 - i,
-      nowIso,
-      nowIso,
-      null,
-      "{}"
-    )
-    activeTaskIds.push(id)
-  }
-  const orphanActiveTaskId = activeTaskIds[0]!
-  const taskIdsWithRuns = activeTaskIds.slice(1)
-
-  const insertRun = db.db.prepare(
-    `INSERT INTO runs (id, task_id, agent, started_at, status, pid, metadata)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
-  )
-
-  const runIds: string[] = []
-  for (let i = 0; i < runCount; i++) {
-    const startedAt = new Date(now.getTime() - i * 45_000).toISOString()
-    const status = i % 11 === 0
-      ? "failed"
-      : i % 17 === 0
-        ? "cancelled"
-        : i % 2 === 0
-          ? "running"
-          : "completed"
-    const worker = i % 3 === 0 ? primaryWorker : secondaryWorker
-    const runId = `run-${String(i).padStart(4, "0")}-${fixtureId(`${prefix}-run-${i}`).slice(3)}`
-    const taskId = taskIdsWithRuns[i % taskIdsWithRuns.length]!
-
-    insertRun.run(
-      runId,
-      taskId,
-      i % 2 === 0 ? "tx-implementer" : "tx-reviewer",
-      startedAt,
-      status,
-      20_000 + i,
-      JSON.stringify({ worker, batch: i % 5 })
-    )
-    runIds.push(runId)
-  }
-
-  const insertEvent = db.db.prepare(
-    `INSERT INTO events (timestamp, event_type, run_id, metadata, content, duration_ms)
-     VALUES (?, ?, ?, ?, ?, ?)`
-  )
-
-  for (let i = 0; i < eventCount; i++) {
-    const timestamp = new Date(now.getTime() - i * 20_000).toISOString()
-    const isErrorSpan = i % 9 === 0
-    insertEvent.run(
-      timestamp,
-      i % 2 === 0 ? "span" : "metric",
-      runIds[i % runIds.length]!,
-      JSON.stringify({
-        status: isErrorSpan ? "error" : "ok",
-        error: isErrorSpan ? `fixture-error-${i}` : undefined,
-      }),
-      `fixture-event-${i}`,
-      i % 500
-    )
-  }
-
-  return {
-    orphanActiveTaskId,
-    primaryWorker,
-    traceCutoffIso: new Date(now.getTime() - 2 * 60 * 60 * 1000).toISOString(),
-  }
-}
-
-function explainRunsListQueryPlan(db: TestDatabase, options: RunsListQueryPlanOptions): string {
-  const conditions: string[] = []
-  const params: (string | number)[] = []
-
-  if (options.agent) {
-    conditions.push("agent = ?")
-    params.push(options.agent)
-  }
-
-  if (options.statuses?.length) {
-    conditions.push(`status IN (${options.statuses.map(() => "?").join(",")})`)
-    params.push(...options.statuses)
-  }
-
-  const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""
-  const sql = `
-    EXPLAIN QUERY PLAN
-    SELECT id, task_id, agent, started_at, ended_at, status, exit_code, transcript_path, summary, error_message
-    FROM runs
-    ${whereClause}
-    ORDER BY started_at DESC, id ASC
-    LIMIT ?
-  `
-  params.push((options.limit ?? 20) + 1)
-
-  const rows = db.db.prepare(sql).all(...params) as Array<{ detail: string }>
-  return rows.map(row => row.detail).join(" | ")
-}
-
-function explainWatchdogOrphanActiveQueryPlan(db: TestDatabase): string {
-  const rows = db.db.prepare(`
-    EXPLAIN QUERY PLAN
-    SELECT t.id
-    FROM tasks t
-    WHERE t.status='active'
-      AND NOT EXISTS (
-        SELECT 1
-        FROM runs r
-        WHERE r.task_id=t.id
-          AND r.status='running'
-      );
-  `).all() as Array<{ detail: string }>
-  return rows.map(row => row.detail).join(" | ")
-}
-
-function explainWatchdogWorkerBurstQueryPlan(db: TestDatabase, worker: string, windowMinutes: number): string {
-  const rows = db.db.prepare(`
-    EXPLAIN QUERY PLAN
-    SELECT COUNT(*)
-    FROM runs
-    WHERE status IN ('failed', 'cancelled')
-      AND started_at >= datetime('now', ?)
-      AND json_extract(metadata, '$.worker') = ?;
-  `).all(`-${windowMinutes} minutes`, worker) as Array<{ detail: string }>
-  return rows.map(row => row.detail).join(" | ")
-}
-
-function explainWatchdogWorkerRunningQueryPlan(db: TestDatabase, worker: string): string {
-  const rows = db.db.prepare(`
-    EXPLAIN QUERY PLAN
-    SELECT COUNT(*)
-    FROM runs
-    WHERE status = 'running'
-      AND json_extract(metadata, '$.worker') = ?;
-  `).all(worker) as Array<{ detail: string }>
-  return rows.map(row => row.detail).join(" | ")
-}
-
-function explainTraceErrorSpanQueryPlan(
-  db: TestDatabase,
-  cutoffIso: string,
-  limit = 20
-): string {
-  const rows = db.db.prepare(`
-    EXPLAIN QUERY PLAN
-    SELECT timestamp, run_id, task_id, agent, content, metadata, duration_ms
-    FROM events
-    WHERE event_type = ?
-      AND json_extract(metadata, '$.status') = ?
-      AND timestamp >= ?
-    ORDER BY timestamp DESC
-    LIMIT ?
-  `).all("span", "error", cutoffIso, limit) as Array<{ detail: string }>
-  return rows.map(row => row.detail).join(" | ")
-}
-
 describe("Dashboard API - GET /api/tasks", () => {
   let shared: SharedTestLayerResult
   let db: TestDatabase
-  let app: Hono
+  let app: Server
 
   beforeAll(async () => {
     shared = await createSharedTestLayer()
@@ -859,15 +298,85 @@ describe("Dashboard API - GET /api/tasks", () => {
   beforeEach(async () => {
     db = wrapDbAsTestDatabase(shared.getDb())
     seedFixtures(db)
-    app = createTestApp(db, "/tmp/.tx")
+    app = createDashboardServer({db:db.db, contentRoot:"/tmp"})
   })
 
   afterEach(async () => {
+    await closeServer(app)
     await shared.reset()
   })
 
   afterAll(async () => {
     await shared.close()
+  })
+
+  it.each(["labels","task-labels"])("rejects truncated %s IDs before changing or deleting labels",async collection => {
+    const labelId = Number(db.db.prepare("INSERT INTO task_labels(name,color) VALUES('Preserved label','#123456')").run().lastInsertRowid)
+    db.db.prepare("INSERT INTO task_label_assignments(task_id,label_id) VALUES(?,?)").run(FIXTURES.TASK_AUTH,labelId)
+    for (const malformed of [`${labelId}junk`,`${labelId}.5`,`+${labelId}`,"0","-1","9007199254740993"]) {
+      const path = `/api/${collection}/${encodeURIComponent(malformed)}`
+      for (const method of ["PATCH","DELETE"]) {
+        const response = await request(app,path,{method,headers:{"Content-Type":"application/json"},body:method === "PATCH" ? JSON.stringify({name:"Unexpected change"}) : undefined})
+        expect(response.status,`${method} ${path}`).toBe(400)
+        expect(db.db.prepare("SELECT name FROM task_labels WHERE id=?").get(labelId)).toEqual({name:"Preserved label"})
+      }
+      const unassign = await request(app,`/api/tasks/${FIXTURES.TASK_AUTH}/${collection}/${encodeURIComponent(malformed)}`,{method:"DELETE"})
+      expect(unassign.status).toBe(400)
+      expect(db.db.prepare("SELECT label_id FROM task_label_assignments WHERE task_id=?").get(FIXTURES.TASK_AUTH)).toEqual({label_id:labelId})
+      const filter = await request(app,`/api/tasks?labelId=${encodeURIComponent(malformed)}`)
+      expect(filter.status).toBe(400)
+    }
+    const valid = await request(app,`/api/${collection}/${labelId}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:"Valid update"})})
+    expect(valid.status).toBe(200)
+  })
+
+  it.each(["labels","task-labels"])("validates %s metadata before writing",async collection => {
+    const labelId = Number(db.db.prepare("INSERT INTO task_labels(name,color) VALUES('Typed label','#123456')").run().lastInsertRowid)
+    for (const fields of [{name:42},{name:null},{name:""},{name:" "},{color:42},{color:null},{color:"red"}]) {
+      for (const [method,path] of [["POST",`/api/${collection}`],["PATCH",`/api/${collection}/${labelId}`]]) {
+        const response = await request(app,path,{method,headers:{"Content-Type":"application/json"},body:JSON.stringify({name:"Typed label",color:"#123456",...fields})})
+        expect(response.status,`${method} ${JSON.stringify(fields)}`).toBe(400)
+        expect(db.db.prepare("SELECT name,color FROM task_labels ORDER BY id").all()).toEqual([{name:"Typed label",color:"#123456"}])
+      }
+    }
+  })
+
+  it.each(["labels","task-labels"])("validates %s assignment payloads without coercion or ambiguous selectors",async collection => {
+    const labelId = Number(db.db.prepare("INSERT INTO task_labels(name,color) VALUES('Assignment label','#123456')").run().lastInsertRowid)
+    const path = `/api/tasks/${FIXTURES.TASK_AUTH}/${collection}`
+    for (const payload of [{labelId:String(labelId)},{labelId:labelId+.5},{labelId:null},
+      {labelId,name:"Ambiguous"},{labelId,color:"#abcdef"},{name:42},{name:" "},
+      {name:"New label",color:42},{name:"New label",color:"red"}]) {
+      const response = await request(app,path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)})
+      expect(db.db.prepare("SELECT * FROM task_label_assignments").all()).toEqual([])
+      expect(response.status,JSON.stringify(payload)).toBe(400)
+      expect(db.db.prepare("SELECT name FROM task_labels ORDER BY id").all()).toEqual([{name:"Assignment label"}])
+    }
+    for (const payload of [{labelId},{name:"New label",color:"#abcdef"}]) {
+      const valid = await request(app,path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)})
+      expect(valid.status).toBe(200)
+    }
+    expect(db.db.prepare("SELECT label_id FROM task_label_assignments WHERE task_id=?").all(FIXTURES.TASK_AUTH)).toHaveLength(2)
+  })
+
+  it.each(["","junk","1oops","1.5","0","-1","9007199254740993"])("rejects invalid explicit document version %j without selecting or deleting the latest version",async version => {
+    const docId = "doc-123456abcdef"
+    for (const [number,status] of [[1,"locked"],[2,"changing"]] as const) {
+      db.db.prepare("INSERT INTO docs(doc_id,hash,kind,name,title,version,status,file_path) VALUES(?,?,?,?,?,?,?,?)")
+        .run(docId,`numeric-v${number}`,"design","numeric-version","Version validation",number,status,`design/numeric-v${number}.md`)
+    }
+    for (const ref of ["by-id/"+docId,"numeric-version"]) {
+      const path = `/api/docs/${ref}?version=${encodeURIComponent(version)}`
+      for (const method of ["GET","DELETE"]) {
+        const response = await request(app,path,{method})
+        expect(response.status,`${method} ${path}`).toBe(400)
+        expect(db.db.prepare("SELECT version FROM docs WHERE doc_id=? ORDER BY version").all(docId)).toEqual([{version:1},{version:2}])
+      }
+      const source = await request(app,`/api/docs/${ref}/source?version=${encodeURIComponent(version)}`)
+      expect(source.status).toBe(400)
+    }
+    expect((await request(app,`/api/docs/by-id/${docId}?version=1`)).status).toBe(200)
+    expect((await request(app,`/api/docs/by-id/${docId}`)).status).toBe(200)
   })
 
   it("returns all tasks with TaskWithDeps fields", async () => {
@@ -890,6 +399,86 @@ describe("Dashboard API - GET /api/tasks", () => {
       expect(Array.isArray(task.children)).toBe(true)
       expect(typeof task.isReady).toBe("boolean")
     }
+  })
+
+  it("creates the task, labels and explicit cycle together with complete dependency fields", async () => {
+    db.db.exec("INSERT INTO cycles(id,name,start_date,end_date) VALUES('cycle-compose','Composition','2026-10-04','2026-10-11')")
+    const label = db.db.prepare("INSERT INTO task_labels(name,color) VALUES('Existing composition label','#123456')").run().lastInsertRowid
+    const res = await request(app,"/api/tasks",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+      title:"Composed task",status:"done",parentId:FIXTURES.TASK_AUTH,
+      labels:[{labelId:Number(label)},{name:"New composition label",color:"#abcdef"},{labelId:Number(label)}],cycleId:"cycle-compose",
+    })})
+    expect(res.status,await res.clone().text()).toBe(201)
+    const task = await res.json()
+    expect(task).toMatchObject({title:"Composed task",status:"done",parentId:FIXTURES.TASK_AUTH,blockedBy:[],blocks:[],children:[],isReady:false})
+    expect(task.completedAt).toEqual(expect.any(String))
+    expect(task.labels.map((label: {name:string}) => label.name).sort()).toEqual(["Existing composition label","New composition label"])
+    expect(db.db.prepare("SELECT cycle_id FROM cycle_tasks WHERE task_id=?").all(task.id)).toEqual([{cycle_id:"cycle-compose"}])
+  })
+
+  it("rolls back composition, including new labels, if a cycle attachment fails",async () => {
+    db.db.exec("INSERT INTO cycles(id,name,start_date,end_date) VALUES('cycle-compose','Composition','2026-10-04','2026-10-11')")
+    db.db.exec("CREATE TRIGGER reject_composition BEFORE INSERT ON cycle_tasks BEGIN SELECT RAISE(ABORT,'attachment failed'); END")
+    try {
+      const res = await request(app,"/api/tasks",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+        title:"Rolled back composition",labels:[{name:"Rolled back label"}],cycleId:"cycle-compose",
+      })})
+      expect(res.status).toBe(500)
+      expect(db.db.prepare("SELECT id FROM tasks WHERE title='Rolled back composition'").all()).toEqual([])
+      expect(db.db.prepare("SELECT id FROM task_labels WHERE name='Rolled back label'").all()).toEqual([])
+      expect(db.db.prepare("SELECT count(*) AS n FROM tasks").get()).toEqual({n:6})
+    } finally {db.db.exec("DROP TRIGGER reject_composition")}
+  })
+
+  it.each([{labels:[{labelId:999999}]},{cycleId:"missing-cycle"},{labels:null},{labels:[{name:42}]},
+    {labels:[{name:"  "}]},{labels:[{name:"Bad color",color:"red"}]},{labels:[{labelId:1,name:"Ambiguous"}]},{cycleId:42},
+  ])("rejects invalid composition without leaving tasks or labels: %j",async fields => {
+    const before = db.db.prepare("SELECT count(*) AS n FROM task_labels").get()
+    const res = await request(app,"/api/tasks",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({title:"Invalid composition",...fields})})
+    expect(res.status,await res.text()).toBe(400)
+    expect(db.db.prepare("SELECT count(*) AS n FROM tasks").get()).toEqual({n:6})
+    expect(db.db.prepare("SELECT count(*) AS n FROM task_labels").get()).toEqual(before)
+  })
+
+  it("rejects requests from unrelated browser origins before mutating tasks", async () => {
+    const res = await request(app, `/api/tasks/${FIXTURES.TASK_JWT}`, {
+      method:"PATCH", headers:{Origin:"https://unrelated.example", "Content-Type":"application/json"},
+      body:JSON.stringify({title:"Unexpected remote edit"}),
+    })
+    expect(res.status).toBe(403)
+    expect(res.headers.get("Access-Control-Allow-Origin")).not.toBe("*")
+    const row = db.db.prepare("SELECT title FROM tasks WHERE id = ?").get(FIXTURES.TASK_JWT) as {title:string}
+    expect(row.title).not.toBe("Unexpected remote edit")
+  })
+
+  it.each([
+    {title:123}, {description:[]}, {metadata:[]}, {status:123},
+    {assigneeId:{}}, {assignedAt:123}, {parentId:123},
+  ])("rejects malformed task fields across create and update: %j", async (fields) => {
+    const before = db.db.prepare("SELECT * FROM tasks WHERE id=?").get(FIXTURES.TASK_JWT)
+    for (const [method,path] of [["POST","/api/tasks"],["PATCH",`/api/tasks/${FIXTURES.TASK_JWT}`]]) {
+      const res = await request(app,path!,{method,headers:{"Content-Type":"application/json"},body:JSON.stringify({title:"Valid title",...fields})})
+      expect(res.status, await res.text()).toBe(400)
+    }
+    expect(db.db.prepare("SELECT * FROM tasks WHERE id=?").get(FIXTURES.TASK_JWT)).toEqual(before)
+    expect(db.db.prepare("SELECT COUNT(*) AS n FROM tasks").get()).toEqual({n:6})
+  })
+
+  it("rejects rebound hostnames and opaque origins", async () => {
+    const res = await request(app, "/api/tasks", {headers:{Host:"remote.example:3001"}})
+    expect(res.status).toBe(403)
+    const opaque = await request(app, "/api/tasks", {headers:{Origin:"null"}})
+    expect(opaque.status).toBe(403)
+  })
+
+  it("allows local dashboard preflight without granting wildcard CORS", async () => {
+    const origin = "http://localhost:5173"
+    const res = await request(app, "/api/tasks", {method:"OPTIONS", headers:{Origin:origin}})
+    expect(res.status).toBe(204)
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe(origin)
+    expect(res.headers.get("Vary")).toContain("Origin")
+    const tasks = await request(app, "/api/tasks", {headers:{Origin:origin}})
+    expect(tasks.status).toBe(200)
   })
 
   it("uses one dependency snapshot scan for /api/tasks on perf-sensitive query paths", async () => {
@@ -1152,7 +741,7 @@ describe("Dashboard API - GET /api/tasks", () => {
 describe("Dashboard API - GET /api/tasks/ready", () => {
   let shared: SharedTestLayerResult
   let db: TestDatabase
-  let app: Hono
+  let app: Server
 
   beforeAll(async () => {
     shared = await createSharedTestLayer()
@@ -1161,10 +750,11 @@ describe("Dashboard API - GET /api/tasks/ready", () => {
   beforeEach(async () => {
     db = wrapDbAsTestDatabase(shared.getDb())
     seedFixtures(db)
-    app = createTestApp(db, "/tmp/.tx")
+    app = createDashboardServer({db:db.db, contentRoot:"/tmp"})
   })
 
   afterEach(async () => {
+    await closeServer(app)
     await shared.reset()
   })
 
@@ -1266,7 +856,7 @@ describe("Dashboard API - GET /api/tasks/ready", () => {
 describe("Dashboard API - GET /api/tasks/:id", () => {
   let shared: SharedTestLayerResult
   let db: TestDatabase
-  let app: Hono
+  let app: Server
 
   beforeAll(async () => {
     shared = await createSharedTestLayer()
@@ -1275,10 +865,11 @@ describe("Dashboard API - GET /api/tasks/:id", () => {
   beforeEach(async () => {
     db = wrapDbAsTestDatabase(shared.getDb())
     seedFixtures(db)
-    app = createTestApp(db, "/tmp/.tx")
+    app = createDashboardServer({db:db.db, contentRoot:"/tmp"})
   })
 
   afterEach(async () => {
+    await closeServer(app)
     await shared.reset()
   })
 
@@ -1398,422 +989,10 @@ describe("Dashboard API - GET /api/tasks/:id", () => {
   })
 })
 
-describe("Dashboard API - GET /api/runs", () => {
-  let shared: SharedTestLayerResult
-  let db: TestDatabase
-  let app: Hono
-
-  beforeAll(async () => {
-    shared = await createSharedTestLayer()
-  })
-
-  beforeEach(async () => {
-    db = wrapDbAsTestDatabase(shared.getDb())
-    seedFixtures(db)
-    app = createTestApp(db, "/tmp/.tx")
-  })
-
-  afterEach(async () => {
-    await shared.reset()
-  })
-
-  afterAll(async () => {
-    await shared.close()
-  })
-
-  it("returns empty array when no runs exist", async () => {
-    const res = await request(app, "/api/runs")
-    expect(res.status).toBe(200)
-
-    const data = await res.json()
-    expect(data.runs).toEqual([])
-    expect(data.hasMore).toBe(false)
-    expect(data.nextCursor).toBeNull()
-  })
-
-  it("returns runs with task titles enriched", async () => {
-    // Create some runs
-    const now = new Date().toISOString()
-    db.db.prepare(`
-      INSERT INTO runs (id, task_id, agent, started_at, status, metadata)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run("run-test0001", FIXTURES.TASK_JWT, "tx-implementer", now, "running", "{}")
-
-    const res = await request(app, "/api/runs")
-    const data = await res.json()
-
-    expect(data.runs.length).toBe(1)
-    expect(data.runs[0].id).toBe("run-test0001")
-    expect(data.runs[0].taskTitle).toBe("JWT validation")
-  })
-
-  it("returns null taskTitle when task_id is null", async () => {
-    const now = new Date().toISOString()
-    db.db.prepare(`
-      INSERT INTO runs (id, task_id, agent, started_at, status, metadata)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run("run-test0002", null, "tx-planner", now, "completed", "{}")
-
-    const res = await request(app, "/api/runs")
-    const data = await res.json()
-
-    expect(data.runs[0].taskTitle).toBeNull()
-  })
-
-  it("respects limit parameter", async () => {
-    for (let i = 0; i < 5; i++) {
-      const ts = new Date(Date.now() - i * 1000).toISOString()
-      db.db.prepare(`
-        INSERT INTO runs (id, task_id, agent, started_at, status, metadata)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(`run-test000${i}`, null, "agent-1", ts, "running", "{}")
-    }
-
-    const res = await request(app, "/api/runs?limit=2")
-    const data = await res.json()
-
-    expect(data.runs.length).toBe(2)
-    expect(data.hasMore).toBe(true)
-    expect(data.nextCursor).not.toBeNull()
-  })
-
-  it("defaults to 20 when limit is non-numeric (NaN guard)", async () => {
-    const res = await request(app, "/api/runs?limit=abc")
-    expect(res.status).toBe(200)
-
-    const data = await res.json()
-    // Should not error — defaults to 20
-    expect(data.runs).toBeInstanceOf(Array)
-  })
-
-  it("filters by agent", async () => {
-    const now = new Date().toISOString()
-    db.db.prepare(`
-      INSERT INTO runs (id, task_id, agent, started_at, status, metadata)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run("run-agent-a", null, "tx-implementer", now, "running", "{}")
-    db.db.prepare(`
-      INSERT INTO runs (id, task_id, agent, started_at, status, metadata)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run("run-agent-b", null, "tx-reviewer", now, "running", "{}")
-
-    const res = await request(app, "/api/runs?agent=tx-implementer")
-    const data = await res.json()
-
-    expect(data.runs.length).toBe(1)
-    expect(data.runs[0].agent).toBe("tx-implementer")
-  })
-
-  it("filters by status", async () => {
-    const now = new Date().toISOString()
-    db.db.prepare(`
-      INSERT INTO runs (id, task_id, agent, started_at, status, metadata)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run("run-stat-a", null, "agent-1", now, "running", "{}")
-    db.db.prepare(`
-      INSERT INTO runs (id, task_id, agent, started_at, status, metadata)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run("run-stat-b", null, "agent-1", now, "completed", "{}")
-
-    const res = await request(app, "/api/runs?status=completed")
-    const data = await res.json()
-
-    expect(data.runs.length).toBe(1)
-    expect(data.runs[0].status).toBe("completed")
-  })
-
-  it("uses runs/events hot-path indexes for dashboard, watchdog, and trace query shapes", () => {
-    const seeded = seedRunsEventsQueryPlanFixtures(db, "dashboard-runs-events-hot-paths")
-
-    const unfilteredPlanDetails = explainRunsListQueryPlan(db, { limit: 20 })
-    expect(unfilteredPlanDetails).toContain(HOT_QUERY_PLAN_INDEXES.dashboardRunsOrder)
-    expect(unfilteredPlanDetails).not.toContain("USE TEMP B-TREE FOR ORDER BY")
-
-    const statusPlanDetails = explainRunsListQueryPlan(db, { statuses: ["running"], limit: 20 })
-    expect(statusPlanDetails).toContain(HOT_QUERY_PLAN_INDEXES.dashboardRunsStatusOrder)
-    expect(statusPlanDetails).not.toContain("USE TEMP B-TREE FOR ORDER BY")
-
-    const agentPlanDetails = explainRunsListQueryPlan(db, { agent: "tx-implementer", limit: 20 })
-    expect(agentPlanDetails).toContain(HOT_QUERY_PLAN_INDEXES.dashboardRunsAgentOrder)
-    expect(agentPlanDetails).not.toContain("USE TEMP B-TREE FOR ORDER BY")
-
-    const orphanActiveRunningCount = db.db.prepare(
-      "SELECT COUNT(*) as count FROM runs WHERE task_id = ? AND status = 'running'"
-    ).get(seeded.orphanActiveTaskId) as { count: number }
-    expect(orphanActiveRunningCount.count).toBe(0)
-
-    const watchdogOrphanPlanDetails = explainWatchdogOrphanActiveQueryPlan(db)
-    expect(watchdogOrphanPlanDetails).toContain(HOT_QUERY_PLAN_INDEXES.watchdogOrphanActive)
-
-    const watchdogWorkerBurstPlanDetails = explainWatchdogWorkerBurstQueryPlan(db, seeded.primaryWorker, 20)
-    expect(watchdogWorkerBurstPlanDetails).toContain(HOT_QUERY_PLAN_INDEXES.watchdogWorkerBurst)
-
-    const watchdogWorkerRunningPlanDetails = explainWatchdogWorkerRunningQueryPlan(db, seeded.primaryWorker)
-    expect(watchdogWorkerRunningPlanDetails).toContain(HOT_QUERY_PLAN_INDEXES.watchdogWorkerBurst)
-
-    const traceErrorSpanPlanDetails = explainTraceErrorSpanQueryPlan(db, seeded.traceCutoffIso, 20)
-    expect(traceErrorSpanPlanDetails).toContain(HOT_QUERY_PLAN_INDEXES.traceErrorSpans)
-    expect(traceErrorSpanPlanDetails).not.toContain("USE TEMP B-TREE FOR ORDER BY")
-  })
-
-  it("cursor-based pagination works", async () => {
-    // Create runs with different timestamps for proper ordering
-    for (let i = 0; i < 5; i++) {
-      const ts = new Date(Date.now() - (4 - i) * 10000).toISOString()
-      db.db.prepare(`
-        INSERT INTO runs (id, task_id, agent, started_at, status, metadata)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(`run-page-${i}`, null, "agent-1", ts, "running", "{}")
-    }
-
-    // Get first page
-    const res1 = await request(app, "/api/runs?limit=2")
-    const data1 = await res1.json()
-
-    expect(data1.runs.length).toBe(2)
-    expect(data1.hasMore).toBe(true)
-
-    // Get second page
-    const res2 = await request(app, `/api/runs?limit=2&cursor=${data1.nextCursor}`)
-    const data2 = await res2.json()
-
-    // Ensure no duplicates
-    const firstPageIds = data1.runs.map((r: { id: string }) => r.id)
-    const secondPageIds = data2.runs.map((r: { id: string }) => r.id)
-    expect(firstPageIds.some((id: string) => secondPageIds.includes(id))).toBe(false)
-  })
-})
-
-describe("Dashboard API - GET /api/runs/:id", () => {
-  let shared: SharedTestLayerResult
-  let db: TestDatabase
-  let app: Hono
-  let testDir: string
-  let claudeFixtureDir: string
-
-  beforeAll(async () => {
-    shared = await createSharedTestLayer()
-  })
-
-  beforeEach(async () => {
-    db = wrapDbAsTestDatabase(shared.getDb())
-    seedFixtures(db)
-    // Create a temporary test directory for transcript files
-    testDir = resolve(tmpdir(), `tx-test-${Date.now()}`)
-    mkdirSync(testDir, { recursive: true })
-    claudeFixtureDir = resolve(testDir, ".claude")
-    mkdirSync(claudeFixtureDir, { recursive: true })
-    app = createTestApp(db, testDir, [claudeFixtureDir])
-  })
-
-  afterEach(async () => {
-    // Clean up test directory
-    if (existsSync(testDir)) {
-      rmSync(testDir, { recursive: true })
-    }
-    await shared.reset()
-  })
-
-  afterAll(async () => {
-    await shared.close()
-  })
-
-  it("returns 404 for nonexistent run", async () => {
-    const res = await request(app, "/api/runs/run-nonexist")
-    expect(res.status).toBe(404)
-
-    const data = await res.json()
-    expect(data.error).toBe("Run not found")
-  })
-
-  it("returns run details", async () => {
-    const now = new Date().toISOString()
-    db.db.prepare(`
-      INSERT INTO runs (id, task_id, agent, started_at, status, metadata)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run("run-detail01", FIXTURES.TASK_JWT, "tx-implementer", now, "running", '{"key":"value"}')
-
-    const res = await request(app, "/api/runs/run-detail01")
-    expect(res.status).toBe(200)
-
-    const data = await res.json()
-    expect(data.run).toBeDefined()
-    expect(data.run.id).toBe("run-detail01")
-    expect(data.run.agent).toBe("tx-implementer")
-    expect(data.run.task_id).toBe(FIXTURES.TASK_JWT)
-    expect(data.run.status).toBe("running")
-  })
-
-  it("returns transcript content when path is valid and within .tx", async () => {
-    const transcriptPath = resolve(testDir, "transcript.json")
-    writeFileSync(transcriptPath, '{"messages": ["hello"]}')
-
-    const now = new Date().toISOString()
-    db.db.prepare(`
-      INSERT INTO runs (id, task_id, agent, started_at, status, transcript_path, metadata)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run("run-transc01", null, "agent-1", now, "completed", transcriptPath, "{}")
-
-    const res = await request(app, "/api/runs/run-transc01")
-    const data = await res.json()
-
-    expect(data.transcript).toBe('{"messages": ["hello"]}')
-  })
-
-  it("returns null transcript when path is invalid (path traversal)", async () => {
-    // Create a file outside the .tx directory
-    const outsidePath = resolve(tmpdir(), "secret-file.txt")
-    writeFileSync(outsidePath, "secret content")
-
-    const now = new Date().toISOString()
-    db.db.prepare(`
-      INSERT INTO runs (id, task_id, agent, started_at, status, transcript_path, metadata)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run("run-secur01", null, "agent-1", now, "completed", outsidePath, "{}")
-
-    const res = await request(app, "/api/runs/run-secur01")
-    const data = await res.json()
-
-    // Path validation should reject this
-    expect(data.transcript).toBeNull()
-
-    // Clean up
-    rmSync(outsidePath)
-  })
-
-  it("returns null transcript when path uses ../ traversal", async () => {
-    // Create a transcript file inside testDir
-    const validPath = resolve(testDir, "transcript.json")
-    writeFileSync(validPath, "valid content")
-
-    // Create a file that would be reached by traversal
-    const outsidePath = resolve(tmpdir(), "outside-secret.txt")
-    writeFileSync(outsidePath, "outside secret content")
-
-    const now = new Date().toISOString()
-    // Try to use path traversal to escape the .tx directory
-    const traversalPath = resolve(testDir, "../outside-secret.txt")
-    db.db.prepare(`
-      INSERT INTO runs (id, task_id, agent, started_at, status, transcript_path, metadata)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run("run-secur02", null, "agent-1", now, "completed", traversalPath, "{}")
-
-    const res = await request(app, "/api/runs/run-secur02")
-    const data = await res.json()
-
-    // Path traversal should be blocked
-    expect(data.transcript).toBeNull()
-
-    // Clean up
-    rmSync(outsidePath)
-  })
-
-  it("returns null transcript when path is a symlink escaping an allowed root", async () => {
-    const outsidePath = resolve(tmpdir(), `outside-secret-${Date.now()}.txt`)
-    writeFileSync(outsidePath, "outside secret content")
-
-    const symlinkPath = resolve(testDir, "transcript-symlink.json")
-    symlinkSync(outsidePath, symlinkPath)
-
-    const now = new Date().toISOString()
-    db.db.prepare(`
-      INSERT INTO runs (id, task_id, agent, started_at, status, transcript_path, metadata)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run("run-secur03", null, "agent-1", now, "completed", symlinkPath, "{}")
-
-    const res = await request(app, "/api/runs/run-secur03")
-    const data = await res.json()
-    expect(data.transcript).toBeNull()
-
-    rmSync(symlinkPath, { force: true })
-    rmSync(outsidePath, { force: true })
-  })
-
-  it("returns null transcript when file doesn't exist", async () => {
-    const nonexistentPath = resolve(testDir, "nonexistent.json")
-
-    const now = new Date().toISOString()
-    db.db.prepare(`
-      INSERT INTO runs (id, task_id, agent, started_at, status, transcript_path, metadata)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run("run-nofile1", null, "agent-1", now, "completed", nonexistentPath, "{}")
-
-    const res = await request(app, "/api/runs/run-nofile1")
-    const data = await res.json()
-
-    expect(data.transcript).toBeNull()
-  })
-
-  it("returns null transcript when transcript_path is null", async () => {
-    const now = new Date().toISOString()
-    db.db.prepare(`
-      INSERT INTO runs (id, task_id, agent, started_at, status, transcript_path, metadata)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run("run-nopath1", null, "agent-1", now, "completed", null, "{}")
-
-    const res = await request(app, "/api/runs/run-nopath1")
-    const data = await res.json()
-
-    expect(data.transcript).toBeNull()
-  })
-
-  it("returns transcript content when path is within configured transcript allowlist root", async () => {
-    const transcriptPath = resolve(claudeFixtureDir, "transcript.jsonl")
-    writeFileSync(transcriptPath, JSON.stringify({type: "assistant", content: "hello"}))
-
-    const now = new Date().toISOString()
-    db.db.prepare(
-      "INSERT INTO runs (id, task_id, agent, started_at, status, transcript_path, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)"
-    ).run("run-claude01", null, "agent-1", now, "completed", transcriptPath, "{}")
-
-    const res = await request(app, "/api/runs/run-claude01")
-    const data = await res.json()
-
-    expect(data.transcript).toBe(JSON.stringify({type: "assistant", content: "hello"}))
-  })
-})
-
-describe("Dashboard API - GET /api/ralph", () => {
-  let shared: SharedTestLayerResult
-  let db: TestDatabase
-  let app: Hono
-
-  beforeAll(async () => {
-    shared = await createSharedTestLayer()
-  })
-
-  beforeEach(async () => {
-    db = wrapDbAsTestDatabase(shared.getDb())
-    seedFixtures(db)
-    app = createTestApp(db, "/tmp/.tx")
-  })
-
-  afterEach(async () => {
-    await shared.reset()
-  })
-
-  afterAll(async () => {
-    await shared.close()
-  })
-
-  it("returns ralph status", async () => {
-    const res = await request(app, "/api/ralph")
-    expect(res.status).toBe(200)
-
-    const data = await res.json()
-    expect(data).toHaveProperty("running")
-    expect(data).toHaveProperty("pid")
-    expect(data).toHaveProperty("currentIteration")
-    expect(data).toHaveProperty("currentTask")
-    expect(data).toHaveProperty("recentActivity")
-    expect(Array.isArray(data.recentActivity)).toBe(true)
-  })
-})
-
 describe("Dashboard API - GET /api/stats", () => {
   let shared: SharedTestLayerResult
   let db: TestDatabase
-  let app: Hono
+  let app: Server
 
   beforeAll(async () => {
     shared = await createSharedTestLayer()
@@ -1822,10 +1001,11 @@ describe("Dashboard API - GET /api/stats", () => {
   beforeEach(async () => {
     db = wrapDbAsTestDatabase(shared.getDb())
     seedFixtures(db)
-    app = createTestApp(db, "/tmp/.tx")
+    app = createDashboardServer({db:db.db, contentRoot:"/tmp"})
   })
 
   afterEach(async () => {
+    await closeServer(app)
     await shared.reset()
   })
 
@@ -1853,41 +1033,12 @@ describe("Dashboard API - GET /api/stats", () => {
     expect(data.ready).toBe(4)
   })
 
-  it("returns learnings count (0 if table doesn't exist)", async () => {
+  it("omits retired execution and memory metrics", async () => {
     const res = await request(app, "/api/stats")
     const data = await res.json()
-
-    expect(typeof data.learnings).toBe("number")
-  })
-
-  it("returns runs counts (0 if table doesn't exist)", async () => {
-    const res = await request(app, "/api/stats")
-    const data = await res.json()
-
-    expect(typeof data.runsRunning).toBe("number")
-    expect(typeof data.runsTotal).toBe("number")
-  })
-
-  it("counts running runs correctly", async () => {
-    const now = new Date().toISOString()
-    db.db.prepare(`
-      INSERT INTO runs (id, task_id, agent, started_at, status, metadata)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run("run-stats-a", null, "agent-1", now, "running", "{}")
-    db.db.prepare(`
-      INSERT INTO runs (id, task_id, agent, started_at, status, metadata)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run("run-stats-b", null, "agent-1", now, "completed", "{}")
-    db.db.prepare(`
-      INSERT INTO runs (id, task_id, agent, started_at, status, metadata)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run("run-stats-c", null, "agent-1", now, "running", "{}")
-
-    const res = await request(app, "/api/stats")
-    const data = await res.json()
-
-    expect(data.runsRunning).toBe(2)
-    expect(data.runsTotal).toBe(3)
+    expect(data).not.toHaveProperty("learnings")
+    expect(data).not.toHaveProperty("runsRunning")
+    expect(data).not.toHaveProperty("runsTotal")
   })
 
   it("updates done count when task is completed", async () => {
@@ -1927,7 +1078,7 @@ describe("Dashboard API - Fixture ID consistency", () => {
 describe("Dashboard API - Paginated Tasks with Filters", () => {
   let shared: SharedTestLayerResult
   let db: TestDatabase
-  let app: Hono
+  let app: Server
 
   beforeAll(async () => {
     shared = await createSharedTestLayer()
@@ -1936,10 +1087,11 @@ describe("Dashboard API - Paginated Tasks with Filters", () => {
   beforeEach(async () => {
     db = wrapDbAsTestDatabase(shared.getDb())
     seedFixtures(db)
-    app = createTestApp(db, "/tmp/.tx")
+    app = createDashboardServer({db:db.db, contentRoot:"/tmp"})
   })
 
   afterEach(async () => {
+    await closeServer(app)
     await shared.reset()
   })
 
@@ -2130,159 +1282,5 @@ describe("Dashboard API - Paginated Tasks with Filters", () => {
     expect(data.summary.byStatus.backlog).toBe(3)
     expect(data.summary.byStatus.ready).toBe(2)
     expect(data.summary.byStatus.done).toBeUndefined() // Not in filter
-  })
-})
-
-describe("Dashboard API - Paginated Runs with Filters", () => {
-  let shared: SharedTestLayerResult
-  let db: TestDatabase
-  let app: Hono
-
-  beforeAll(async () => {
-    shared = await createSharedTestLayer()
-  })
-
-  beforeEach(async () => {
-    db = wrapDbAsTestDatabase(shared.getDb())
-    seedFixtures(db)
-    app = createTestApp(db, "/tmp/.tx")
-
-    // Seed runs for pagination testing
-    // IDs must start with "run-" for cursor parser to work correctly
-    const baseTime = new Date("2026-01-30T10:00:00.000Z")
-    for (let i = 0; i < 8; i++) {
-      const ts = new Date(baseTime.getTime() - i * 60000).toISOString() // 1 minute apart
-      const status = i % 3 === 0 ? "completed" : i % 3 === 1 ? "running" : "failed"
-      const agent = i % 2 === 0 ? "tx-implementer" : "tx-reviewer"
-      const runId = `run-pagtest${String(i).padStart(4, '0')}`
-      db.db.prepare(`
-        INSERT INTO runs (id, task_id, agent, started_at, status, metadata)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(runId, null, agent, ts, status, "{}")
-    }
-  })
-
-  afterEach(async () => {
-    await shared.reset()
-  })
-
-  afterAll(async () => {
-    await shared.close()
-  })
-
-  it("cursor pagination works with agent filter", async () => {
-    // Get first page of tx-implementer runs
-    const res1 = await request(app, "/api/runs?agent=tx-implementer&limit=2")
-    const data1 = await res1.json()
-
-    expect(data1.runs.length).toBe(2)
-    expect(data1.hasMore).toBe(true)
-    data1.runs.forEach((r: { agent: string }) => expect(r.agent).toBe("tx-implementer"))
-
-    // Get second page
-    const res2 = await request(app, `/api/runs?agent=tx-implementer&limit=2&cursor=${data1.nextCursor}`)
-    const data2 = await res2.json()
-
-    expect(data2.runs.length).toBe(2)
-    data2.runs.forEach((r: { agent: string }) => expect(r.agent).toBe("tx-implementer"))
-
-    // Ensure no duplicates
-    const firstPageIds = data1.runs.map((r: { id: string }) => r.id)
-    const secondPageIds = data2.runs.map((r: { id: string }) => r.id)
-    expect(firstPageIds.some((id: string) => secondPageIds.includes(id))).toBe(false)
-  })
-
-  it("cursor pagination works with status filter", async () => {
-    // Get running runs (indices 1, 4, 7 = 3 runs)
-    const res1 = await request(app, "/api/runs?status=running&limit=2")
-    const data1 = await res1.json()
-
-    expect(data1.runs.length).toBe(2)
-    data1.runs.forEach((r: { status: string }) => expect(r.status).toBe("running"))
-
-    // Get second page
-    const res2 = await request(app, `/api/runs?status=running&limit=2&cursor=${data1.nextCursor}`)
-    const data2 = await res2.json()
-
-    // Should have 1 remaining
-    expect(data2.runs.length).toBe(1)
-    expect(data2.hasMore).toBe(false)
-    expect(data2.runs[0].status).toBe("running")
-  })
-
-  it("cursor pagination with combined agent and status filters", async () => {
-    // tx-implementer (indices 0, 2, 4, 6) with completed status (indices 0, 3, 6)
-    // Intersection: 0, 6 = 2 runs
-    const res = await request(app, "/api/runs?agent=tx-implementer&status=completed&limit=10")
-    const data = await res.json()
-
-    expect(data.runs.length).toBe(2)
-    data.runs.forEach((r: { agent: string; status: string }) => {
-      expect(r.agent).toBe("tx-implementer")
-      expect(r.status).toBe("completed")
-    })
-    expect(data.hasMore).toBe(false)
-  })
-
-  it("hasMore is false on last page", async () => {
-    // Get first page
-    const res1 = await request(app, "/api/runs?limit=5")
-    const data1 = await res1.json()
-
-    expect(data1.runs.length).toBe(5)
-    expect(data1.hasMore).toBe(true)
-
-    // Get second (last) page
-    const res2 = await request(app, `/api/runs?limit=5&cursor=${data1.nextCursor}`)
-    const data2 = await res2.json()
-
-    expect(data2.runs.length).toBe(3)
-    expect(data2.hasMore).toBe(false)
-    expect(data2.nextCursor).toBeNull()
-  })
-
-  it("hasMore is false when results fit in single page", async () => {
-    const res = await request(app, "/api/runs?status=completed&limit=10")
-    const data = await res.json()
-
-    // completed: indices 0, 3, 6 = 3 runs
-    expect(data.runs.length).toBe(3)
-    expect(data.hasMore).toBe(false)
-    expect(data.nextCursor).toBeNull()
-  })
-
-  it("runs are sorted by started_at descending", async () => {
-    const res = await request(app, "/api/runs?limit=10")
-    const data = await res.json()
-
-    for (let i = 1; i < data.runs.length; i++) {
-      const prev = new Date(data.runs[i - 1].started_at).getTime()
-      const curr = new Date(data.runs[i].started_at).getTime()
-      expect(prev).toBeGreaterThanOrEqual(curr)
-    }
-  })
-
-  it("pagination maintains sort order across pages", async () => {
-    const res1 = await request(app, "/api/runs?limit=4")
-    const data1 = await res1.json()
-
-    const res2 = await request(app, `/api/runs?limit=4&cursor=${data1.nextCursor}`)
-    const data2 = await res2.json()
-
-    // Last item of first page should have later started_at than first item of second page
-    const lastOfFirst = new Date(data1.runs[data1.runs.length - 1].started_at).getTime()
-    const firstOfSecond = new Date(data2.runs[0].started_at).getTime()
-    expect(lastOfFirst).toBeGreaterThanOrEqual(firstOfSecond)
-  })
-
-  it("filters by multiple statuses", async () => {
-    const res = await request(app, "/api/runs?status=running,completed")
-    const data = await res.json()
-
-    // running: 3, completed: 3 = 6 total
-    expect(data.runs.length).toBe(6)
-    data.runs.forEach((r: { status: string }) => {
-      expect(["running", "completed"]).toContain(r.status)
-    })
   })
 })

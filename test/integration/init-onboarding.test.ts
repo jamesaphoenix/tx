@@ -7,8 +7,6 @@ import {
   existsSync,
   readFileSync,
   writeFileSync,
-  mkdirSync,
-  chmodSync,
 } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
@@ -19,7 +17,7 @@ interface Sandbox {
 
 const REPO_ROOT = resolve(__dirname, "..", "..")
 const BUN_BIN = process.execPath.includes("bun") ? process.execPath : "bun"
-const BUNDLED_SPEC_SKILLS = ["tx-tasks", "tx-docs", "verify-invariants"] as const
+const BUNDLED_SPEC_SKILLS = ["tx-plan", "tx-tasks", "tx-docs", "verify-invariants"] as const
 const sandboxes: Sandbox[] = []
 
 function createSandbox(): Sandbox {
@@ -50,15 +48,6 @@ function runInit(
       ...options?.env,
     },
   })
-}
-
-function createMockRuntime(sandbox: Sandbox, name: string): string {
-  const binDir = join(sandbox.dir, ".bin")
-  mkdirSync(binDir, { recursive: true })
-  const runtimePath = join(binDir, name)
-  writeFileSync(runtimePath, "#!/bin/bash\nexit 0\n")
-  chmodSync(runtimePath, 0o755)
-  return binDir
 }
 
 function expectBundledSpecSkills(sandbox: Sandbox, target: "claude" | "codex") {
@@ -130,54 +119,6 @@ describe("tx init onboarding edge cases", () => {
     expect(existsSync(join(sandbox.dir, ".codex", "rules", "default.rules"))).toBe(false)
   })
 
-  it("init --watchdog scaffolds watchdog assets with runtime auto-detect", () => {
-    const sandbox = createSandbox()
-    const binDir = createMockRuntime(sandbox, "codex")
-    const result = runInit(
-      sandbox,
-      ["--watchdog", "--watchdog-runtime", "auto"],
-      { env: { PATH: `${binDir}:/usr/bin:/bin` } },
-    )
-    expect(result.status).toBe(0)
-    expect(existsSync(join(sandbox.dir, "scripts", "watchdog-launcher.sh"))).toBe(true)
-    expect(existsSync(join(sandbox.dir, "scripts", "ralph-watchdog.sh"))).toBe(true)
-    expect(existsSync(join(sandbox.dir, "scripts", "ralph-hourly-supervisor.sh"))).toBe(true)
-    expect(existsSync(join(sandbox.dir, "ops", "watchdog", "com.tx.ralph-watchdog.plist"))).toBe(true)
-    expect(existsSync(join(sandbox.dir, "ops", "watchdog", "tx-ralph-watchdog.service"))).toBe(true)
-    expect(existsSync(join(sandbox.dir, ".tx", "watchdog.env"))).toBe(true)
-
-    const envContent = readFileSync(join(sandbox.dir, ".tx", "watchdog.env"), "utf-8")
-    expect(envContent).toContain("WATCHDOG_ENABLED=1")
-    expect(envContent).toContain("WATCHDOG_CODEX_ENABLED=1")
-    expect(envContent).toContain("WATCHDOG_CLAUDE_ENABLED=0")
-    expect(envContent).toContain("WATCHDOG_TRANSCRIPT_IDLE_SECONDS=600")
-    expect(envContent).toContain("WATCHDOG_CLAUDE_STALL_GRACE_SECONDS=900")
-    expect(envContent).toContain("WATCHDOG_ERROR_BURST_GRACE_SECONDS=600")
-  })
-
-  it("init --watchdog preserves existing watchdog files without overwrite", () => {
-    const sandbox = createSandbox()
-    mkdirSync(join(sandbox.dir, "scripts"), { recursive: true })
-    mkdirSync(join(sandbox.dir, ".tx"), { recursive: true })
-    writeFileSync(join(sandbox.dir, "scripts", "ralph-watchdog.sh"), "# sentinel-watchdog\n")
-    writeFileSync(join(sandbox.dir, ".tx", "watchdog.env"), "WATCHDOG_ENABLED=0\n")
-
-    const binDir = createMockRuntime(sandbox, "codex")
-    const result = runInit(
-      sandbox,
-      ["--watchdog", "--watchdog-runtime", "auto"],
-      { env: { PATH: `${binDir}:/usr/bin:/bin` } },
-    )
-
-    expect(result.status).toBe(0)
-    expect(readFileSync(join(sandbox.dir, "scripts", "ralph-watchdog.sh"), "utf-8")).toBe("# sentinel-watchdog\n")
-    expect(readFileSync(join(sandbox.dir, ".tx", "watchdog.env"), "utf-8")).toBe("WATCHDOG_ENABLED=0\n")
-
-    const output = `${result.stdout}\n${result.stderr}`
-    expect(output).toContain("scripts/ralph-watchdog.sh (exists)")
-    expect(output).toContain(".tx/watchdog.env (exists)")
-  })
-
   it("init --codex keeps watchdog onboarding default-off", () => {
     const sandbox = createSandbox()
     const result = runInit(sandbox, ["--codex"])
@@ -197,26 +138,6 @@ describe("tx init onboarding edge cases", () => {
     const output = `${second.stdout}\n${second.stderr}`
     expect(output).toContain(".codex/skills/manifest.json (exists)")
     expect(output).not.toContain(".codex/rules/default.rules")
-  })
-
-  it("fails with actionable error when explicit watchdog runtime is missing", () => {
-    const sandbox = createSandbox()
-    const emptyBin = join(sandbox.dir, "empty-bin")
-    mkdirSync(emptyBin, { recursive: true })
-    const result = runInit(
-      sandbox,
-      ["--watchdog", "--watchdog-runtime", "codex"],
-      { env: { PATH: `${emptyBin}:/usr/bin:/bin` } },
-    )
-    expect(result.status).not.toBe(0)
-    expect(result.stderr).toContain("Watchdog runtime 'codex' unavailable")
-  })
-
-  it("rejects --watchdog-runtime when --watchdog is not set", () => {
-    const sandbox = createSandbox()
-    const result = runInit(sandbox, ["--watchdog-runtime", "auto", "--codex"])
-    expect(result.status).not.toBe(0)
-    expect(result.stderr).toContain("--watchdog-runtime requires --watchdog")
   })
 
   it("fails with a clear error when .codex path collides with a file", () => {

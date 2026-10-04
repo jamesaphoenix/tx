@@ -15,11 +15,11 @@ export interface TaskCommandContext {
   labels: TaskLabel[]
   /** Available cycles to move the task into */
   cycles: Cycle[]
-  /** Callbacks for single-task operations — all pre-bound by the caller */
-  onSetStatus: (status: string) => void
-  onToggleLabel: (label: TaskLabel) => void
-  onSetScore: () => void
-  onMoveToCycle: (cycleId: string) => void
+  /** Callbacks for single-task operations, all pre-bound by the caller */
+  onSetStatus: (status: string) => void | Promise<void>
+  onToggleLabel: (label: TaskLabel) => void | Promise<void>
+  onSetScore: () => void | Promise<void>
+  onMoveToCycle: (cycleId: string) => void | Promise<void>
 }
 
 /**
@@ -35,15 +35,15 @@ export interface SelectionCommandContext {
   /** Available cycles to move selected tasks into */
   cycles: Cycle[]
   /** Callbacks for bulk operations */
-  onBulkSetStatus: (status: string) => void
-  onBulkToggleLabel?: (label: TaskLabel) => void
-  onBulkMoveToCycle: (cycleId: string) => void
+  onBulkSetStatus: (status: string) => void | Promise<void>
+  onBulkToggleLabel?: (label: TaskLabel) => void | Promise<void>
+  onBulkMoveToCycle: (cycleId: string) => void | Promise<void>
 }
 
 /**
  * Build standardized hierarchical "Set <field>" commands for a single task.
  * Returns commands for: Set status, Set label, Set score, Move to cycle.
- * Pure function — no React, no side effects.
+ * Pure function, no React, no side effects.
  */
 export function buildTaskCommands(ctx: TaskCommandContext): Command[] {
   if (!ctx.task) return []
@@ -134,7 +134,7 @@ export function buildSelectionCommands(ctx: SelectionCommandContext): Command[] 
   const sublabel = `${count} selected`
   const cmds: Command[] = []
 
-  // Set status (top priority — shown first)
+  // Set status (top priority, shown first)
   cmds.push({
     id: `${namespace}:selected:set-status`,
     label: "Set status",

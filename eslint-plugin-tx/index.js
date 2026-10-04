@@ -202,7 +202,7 @@ const plugin = {
         'tx/require-llms-primitive-coverage': ['error', {
           metaPath: 'apps/docs/content/docs/primitives/meta.json',
           llmsPath: 'apps/docs/public/llms.txt',
-          urlBase: 'https://tx-docs.vercel.app/docs/primitives'
+          urlBase: 'https://txdocs.dev/docs/primitives'
         }],
         'tx/max-service-lines': ['warn', {
           warnAt: 500,

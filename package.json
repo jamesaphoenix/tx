@@ -1,6 +1,6 @@
 {
   "name": "tx-monorepo",
-  "version": "0.19.0",
+  "version": "0.20.0",
   "description": "A lean task management system for AI agents and humans",
   "private": true,
   "type": "module",
@@ -35,11 +35,11 @@
     "build:binary": "bun run --cwd apps/cli build:binary",
     "build:binary:all": "bun run --cwd apps/cli build:all",
     "dev": "bun apps/cli/src/cli.ts",
-    "test": ".claude/skills/test-quiet/scripts/run.sh",
+    "test": "scripts/test-quiet.sh",
     "test:verbose": "turbo test && bunx --bun vitest run",
     "test:packages": "turbo test",
-    "test:root": ".claude/skills/test-quiet/scripts/run.sh",
-    "test:flaky": ".claude/skills/test-quiet/scripts/run.sh --flaky",
+    "test:root": "scripts/test-quiet.sh",
+    "test:flaky": "scripts/test-quiet.sh --flaky",
     "test:watch": "bunx --bun vitest --watch",
     "lint": "turbo lint",
     "lint:packages": "turbo lint",
@@ -52,38 +52,41 @@
     "check": "./scripts/check.sh --all",
     "check:quick": "./scripts/check.sh --quick",
     "check:ci": "./scripts/check-ci.sh",
-    "validate": "bun run build && .claude/skills/test-quiet/scripts/run.sh && bun link",
+    "validate": "bun run build && scripts/test-quiet.sh && bun link",
     "strip-bun-exports": "node scripts/strip-bun-exports.js",
     "restore-bun-exports": "node scripts/strip-bun-exports.js --restore",
-    "prepare": "husky"
+    "prepare": "husky",
+    "test:docs": "bun run --cwd apps/docs build && TX_DOCS_TEST_BUILT=1 TX_TEST_DOCS=1 TX_DOCS_NODE=\"$(command -v node)\" bunx --bun vitest run test/integration/docs-build.test.ts test/integration/docs-search-route.test.ts --no-file-parallelism",
+    "test:package-install": "TX_NPM_BINARY_DIR=\"$(bash test/integration/cli-npm-binary-setup.sh)\" TX_TEST_NPM=1 TX_NPM_NODE=\"$(command -v node)\" bunx --bun vitest run test/integration/cli-npm-binary.test.ts"
   },
   "dependencies": {
-    "@effect/cli": "^0.75.0",
-    "@effect/platform": "^0.96.0",
-    "@effect/platform-node": "^0.107.0",
+    "@effect/platform": "^0.97.1",
+    "@effect/platform-node": "^0.108.1",
     "@modelcontextprotocol/sdk": "^1.26.0",
-    "effect": "^3.19.16",
+    "effect": "^3.22.2",
     "esbuild": "^0.28.0",
     "zod": "^4.3.6"
   },
-  "optionalDependencies": {
-    "node-llama-cpp": "^3.15.1"
-  },
+  "optionalDependencies": {},
   "devDependencies": {
     "@eslint/js": "^9.39.2",
     "@types/bun": "^1.3.9",
     "@types/node": "^26.1.2",
-    "@typescript-eslint/eslint-plugin": "^8.55.0",
-    "@typescript-eslint/parser": "^8.55.0",
+    "@typescript-eslint/eslint-plugin": "^8.71.0",
+    "@typescript-eslint/parser": "^8.71.0",
     "eslint": "^10.0.1",
     "husky": "^9.1.7",
     "tsx": "^4.21.0",
     "turbo": "^2.8.5",
-    "typescript": "^5.9.3",
-    "vitest": "^4.0.18"
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "vitest": "^5.0.1",
+    "@typescript/native": "npm:typescript@^7.0.2"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.12.0"
   },
-  "packageManager": "bun@1.2.20"
+  "packageManager": "bun@1.4.2",
+  "overrides": {
+    "@typescript/old": "npm:typescript@6.0.3"
+  }
 }

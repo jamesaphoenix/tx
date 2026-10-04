@@ -291,7 +291,10 @@ describe("Docs -> code -> spec detection flow", { timeout: FLOW_TEST_TIMEOUT }, 
       ),
     )
     expect(complete.scopeType).toBe("doc")
-    expect(complete.scopeValue).toBe("auth-flow")
+    const authDoc = parseJson<{ docId: string }>(
+      expectOk(runTx(cwd, dbPath, ["doc", "show", "auth-flow", "--json"]), "tx doc show auth-flow"),
+    )
+    expect(complete.scopeValue).toBe(authDoc.docId)
     expect(complete.signedOffBy).toBe("flow-test")
 
     const authComplete = parseJson<{ phase: string; fci: number }>(

@@ -1,7 +1,7 @@
 {
   "name": "@jamesaphoenix/tx-cli",
-  "version": "0.19.0",
-  "description": "TX command line tool - task management for AI agents and humans",
+  "version": "0.20.0",
+  "description": "Tasks, specifications, plans and verification evidence for coding agents and humans",
   "type": "module",
   "main": "./dist/cli.js",
   "types": "./dist/cli.d.ts",
@@ -31,10 +31,6 @@
       "types": "./dist/mcp/tools/task.d.ts",
       "import": "./dist/mcp/tools/task.js"
     },
-    "./mcp/tools/learning": {
-      "types": "./dist/mcp/tools/learning.d.ts",
-      "import": "./dist/mcp/tools/learning.js"
-    },
     "./mcp/tools/sync": {
       "types": "./dist/mcp/tools/sync.d.ts",
       "import": "./dist/mcp/tools/sync.js"
@@ -54,14 +50,6 @@
     "./api/routes/tasks": {
       "types": "./dist/api/routes/tasks.d.ts",
       "import": "./dist/api/routes/tasks.js"
-    },
-    "./api/routes/runs": {
-      "types": "./dist/api/routes/runs.d.ts",
-      "import": "./dist/api/routes/runs.js"
-    },
-    "./api/routes/learnings": {
-      "types": "./dist/api/routes/learnings.d.ts",
-      "import": "./dist/api/routes/learnings.js"
     },
     "./api/routes/sync": {
       "types": "./dist/api/routes/sync.d.ts",
@@ -83,12 +71,12 @@
     "!dist/**/*.test.*"
   ],
   "scripts": {
-    "build": "tsc -b && cp -r src/templates dist/templates",
-    "build:binary": "bun build ./src/cli.ts --compile --outfile dist/tx --minify --external @anthropic-ai/sdk --external @anthropic-ai/claude-agent-sdk --external openai --external node-llama-cpp --external @node-llama-cpp/*",
-    "build:darwin-arm64": "bun build ./src/cli.ts --compile --outfile dist/tx-darwin-arm64 --target bun-darwin-arm64 --minify --external @anthropic-ai/sdk --external @anthropic-ai/claude-agent-sdk --external openai --external node-llama-cpp --external @node-llama-cpp/*",
-    "build:darwin-x64": "bun build ./src/cli.ts --compile --outfile dist/tx-darwin-x64 --target bun-darwin-x64 --minify --external @anthropic-ai/sdk --external @anthropic-ai/claude-agent-sdk --external openai --external node-llama-cpp --external @node-llama-cpp/*",
-    "build:linux-x64": "bun build ./src/cli.ts --compile --outfile dist/tx-linux-x64 --target bun-linux-x64 --minify --external @anthropic-ai/sdk --external @anthropic-ai/claude-agent-sdk --external openai --external node-llama-cpp --external @node-llama-cpp/*",
-    "build:linux-arm64": "bun build ./src/cli.ts --compile --outfile dist/tx-linux-arm64 --target bun-linux-arm64 --minify --external @anthropic-ai/sdk --external @anthropic-ai/claude-agent-sdk --external openai --external node-llama-cpp --external @node-llama-cpp/*",
+    "build": "rm -rf dist && tsc -b --force && rm -rf dist/templates && cp -r src/templates dist/templates",
+    "build:binary": "bun build ./src/cli.ts --compile --outfile dist/tx --minify",
+    "build:darwin-arm64": "bun build ./src/cli.ts --compile --outfile dist/tx-darwin-arm64 --target bun-darwin-arm64 --minify",
+    "build:darwin-x64": "bun build ./src/cli.ts --compile --outfile dist/tx-darwin-x64 --target bun-darwin-x64 --minify",
+    "build:linux-x64": "bun build ./src/cli.ts --compile --outfile dist/tx-linux-x64 --target bun-linux-x64 --minify",
+    "build:linux-arm64": "bun build ./src/cli.ts --compile --outfile dist/tx-linux-arm64 --target bun-linux-arm64 --minify",
     "build:all": "bun run build:darwin-arm64 && bun run build:darwin-x64 && bun run build:linux-x64 && bun run build:linux-arm64",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
@@ -97,11 +85,11 @@
   },
   "dependencies": {
     "@clack/prompts": "^1.0.1",
-    "@effect/platform": "^0.96.0",
-    "@effect/platform-node": "^0.107.0",
+    "@effect/platform": "^0.97.1",
+    "@effect/platform-node": "^0.108.1",
     "@jamesaphoenix/tx": "*",
     "@modelcontextprotocol/sdk": "^1.25.3",
-    "effect": "^3.19.15",
+    "effect": "^3.22.2",
     "yaml": "^2.5.0",
     "zod": "^4.3.6"
   },
@@ -113,14 +101,17 @@
   "devDependencies": {
     "@types/bun": "^1.2.0",
     "@types/node": "^26.1.2",
-    "typescript": "^5.7.0",
-    "vitest": "^4.0.18"
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "vitest": "^5.0.1",
+    "@typescript/native": "npm:typescript@^7.0.2"
   },
   "keywords": [
-    "tx",
+    "tasks",
+    "spec-driven-development",
+    "plans",
+    "invariants",
     "cli",
-    "task-management",
-    "effect-ts"
+    "mcp"
   ],
   "author": "James Phoenix",
   "license": "MIT"

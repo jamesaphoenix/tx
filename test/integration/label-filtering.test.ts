@@ -267,7 +267,7 @@ describe("Label filtering integration", () => {
 
   // ===== Ready Queue Scoping =====
 
-  it("ready filters by --label", async () => {
+  it("task ready filters by --label", async () => {
     await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* LabelRepository
@@ -294,7 +294,7 @@ describe("Label filtering integration", () => {
     )
   })
 
-  it("ready filters by --exclude-label", async () => {
+  it("task ready filters by --exclude-label", async () => {
     await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* LabelRepository
@@ -316,7 +316,7 @@ describe("Label filtering integration", () => {
     )
   })
 
-  it("ready with both --label and --exclude-label narrows results", async () => {
+  it("task ready with both --label and --exclude-label narrows results", async () => {
     await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* LabelRepository
@@ -345,7 +345,7 @@ describe("Label filtering integration", () => {
     )
   })
 
-  it("ready --exclude-label is case-insensitive", async () => {
+  it("task ready --exclude-label is case-insensitive", async () => {
     await Effect.runPromise(
       Effect.gen(function* () {
         const repo = yield* LabelRepository
@@ -367,7 +367,7 @@ describe("Label filtering integration", () => {
     )
   })
 
-  it("ready with empty label arrays returns all tasks", async () => {
+  it("task ready with empty label arrays returns all tasks", async () => {
     await Effect.runPromise(
       Effect.gen(function* () {
         const taskSvc = yield* TaskService

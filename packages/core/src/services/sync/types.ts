@@ -66,11 +66,8 @@ export type LegacySyncExportResult = {
 export type SyncImportResult = {
   readonly importedEvents: number
   readonly appliedEvents: number
+  readonly ignoredEvents: number
   readonly streamCount: number
-  readonly imported: number
-  readonly skipped: number
-  readonly conflicts: number
-  readonly dependencies: DependencyImportResult
 }
 
 /**
@@ -79,6 +76,7 @@ export type SyncImportResult = {
 export type SyncHydrateResult = {
   readonly importedEvents: number
   readonly appliedEvents: number
+  readonly ignoredEvents: number
   readonly streamCount: number
   readonly rebuilt: boolean
 }

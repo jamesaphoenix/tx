@@ -9,30 +9,8 @@ import { HttpApiBuilder, HttpServerRequest } from "@effect/platform"
 import { Effect } from "effect"
 import type { TaskId, TaskWithDeps, TaskCursor, TaskStatus } from "@jamesaphoenix/tx/types"
 import { isValidTaskStatus, TASK_STATUSES, serializeTask } from "@jamesaphoenix/tx/types"
-import { TaskService, ReadyService, DependencyService, HierarchyService, ClaimService } from "@jamesaphoenix/tx"
+import { TaskService, ReadyService, DependencyService, HierarchyService, } from "@jamesaphoenix/tx"
 import { TxApi, BadRequest, mapCoreError } from "../api.js"
-
-// -----------------------------------------------------------------------------
-// Claim Serialization
-// -----------------------------------------------------------------------------
-
-const serializeClaim = (claim: {
-  id: number
-  taskId: string
-  workerId: string
-  claimedAt: Date
-  leaseExpiresAt: Date
-  renewedCount: number
-  status: string
-}) => ({
-  id: claim.id,
-  taskId: claim.taskId,
-  workerId: claim.workerId,
-  claimedAt: claim.claimedAt.toISOString(),
-  leaseExpiresAt: claim.leaseExpiresAt.toISOString(),
-  renewedCount: claim.renewedCount,
-  status: claim.status,
-})
 
 // -----------------------------------------------------------------------------
 // Cursor Pagination Helpers
@@ -244,22 +222,6 @@ export const TasksLive = HttpApiBuilder.group(TxApi, "tasks", (handlers) =>
       }).pipe(Effect.mapError(mapCoreError))
     )
 
-    .handle("setTaskGroupContext", ({ path, payload }) =>
-      Effect.gen(function* () {
-        const taskService = yield* TaskService
-        const task = yield* taskService.setGroupContext(path.id as TaskId, payload.context)
-        return serializeTask(task)
-      }).pipe(Effect.mapError(mapCoreError))
-    )
-
-    .handle("clearTaskGroupContext", ({ path }) =>
-      Effect.gen(function* () {
-        const taskService = yield* TaskService
-        const task = yield* taskService.clearGroupContext(path.id as TaskId)
-        return serializeTask(task)
-      }).pipe(Effect.mapError(mapCoreError))
-    )
-
     .handle("getTaskTree", ({ path }) =>
       Effect.gen(function* () {
         const hierarchyService = yield* HierarchyService
@@ -278,38 +240,6 @@ export const TasksLive = HttpApiBuilder.group(TxApi, "tasks", (handlers) =>
         const allIds = flattenTree(tree)
         const tasks = yield* taskService.getWithDepsBatch(allIds)
         return { tasks: tasks.map(serializeTask) }
-      }).pipe(Effect.mapError(mapCoreError))
-    )
-
-    .handle("claimTask", ({ path, payload }) =>
-      Effect.gen(function* () {
-        const claimService = yield* ClaimService
-        const claim = yield* claimService.claim(path.id, payload.workerId, payload.leaseDurationMinutes)
-        return serializeClaim(claim)
-      }).pipe(Effect.mapError(mapCoreError))
-    )
-
-    .handle("releaseTaskClaim", ({ path, payload }) =>
-      Effect.gen(function* () {
-        const claimService = yield* ClaimService
-        yield* claimService.release(path.id, payload.workerId)
-        return { success: true as const }
-      }).pipe(Effect.mapError(mapCoreError))
-    )
-
-    .handle("renewTaskClaim", ({ path, payload }) =>
-      Effect.gen(function* () {
-        const claimService = yield* ClaimService
-        const claim = yield* claimService.renew(path.id, payload.workerId)
-        return serializeClaim(claim)
-      }).pipe(Effect.mapError(mapCoreError))
-    )
-
-    .handle("getTaskClaim", ({ path }) =>
-      Effect.gen(function* () {
-        const claimService = yield* ClaimService
-        const claim = yield* claimService.getActiveClaim(path.id)
-        return { claim: claim ? serializeClaim(claim) : null }
       }).pipe(Effect.mapError(mapCoreError))
     )
 )

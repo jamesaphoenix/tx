@@ -1,16 +1,24 @@
 {
   "generator": "tx skills generate",
-  "version": "0.19.0",
+  "version": "0.20.0",
   "target": "claude",
   "installRoot": ".claude/skills",
-  "skillCount": 3,
+  "skillCount": 4,
   "commandCount": 0,
   "skills": [
+    {
+      "id": "tx-plan",
+      "title": "Copy an implementation plan",
+      "installPath": ".claude/skills/tx-plan",
+      "checksum": "7d251ec9ca72b58c901f3358a6c4d6bdd1e37b9aae2d598898b9abc440b06f80",
+      "commandKeys": [],
+      "source": "bundled"
+    },
     {
       "id": "tx-tasks",
       "title": "Create tx tasks",
       "installPath": ".claude/skills/tx-tasks",
-      "checksum": "ebcd20f2b0a912c7529f480916a2216a12980e6001546fe9d6ba4e3f660a1f0f",
+      "checksum": "0cfb200da4d0f5936dee12569f04accc346b068189380cb061a56004f58e6dd0",
       "commandKeys": [],
       "source": "bundled"
     },
@@ -18,7 +26,7 @@
       "id": "tx-docs",
       "title": "Create tx documents",
       "installPath": ".claude/skills/tx-docs",
-      "checksum": "330c7c2abab626fa56ef4422a21e66626daa33e63047dbda1b02997fc73eb93f",
+      "checksum": "b9efa755b57cf4da3cd31d42bb709a05504468de3d70485f25ee005f1ac12876",
       "commandKeys": [],
       "source": "bundled"
     },
@@ -26,7 +34,7 @@
       "id": "verify-invariants",
       "title": "Map and verify invariants",
       "installPath": ".claude/skills/verify-invariants",
-      "checksum": "2583423aa719961ae67f8a8bea15b9d8dfe1c7973a4fca9e3ea64ebad106fc01",
+      "checksum": "1dd57d49f5a73e16462170c5fd13af5a443de6357ea37b4f8d16f5a21751240f",
       "commandKeys": [],
       "source": "bundled"
     }

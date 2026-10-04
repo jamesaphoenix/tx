@@ -17,10 +17,7 @@ type TaskRepositoryReadService = Pick<
   | "getChildIdsForMany"
   | "getAncestorChain"
   | "getDescendants"
-  | "getGroupContextForMany"
-  | "resolveEffectiveGroupContextForMany"
   | "count"
-  | "getVerifyCmd"
 >
 
 export const createTaskRepositoryReadService = (
@@ -89,19 +86,6 @@ export const createTaskRepositoryReadService = (
         if (filter?.cursor) {
           conditions.push("(score < ? OR (score = ? AND id > ?))")
           params.push(filter.cursor.score, filter.cursor.score, filter.cursor.id)
-        }
-
-        // Exclude tasks with active, non-expired claims (thundering herd prevention).
-        // Also checks lease_expires_at so that tasks with expired leases (where the
-        // sweeper hasn't yet reconciled status) are still returned as workable.
-        // NOTE: lease_expires_at is stored as an ISO-8601 string (toISOString,
-        // e.g. "2026-06-24T15:51:33.946Z"). It must be compared against an ISO
-        // bound param, NOT datetime('now') (which yields "2026-06-24 15:51:33").
-        // SQLite compares text bytewise, and 'T' (0x54) > ' ' (0x20), so a lease
-        // that expired earlier the same UTC day would compare as still-active.
-        if (filter?.excludeClaimed) {
-          conditions.push("NOT EXISTS (SELECT 1 FROM task_claims WHERE task_id = tasks.id AND status = 'active' AND lease_expires_at > ?)")
-          params.push(new Date().toISOString())
         }
 
         // Label filters: include tasks with ALL specified labels
@@ -234,108 +218,6 @@ export const createTaskRepositoryReadService = (
       catch: (cause) => new DatabaseError({ cause })
     }),
 
-  getGroupContextForMany: (ids) =>
-    Effect.try({
-      try: () => {
-        const result = new Map<string, string>()
-        if (ids.length === 0) return result
-
-        for (const chunk of chunkBySqlLimit(ids)) {
-          const placeholders = chunk.map(() => "?").join(",")
-          const rows = db.prepare<{ id: string; group_context: string | null }>(
-            `SELECT id, group_context
-                 FROM tasks
-                 WHERE id IN (${placeholders})
-                   AND group_context IS NOT NULL
-                   AND length(trim(group_context)) > 0`
-          ).all(...chunk)
-
-          for (const row of rows) {
-            if (row.group_context != null) {
-              result.set(row.id, row.group_context)
-            }
-          }
-        }
-        return result
-      },
-      catch: (cause) => new DatabaseError({ cause })
-    }),
-
-  resolveEffectiveGroupContextForMany: (ids) =>
-    Effect.try({
-      try: () => {
-        const result = new Map<string, { sourceTaskId: TaskId; context: string }>()
-        if (ids.length === 0) return result
-
-        for (const chunk of chunkBySqlLimit(ids)) {
-          const valuesClause = chunk.map(() => "(?)").join(", ")
-          const rows = db.prepare<{
-            target_id: string
-            source_id: TaskId
-            group_context: string
-          }>(
-            `WITH RECURSIVE
-                   targets(target_id) AS (
-                     VALUES ${valuesClause}
-                   ),
-                   ancestors(target_id, node_id, distance, path) AS (
-                     SELECT t.target_id, t.target_id, 0, ',' || t.target_id || ','
-                     FROM targets t
-                     UNION ALL
-                     SELECT a.target_id, parent.id, a.distance + 1, a.path || parent.id || ','
-                     FROM ancestors a
-                     JOIN tasks current ON current.id = a.node_id
-                     JOIN tasks parent ON parent.id = current.parent_id
-                     WHERE a.distance < 1000
-                       AND instr(a.path, ',' || parent.id || ',') = 0
-                   ),
-                   descendants(target_id, node_id, distance, path) AS (
-                     SELECT t.target_id, t.target_id, 0, ',' || t.target_id || ','
-                     FROM targets t
-                     UNION ALL
-                     SELECT d.target_id, child.id, d.distance + 1, d.path || child.id || ','
-                     FROM descendants d
-                     JOIN tasks child ON child.parent_id = d.node_id
-                     WHERE d.distance < 1000
-                       AND instr(d.path, ',' || child.id || ',') = 0
-                   ),
-                   lineage(target_id, node_id, distance) AS (
-                     SELECT target_id, node_id, distance FROM ancestors
-                     UNION
-                     SELECT target_id, node_id, distance FROM descendants
-                   ),
-                   ranked_sources AS (
-                     SELECT l.target_id,
-                            source.id AS source_id,
-                            source.group_context,
-                            ROW_NUMBER() OVER (
-                              PARTITION BY l.target_id
-                              ORDER BY l.distance ASC, source.updated_at DESC, source.id ASC
-                            ) AS rn
-                     FROM lineage l
-                     JOIN tasks source ON source.id = l.node_id
-                     WHERE source.group_context IS NOT NULL
-                       AND length(trim(source.group_context)) > 0
-                   )
-                 SELECT target_id, source_id, group_context
-                 FROM ranked_sources
-                 WHERE rn = 1
-                 ORDER BY target_id ASC`
-          ).all(...chunk)
-
-          for (const row of rows) {
-            result.set(row.target_id, {
-              sourceTaskId: row.source_id,
-              context: row.group_context
-            })
-          }
-        }
-
-        return result
-      },
-      catch: (cause) => new DatabaseError({ cause })
-    }),
-
   count: (filter) =>
     Effect.try({
       try: () => {
@@ -369,14 +251,6 @@ export const createTaskRepositoryReadService = (
           params.push(searchPattern, searchPattern)
         }
 
-        // Exclude claimed tasks (same as findAll — also checks lease expiry).
-        // Uses an ISO bound param (not datetime('now')) so same-day-expired
-        // leases compare correctly; see the matching note in findAll above.
-        if (filter?.excludeClaimed) {
-          conditions.push("NOT EXISTS (SELECT 1 FROM task_claims WHERE task_id = tasks.id AND status = 'active' AND lease_expires_at > ?)")
-          params.push(new Date().toISOString())
-        }
-
         // Label filters (same as findAll)
         if (filter?.labels && filter.labels.length > 0) {
           for (const label of filter.labels) {
@@ -402,20 +276,6 @@ export const createTaskRepositoryReadService = (
         const result = db.prepare<{ cnt: number }>(`SELECT COUNT(*) as cnt FROM tasks ${where}`).get(...params)
         if (!result) return 0
         return result.cnt
-      },
-      catch: (cause) => new DatabaseError({ cause })
-    }),
-
-  getVerifyCmd: (taskId) =>
-    Effect.try({
-      try: () => {
-        const row = db.prepare<{ verify_cmd: string | null; verify_schema: string | null }>(
-          "SELECT verify_cmd, verify_schema FROM tasks WHERE id = ?"
-        ).get(taskId)
-        return {
-          cmd: row?.verify_cmd ?? null,
-          schema: row?.verify_schema ?? null,
-        }
       },
       catch: (cause) => new DatabaseError({ cause })
     }),

@@ -1,14 +1,9 @@
 import { Context, Effect, Layer } from "effect"
 import { TaskRepository } from "../repo/task-repo.js"
 import { DependencyRepository } from "../repo/dep-repo.js"
-import { ClaimRepository } from "../repo/claim-repo.js"
-import { AttemptRepository } from "../repo/attempt-repo.js"
 import { DocRepository } from "../repo/doc-repo.js"
-import { AlreadyClaimedError, DatabaseError, TaskNotFoundError } from "../errors.js"
-import { ClaimService } from "./claim-service.js"
-import { deriveOrchestrationStatus } from "./task-service/internals.js"
-import type { TaskClaim } from "../schemas/worker.js"
-import type { OrchestrationStatus, Task, TaskId, TaskLinkedDocRef, TaskWithDeps } from "../types/index.js"
+import { DatabaseError } from "../errors.js"
+import type { Task, TaskId, TaskLinkedDocRef, TaskWithDeps } from "../types/index.js"
 
 /**
  * Result of checking whether a task is ready to be worked on.
@@ -23,10 +18,7 @@ export type ReadyCheckResult =
 /** Helper to check if a ReadyCheckResult indicates the task is ready. */
 export const isReadyResult = (result: ReadyCheckResult): boolean => result._tag === "Ready"
 
-export type ReadyAndClaimResult = {
-  readonly task: TaskWithDeps
-  readonly claim: TaskClaim
-}
+
 
 export class ReadyService extends Context.Tag("ReadyService")<
   ReadyService,
@@ -35,11 +27,6 @@ export class ReadyService extends Context.Tag("ReadyService")<
     readonly isReady: (id: TaskId) => Effect.Effect<ReadyCheckResult, DatabaseError>
     readonly getBlockers: (id: TaskId) => Effect.Effect<readonly Task[], DatabaseError>
     readonly getBlocking: (id: TaskId) => Effect.Effect<readonly Task[], DatabaseError>
-    readonly readyAndClaim: (
-      workerId: string,
-      leaseDurationMinutes?: number,
-      options?: { labels?: string[]; excludeLabels?: string[] }
-    ) => Effect.Effect<ReadyAndClaimResult | null, DatabaseError | TaskNotFoundError | AlreadyClaimedError>
   }
 >() {}
 
@@ -48,11 +35,6 @@ export const ReadyServiceLive = Layer.effect(
   Effect.gen(function* () {
     const taskRepo = yield* TaskRepository
     const depRepo = yield* DependencyRepository
-    const claimService = yield* ClaimService
-    const claimRepoOption = yield* Effect.serviceOption(ClaimRepository)
-    const claimRepo = claimRepoOption._tag === "Some" ? claimRepoOption.value : undefined
-    const attemptRepoOption = yield* Effect.serviceOption(AttemptRepository)
-    const attemptRepo = attemptRepoOption._tag === "Some" ? attemptRepoOption.value : undefined
     const docRepoOption = yield* Effect.serviceOption(DocRepository)
     const docRepo = docRepoOption._tag === "Some" ? docRepoOption.value : undefined
 
@@ -67,7 +49,6 @@ export const ReadyServiceLive = Layer.effect(
         // entire backlog when only a small ready set is requested.
         // Cap at 50 pages to prevent unbounded scans when all tasks are blocked.
         const MAX_PAGES = 50
-        const now = new Date()
         const ready: TaskWithDeps[] = []
         let cursor: { score: number; id: string } | undefined
         let pages = 0
@@ -78,7 +59,6 @@ export const ReadyServiceLive = Layer.effect(
 
           const candidates = yield* taskRepo.findAll({
             status: ["backlog", "ready", "planning"],
-            excludeClaimed: true,
             cursor,
             limit: pageSize,
             labels: options?.labels,
@@ -123,13 +103,6 @@ export const ReadyServiceLive = Layer.effect(
                 blocks: blockingIds as TaskId[],
                 children: childIds as TaskId[],
                 isReady: true,
-                groupContext: null,
-                effectiveGroupContext: null,
-                effectiveGroupContextSourceTaskId: null,
-                orchestrationStatus: "unclaimed",
-                claimedBy: null,
-                claimExpiresAt: null,
-                failedAttempts: 0,
                 linkedDocs: [],
               })
             }
@@ -152,42 +125,13 @@ export const ReadyServiceLive = Layer.effect(
           return limited
         }
 
-        // Resolve context, claims, and failed attempts only for the final
-        // response set to avoid expensive queries across the full candidate backlog.
         const limitedIds = limited.map(task => task.id)
-        const directContextMap = yield* taskRepo.getGroupContextForMany(limitedIds)
-        const effectiveContextMap = yield* taskRepo.resolveEffectiveGroupContextForMany(limitedIds)
-        const failedCountsMap = attemptRepo
-          ? yield* attemptRepo.getFailedCountsForTasks(limitedIds)
-          : new Map<string, number>()
         const linkedDocsMap = docRepo
           ? yield* docRepo.getDocsForManyTasks(limitedIds)
           : new Map<string, readonly TaskLinkedDocRef[]>()
-        // Fetch latest claims to derive real orchestration status.
-        // excludeClaimed only filters active claims — tasks with released/expired
-        // claims still appear in the ready queue and need correct status.
-        const claimsMap = claimRepo
-          ? yield* claimRepo.findLatestByTaskIds(limitedIds)
-          : new Map<string, TaskClaim>()
-
         return limited.map((task) => {
-          const effective = effectiveContextMap.get(task.id)
-          const claim = claimsMap.get(task.id) ?? null
-          // When the claims system is unavailable, report null (not "unclaimed")
-          // to match enrichWithDeps / enrichWithDepsBatch behavior so the same
-          // task reports a consistent orchestrationStatus across all surfaces.
-          const orch = claimRepo
-            ? deriveOrchestrationStatus(claim, task.status, now)
-            : { orchestrationStatus: null as OrchestrationStatus | null, claimedBy: null, claimExpiresAt: null }
           return {
             ...task,
-            groupContext: directContextMap.get(task.id) ?? null,
-            effectiveGroupContext: effective?.context ?? null,
-            effectiveGroupContextSourceTaskId: effective?.sourceTaskId ?? null,
-            failedAttempts: failedCountsMap.get(task.id) ?? 0,
-            orchestrationStatus: orch.orchestrationStatus,
-            claimedBy: orch.claimedBy,
-            claimExpiresAt: orch.claimExpiresAt,
             linkedDocs: [...(linkedDocsMap.get(task.id) ?? task.linkedDocs)],
           }
         })
@@ -228,35 +172,6 @@ export const ReadyServiceLive = Layer.effect(
           const blockingIds = yield* depRepo.getBlockingIds(id)
           if (blockingIds.length === 0) return [] as Task[]
           return yield* taskRepo.findByIds(blockingIds)
-        }),
-
-      readyAndClaim: (workerId, leaseDurationMinutes, options) =>
-        Effect.gen(function* () {
-          // Fetch a small batch of candidates to try claiming
-          const candidates = yield* getReadyImpl(5, options)
-          if (candidates.length === 0) return null
-
-          // Try to claim each candidate in priority order
-          for (const task of candidates) {
-            const claimResult = yield* claimService.claim(task.id, workerId, leaseDurationMinutes).pipe(
-              Effect.map((claim) => {
-                const orch = deriveOrchestrationStatus(claim, task.status, new Date())
-                return {
-                  task: {
-                    ...task,
-                    orchestrationStatus: orch.orchestrationStatus,
-                    claimedBy: orch.claimedBy,
-                    claimExpiresAt: orch.claimExpiresAt,
-                  },
-                  claim,
-                } satisfies ReadyAndClaimResult
-              }),
-              Effect.catchTag("AlreadyClaimedError", () => Effect.succeed(null)),
-              Effect.catchTag("TaskNotFoundError", () => Effect.succeed(null))
-            )
-            if (claimResult !== null) return claimResult
-          }
-          return null
         })
     }
   })

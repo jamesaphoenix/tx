@@ -1,4 +1,3 @@
-import { CliExitError } from "../cli-exit.js"
 /**
  * Bulk commands: batch operations on multiple tasks
  */
@@ -6,6 +5,7 @@ import { CliExitError } from "../cli-exit.js"
 import { Effect } from "effect"
 import { TaskService, ReadyService } from "@jamesaphoenix/tx"
 import { type Flags, flag, parseTaskId } from "../utils/parse.js"
+import { unknownSubcommandError, usageError, validationError } from "../cli-errors.js"
 import { toJson } from "../output.js"
 
 interface BulkResult {
@@ -41,9 +41,8 @@ export const bulk = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const subcommand = pos[0]
     if (!subcommand) {
-      console.error("Usage: tx bulk <done|score|reset|delete> <id...> [options]")
-      console.error("Run 'tx bulk --help' for more information")
-      throw new CliExitError(1)
+      return yield* Effect.fail(usageError({message:"A bulk operation is required.",
+        usage:"tx task bulk <done|score|reset|delete> <id...> [options]"}))
     }
 
     switch (subcommand) {
@@ -56,27 +55,26 @@ export const bulk = (pos: string[], flags: Flags) =>
       case "delete":
         return yield* bulkDelete(pos.slice(1), flags)
       default:
-        console.error(`Unknown bulk subcommand: ${subcommand}`)
-        console.error("Valid subcommands: done, score, reset, delete")
-        throw new CliExitError(1)
+        return yield* Effect.fail(unknownSubcommandError({command:"task bulk",subcommand,
+          usage:"tx task bulk <done|score|reset|delete> <id...> [options]"}))
     }
   })
 
 const bulkDone = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     if (pos.length === 0) {
-      console.error("Usage: tx bulk done <id> [id...] [--human] [--json]")
-      throw new CliExitError(1)
+      return yield* Effect.fail(usageError({message:"At least one task ID is required.",
+        usage:"tx task bulk done <id> [id...] [--human] [--json]"}))
     }
 
+    const ids = pos.map(parseTaskId)
     const taskSvc = yield* TaskService
     const readySvc = yield* ReadyService
 
     const result: BulkResult = { succeeded: [], failed: [] }
     const allUnblocked: string[] = []
 
-    for (const raw of pos) {
-      const id = parseTaskId(raw)
+    for (const id of ids) {
       const op = yield* Effect.either(
         Effect.gen(function* () {
           // Get tasks blocked by this one BEFORE marking complete
@@ -113,23 +111,23 @@ const bulkDone = (pos: string[], flags: Flags) =>
 const bulkScore = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     if (pos.length < 2) {
-      console.error("Usage: tx bulk score <score> <id> [id...] [--json]")
-      throw new CliExitError(1)
+      return yield* Effect.fail(usageError({message:"A score and at least one task ID are required.",
+        usage:"tx task bulk score <score> <id> [id...] [--json]"}))
     }
 
-    const scoreVal = parseInt(pos[0], 10)
-    if (Number.isNaN(scoreVal)) {
-      console.error(`Invalid score: "${pos[0]}" is not a valid number`)
-      throw new CliExitError(1)
+    const scoreVal = Number(pos[0])
+    if (!/^-?\d+$/.test(pos[0]) || !Number.isSafeInteger(scoreVal)) {
+      return yield* Effect.fail(validationError({message:`Invalid score: "${pos[0]}" must be a safe integer.`,
+        usage:"tx task bulk score <score> <id> [id...] [--json]",
+        details:{received:pos[0],expected:"safe-integer"}}))
     }
 
-    const ids = pos.slice(1)
+    const ids = pos.slice(1).map(parseTaskId)
     const taskSvc = yield* TaskService
 
     const result: BulkResult = { succeeded: [], failed: [] }
 
-    for (const raw of ids) {
-      const id = parseTaskId(raw)
+    for (const id of ids) {
       const op = yield* Effect.either(taskSvc.update(id, { score: scoreVal }))
 
       if (op._tag === "Right") {
@@ -149,16 +147,16 @@ const bulkScore = (pos: string[], flags: Flags) =>
 const bulkReset = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     if (pos.length === 0) {
-      console.error("Usage: tx bulk reset <id> [id...] [--json]")
-      throw new CliExitError(1)
+      return yield* Effect.fail(usageError({message:"At least one task ID is required.",
+        usage:"tx task bulk reset <id> [id...] [--json]"}))
     }
 
+    const ids = pos.map(parseTaskId)
     const taskSvc = yield* TaskService
 
     const result: BulkResult = { succeeded: [], failed: [] }
 
-    for (const raw of pos) {
-      const id = parseTaskId(raw)
+    for (const id of ids) {
       const op = yield* Effect.either(taskSvc.forceStatus(id, "ready"))
 
       if (op._tag === "Right") {
@@ -178,16 +176,16 @@ const bulkReset = (pos: string[], flags: Flags) =>
 const bulkDelete = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     if (pos.length === 0) {
-      console.error("Usage: tx bulk delete <id> [id...] [--json]")
-      throw new CliExitError(1)
+      return yield* Effect.fail(usageError({message:"At least one task ID is required.",
+        usage:"tx task bulk delete <id> [id...] [--json]"}))
     }
 
+    const ids = pos.map(parseTaskId)
     const taskSvc = yield* TaskService
 
     const result: BulkResult = { succeeded: [], failed: [] }
 
-    for (const raw of pos) {
-      const id = parseTaskId(raw)
+    for (const id of ids) {
       const op = yield* Effect.either(taskSvc.remove(id))
 
       if (op._tag === "Right") {

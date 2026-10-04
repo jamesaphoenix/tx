@@ -1,3 +1,4 @@
+import { makeMinimalLayerFromInfra } from "@jamesaphoenix/tx"
 /**
  * Golden Path: Task Lifecycle Integration Tests
  *
@@ -13,55 +14,18 @@ import { describe, it, expect, beforeEach } from "vitest"
 import { Effect, Layer } from "effect"
 import {
   SqliteClient,
-  TaskRepositoryLive,
-  DependencyRepositoryLive,
-  TaskServiceLive,
   TaskService,
-  ReadyServiceLive,
   ReadyService,
   isReadyResult,
-  HierarchyServiceLive,
-  AutoSyncServiceNoop,
-  GuardRepositoryLive,
-  PinRepositoryLive,
-  ClaimRepositoryLive,
-  ClaimServiceLive,
-  OrchestratorStateRepositoryLive
 } from "@jamesaphoenix/tx"
-import { fixtureId, createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx/testing"
+import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx/testing"
 import { seedFixtures, FIXTURES } from "../fixtures.js"
 
 // =============================================================================
 // Test Layer Factory
 // =============================================================================
 
-function makeTestLayer(db: TestDatabase) {
-  const infra = Layer.succeed(SqliteClient, db.db as any)
-  const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive, GuardRepositoryLive,
-  PinRepositoryLive, ClaimRepositoryLive, OrchestratorStateRepositoryLive).pipe(
-    Layer.provide(infra)
-  )
-  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
-  const services = Layer.mergeAll(
-    TaskServiceLive,
-    ReadyServiceLive,
-    HierarchyServiceLive
-  ).pipe(
-    Layer.provide(Layer.mergeAll(repos, AutoSyncServiceNoop, claimService))
-  )
-  return services
-}
-
-// =============================================================================
-// Golden Path Fixture IDs
-// =============================================================================
-
-const _GOLDEN_PATH = {
-  TASK_FEATURE: fixtureId("golden-path:feature"),
-  TASK_SUBTASK_1: fixtureId("golden-path:subtask-1"),
-  TASK_SUBTASK_2: fixtureId("golden-path:subtask-2"),
-  TASK_SUBTASK_3: fixtureId("golden-path:subtask-3"),
-} as const
+function makeTestLayer(db: TestDatabase) { return makeMinimalLayerFromInfra(Layer.succeed(SqliteClient, db.db as any)) }
 
 // =============================================================================
 // Golden Path: Basic Task Lifecycle
@@ -261,7 +225,7 @@ describe("Golden Path: Ready Detection", () => {
     layer = makeTestLayer(db)
   })
 
-  it("ready tasks are sorted by score descending", async () => {
+  it("task ready tasks are sorted by score descending", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const readySvc = yield* ReadyService
@@ -279,7 +243,7 @@ describe("Golden Path: Ready Detection", () => {
     expect(result.length).toBeGreaterThan(0)
   })
 
-  it("ready respects limit parameter", async () => {
+  it("task ready respects limit parameter", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const readySvc = yield* ReadyService
@@ -328,7 +292,7 @@ describe("Golden Path: Task Updates", () => {
     layer = makeTestLayer(db)
   })
 
-  it("update changes specified fields only", async () => {
+  it("task update changes specified fields only", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const taskSvc = yield* TaskService
@@ -376,7 +340,7 @@ describe("Golden Path: Task Updates", () => {
     expect(result.done.completedAt).toBeDefined()
   })
 
-  it("delete removes task completely", async () => {
+  it("task delete removes task completely", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const taskSvc = yield* TaskService

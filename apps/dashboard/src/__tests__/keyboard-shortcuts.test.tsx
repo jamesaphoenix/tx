@@ -30,13 +30,6 @@ function createTask(overrides: Partial<TaskWithDeps> = {}): TaskWithDeps {
     blocks: [],
     children: [],
     isReady: true,
-    groupContext: null,
-    effectiveGroupContext: null,
-    effectiveGroupContextSourceTaskId: null,
-    orchestrationStatus: null,
-    claimedBy: null,
-    claimExpiresAt: null,
-    failedAttempts: 0,
     ...overrides,
   }
 }
@@ -102,8 +95,8 @@ function setupEmptyApiMocks() {
     http.get('/api/labels', () =>
       HttpResponse.json({ labels: [] })
     ),
-    http.get('/api/runs', () =>
-      HttpResponse.json({ runs: [], nextCursor: null, hasMore: false })
+    http.get('/api/spec/health', () =>
+      HttpResponse.json({status:'synced',specTest:{total:0,covered:0,uncovered:0,coveragePercent:0,passing:0,failing:0,untested:0,docsComplete:0,docsHarden:0,docsBuild:0},decisions:{pending:0,approvedUnsynced:0,total:0},docDrift:{driftedDocs:0,totalDocs:0},docs:[]})
     ),
     http.get('/api/docs', () =>
       HttpResponse.json({ docs: [] })
@@ -142,6 +135,13 @@ describe('Keyboard shortcuts', () => {
       </QueryClientProvider>
     )
   }
+
+  it('restores the requested document tab on refresh', async () => {
+    window.history.replaceState({}, "", "/?tab=docs&docId=doc-111111111111&version=1")
+    renderApp()
+    expect(await screen.findByText('Select a document to view details')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Documents$/ })).toHaveClass('bg-blue-600')
+  })
 
   describe('CMD+A selects all loaded items on Tasks tab', () => {
     it('selects tasks from first page', async () => {
@@ -444,7 +444,7 @@ describe('Keyboard shortcuts', () => {
   })
 
   describe('CMD+A after tab transitions', () => {
-    it('selects all tasks after navigating Runs -> Tasks', async () => {
+    it('selects all tasks after navigating Spec Health -> Tasks', async () => {
       const tasks = [
         createTask({ id: 'tx-runs-to-tasks-1', title: 'Runs to Tasks 1' }),
         createTask({ id: 'tx-runs-to-tasks-2', title: 'Runs to Tasks 2' }),
@@ -465,10 +465,10 @@ describe('Keyboard shortcuts', () => {
       renderApp()
 
       act(() => {
-        fireEvent.click(screen.getByRole('button', { name: 'Runs' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Spec Health' }))
       })
       await waitFor(() => {
-        expect(screen.getByText('No runs found')).toBeInTheDocument()
+        expect(screen.getByText(/No specifications yet/)).toBeInTheDocument()
       })
 
       act(() => {
@@ -489,7 +489,7 @@ describe('Keyboard shortcuts', () => {
       })
     })
 
-    it('selects all docs after navigating Runs -> Docs', async () => {
+    it('selects all docs after navigating Spec Health -> Docs', async () => {
       const docs = [
         {
           id: 1,
@@ -528,14 +528,14 @@ describe('Keyboard shortcuts', () => {
       renderApp()
 
       act(() => {
-        fireEvent.click(screen.getByRole('button', { name: 'Runs' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Spec Health' }))
       })
       await waitFor(() => {
-        expect(screen.getByText('No runs found')).toBeInTheDocument()
+        expect(screen.getByText(/No specifications yet/)).toBeInTheDocument()
       })
 
       act(() => {
-        fireEvent.click(screen.getByRole('button', { name: 'Specs' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Documents' }))
       })
 
       await waitFor(() => {
@@ -866,15 +866,15 @@ describe('Keyboard shortcuts', () => {
       })
     })
 
-    it('opens task composer from Runs tab via global CTRL+N fallback', async () => {
+    it('opens task composer from Spec Health tab via global CTRL+N fallback', async () => {
       renderApp()
 
       act(() => {
-        fireEvent.click(screen.getByRole('button', { name: 'Runs' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Spec Health' }))
       })
 
       await waitFor(() => {
-        expect(screen.getByText('No runs found')).toBeInTheDocument()
+        expect(screen.getByText(/No specifications yet/)).toBeInTheDocument()
       })
 
       act(() => {

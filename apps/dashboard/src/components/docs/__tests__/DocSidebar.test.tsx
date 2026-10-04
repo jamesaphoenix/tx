@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
-import { render, screen, waitFor } from "@testing-library/react"
+import { render, screen, waitFor, within } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { http, HttpResponse } from "msw"
 import { server } from "../../../../test/setup"
+import userEvent from "@testing-library/user-event"
 import { DocSidebar } from "../DocSidebar"
 import type { DocSerialized, DocGraphResponse } from "../../../api/client"
 
@@ -76,7 +77,7 @@ function createTestQueryClient() {
   })
 }
 
-function renderWithProviders() {
+function renderWithProviders(props: Partial<Parameters<typeof DocSidebar>[0]> = {}) {
   const queryClient = createTestQueryClient()
   return render(
     <QueryClientProvider client={queryClient}>
@@ -91,6 +92,7 @@ function renderWithProviders() {
         onStatusFilterChange={vi.fn()}
         selectedDocRefs={new Set<string>()}
         onToggleSelectDoc={vi.fn()}
+        {...props}
       />
     </QueryClientProvider>,
   )
@@ -116,6 +118,14 @@ describe("DocSidebar", () => {
     server.resetHandlers()
   })
 
+  it("lists configured kinds alongside the four built-ins without prototype collisions", async () => {
+    server.use(http.get("/api/docs", () => HttpResponse.json({docs:[{...docsFixture[0],kind:"constructor",name:"building-notes",title:"Construction notes"}]})))
+    renderWithProviders()
+    expect(await screen.findByRole("option",{name:"constructor"})).toHaveValue("constructor")
+    expect(screen.getByRole("button",{name:/Construction notes/})).toBeInTheDocument()
+    for (const label of ["Overview","PRD","Design","Plan"]) expect(screen.getByRole("option",{name:label})).toBeInTheDocument()
+  })
+
   it("renders grouped docs view by default", async () => {
     renderWithProviders()
 
@@ -137,9 +147,22 @@ describe("DocSidebar", () => {
     })
 
     // Verify kind badges are rendered
-    expect(screen.getByText("OV")).toBeInTheDocument()
-    expect(screen.getByText("PRD")).toBeInTheDocument()
-    expect(screen.getByText("DD")).toBeInTheDocument()
+    expect(within(screen.getByRole("button",{name:/Dashboard Overview/})).getByText("Overview")).toBeInTheDocument()
+    expect(within(screen.getByRole("button",{name:/Dashboard Product Requirements/})).getByText("PRD")).toBeInTheDocument()
+    expect(within(screen.getByRole("button",{name:/Dashboard Design/})).getByText("Design")).toBeInTheDocument()
     expect(screen.getByText("DD-001-dashboard")).toBeInTheDocument()
+  })
+
+  it("lets the keyboard select a document without opening its details", async () => {
+    const select = vi.fn()
+    const toggle = vi.fn()
+    const user = userEvent.setup()
+    renderWithProviders({onSelectDoc:select,onToggleSelectDoc:toggle})
+    const checkbox = await screen.findByRole("checkbox",{name:"Select Dashboard Overview (v1)"})
+    checkbox.focus()
+    expect(checkbox).toHaveFocus()
+    await user.keyboard(" ")
+    expect(toggle).toHaveBeenCalledWith("doc-111111111111:1")
+    expect(select).not.toHaveBeenCalled()
   })
 })

@@ -1,7 +1,7 @@
 {
   "name": "@jamesaphoenix/tx-agent-sdk",
-  "version": "0.19.0",
-  "description": "TypeScript SDK for building custom agents with TX task management",
+  "version": "0.20.0",
+  "description": "Tasks, specifications, plans and verification evidence for coding agents and humans",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -28,7 +28,7 @@
     "!dist/**/*.test.*"
   ],
   "scripts": {
-    "build": "tsc -b",
+    "build": "rm -rf dist && tsc -b --force",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
     "test": "bunx --bun vitest run --passWithNoTests"
@@ -37,21 +37,23 @@
     "@jamesaphoenix/tx": "*"
   },
   "optionalDependencies": {
-    "effect": "^3.19.15"
+    "effect": "^3.22.2"
   },
   "devDependencies": {
     "@types/bun": "^1.2.0",
     "@types/node": "^26.1.2",
-    "effect": "^3.19.15",
-    "typescript": "^5.7.0",
-    "vitest": "^4.0.18"
+    "effect": "^3.22.2",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "vitest": "^5.0.1",
+    "@typescript/native": "npm:typescript@^7.0.2"
   },
   "keywords": [
-    "tx",
-    "agent",
-    "sdk",
-    "task-management",
-    "ai-agents"
+    "tasks",
+    "spec-driven-development",
+    "plans",
+    "invariants",
+    "cli",
+    "mcp"
   ],
   "repository": {
     "type": "git",

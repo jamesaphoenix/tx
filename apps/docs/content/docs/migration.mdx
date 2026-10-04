@@ -1,0 +1,40 @@
+---
+title: v0.20 migration
+description: Task namespace and retired runtime capabilities
+---
+
+## v0.20 migration
+
+Task commands now require `tx task`: replace `tx add` with `tx task add`,
+and `tx dep block` with `tx task dep block`. Old syntax fails with a replacement
+hint before opening the database. Run `tx task --help` for the full namespace.
+
+Decision review, memory, learnings, pins, claims, messaging, guards, task shell verification,
+reflection, automated decomposition, agent execution, Ralph and watchdog are retired.
+Ordinary labels and dashboard planning cycles remain. Existing tables and migration
+history are retained. Import validates historical stream events, reports recognised
+retired events as ignored, and rejects malformed or unknown events. Hydrate reapplies
+retained projections without truncating existing tables. Back up `.tx/` before upgrading.
+
+The four built-in document kinds are `overview`, `prd`, `design` and `plan`.
+Existing historical documents remain readable. New `requirement` and `system_design`
+commands print a deprecation hint and create `prd` and `design` documents instead.
+Move manual invariant commands under `tx spec invariant`. Markdown task export is
+now `tx task export`. `tx decision` has no replacement: keep requirements and
+technical choices in the design document, then save the implementation plan.
+
+
+Re-run `tx spec discover` to classify production `@spec` annotations as source
+references. They remain visible in the matrix and no longer block executed test
+completion. Review a document-scoped `--dry-run` before pruning stale mappings;
+manual mappings are preserved.
+
+New configuration scaffolds discover tests in `apps/`, `packages/` and other folders,
+including `.test.tsx` component tests and pgTAP SQL files. Existing explicit
+`[spec].test_patterns` are preserved. Review your patterns if these files are
+missing from the matrix; review the `[spec]` section in `.tx/config.toml`.
+
+Document-scoped sign-offs now return the stable document ID in `scopeValue`.
+Pass that ID, `kind/name` or an unambiguous name to `--doc`. Legacy approvals
+remain valid while the name identifies one document; a second document of a
+different kind does not inherit that approval.

@@ -1,4 +1,4 @@
-import { CliExitError } from "../cli-exit.js"
+import { usageError } from "../cli-errors.js"
 /**
  * Dependency commands: block, unblock
  */
@@ -13,8 +13,7 @@ export const block = (pos: string[], flags: Flags) =>
     const rawId = pos[0]
     const rawBlocker = pos[1]
     if (!rawId || !rawBlocker) {
-      console.error("Usage: tx dep block <task-id> <blocker-id> [--json]")
-      throw new CliExitError(1)
+      return yield* Effect.fail(usageError({command:"task dep block",message:"Missing task IDs.",usage:"tx task dep block <task-id> <blocker-id> [--json]"}))
     }
     const id = parseTaskId(rawId)
     const blocker = parseTaskId(rawBlocker)
@@ -38,8 +37,7 @@ export const unblock = (pos: string[], flags: Flags) =>
     const rawId = pos[0]
     const rawBlocker = pos[1]
     if (!rawId || !rawBlocker) {
-      console.error("Usage: tx dep unblock <task-id> <blocker-id> [--json]")
-      throw new CliExitError(1)
+      return yield* Effect.fail(usageError({command:"task dep unblock",message:"Missing task IDs.",usage:"tx task dep unblock <task-id> <blocker-id> [--json]"}))
     }
     const id = parseTaskId(rawId)
     const blocker = parseTaskId(rawBlocker)

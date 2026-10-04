@@ -1,0 +1,36 @@
+---
+title: Interfaces
+description: CLI, dashboard, REST, MCP and TypeScript
+---
+
+Install `@jamesaphoenix/tx-cli` for `tx`, `tx-api` and `tx-mcp`.
+Run the dashboard from a source checkout. It opens the caller's task database and
+document files:
+
+```bash
+git clone https://github.com/jamesaphoenix/tx.git
+cd tx
+bun install
+bun run dev -- diag dashboard
+```
+
+Use it for Tasks, Documents, Spec Health and optional planning cycles. Edit a task
+title by clicking it. Follow the recorded links between designs, plans and tasks.
+Document links preserve the exact version when you refresh or share the URL.
+
+An occupied API port is left running. Choose another with `--port 3002`.
+`--vite-port 5174` chooses the preferred UI port; the launcher prints the actual URL.
+For shared-state worktrees, add `--state-root /path/to/main --content-root /path/to/worktree`.
+
+```typescript
+import { TxClient } from "@jamesaphoenix/tx-agent-sdk"
+const client = new TxClient({ apiUrl: "http://localhost:3456" })
+const ready = await client.tasks.ready()
+const health = await client.spec.health()
+```
+
+Use `tx-api --help` and `tx-mcp --help` for startup options.
+Direct SDK mode accepts stateRoot and contentRoot for shared-state worktrees.
+
+The dashboard API binds to `127.0.0.1` and accepts local browser origins. It is a
+local project tool. Use the REST API when building an authenticated remote integration.

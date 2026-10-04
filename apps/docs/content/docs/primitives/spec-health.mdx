@@ -1,0 +1,44 @@
+---
+doc_style: guide
+title: tx spec health
+description: Inspect coverage, evidence and document drift
+---
+
+## Purpose
+
+See missing mappings, untested or failing evidence, document drift and spec phases
+in one place. The CLI, REST, MCP, SDK and dashboard share the same calculation.
+
+## Commands
+
+```bash
+tx spec health
+tx spec health --json
+```
+
+Other interfaces: `GET /api/spec/health`, MCP `tx_spec_health`, and SDK
+`client.spec.health()`. See [Interfaces](../interfaces).
+
+## Workflow
+
+Follow missing mappings to [tx spec](./spec-trace), run tests for missing evidence,
+and reconcile changed docs before review. Mapping code or tests does not record a
+passing result. Test evidence and human sign-off remain separate.
+
+Health lists the latest version of each document once, with its stable ID,
+version, invariant count, passing/failing/missing results and review blockers.
+Follow a dashboard row to that exact document version. Plans without invariants
+show **No invariants** and need no verification sign-off. Historical versions
+remain accessible through Documents or `tx doc show --doc-version <n>`.
+
+Coverage counts mapped invariants, even if their tests have not run. Use the
+passing, failing and missing-evidence counts to judge execution. A mapped test is
+not proof that an invariant holds.
+
+The dashboard names the next check directly: missing mappings, missing evidence,
+failing evidence, changed document content or awaiting human sign-off. The API's
+`synced`, `drifting` and `broken` summary values remain stable for integrations.
+
+Failed evidence reads return an error. An empty workspace says that no specs exist.
+The dashboard's Document Checks panel checks document structure; Spec Health also
+includes execution evidence and sign-off.

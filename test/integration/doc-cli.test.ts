@@ -1,7 +1,10 @@
+const normaliseTaskCommand = (args: string[]): string[] => /^(add|list|ready|show|update|done|reset|delete|bulk|label|dep|block|unblock|children|tree)$/.test(args[0] ?? "") ? ["task", ...(/^(block|unblock|children|tree)$/.test(args[0]) ? ["dep"] : []), ...args] : args
+import { Database } from "bun:sqlite"
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { spawnSync } from "node:child_process"
 import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
+import { parse as parseYaml } from "yaml"
 import { join, resolve } from "node:path"
 
 const CLI_SRC = resolve(__dirname, "../../apps/cli/src/cli.ts")
@@ -16,7 +19,9 @@ interface ExecResult {
   stderr: string
 }
 
-function runTx(args: string[], cwd: string): ExecResult {
+function runTx(args: string[], cwd: string, env?: NodeJS.ProcessEnv): ExecResult {
+  args = normaliseTaskCommand(args)
+
   const runner = HAS_BUN ? BUN_BIN : process.execPath
   const runnerArgs = HAS_BUN
     ? [CLI_SRC, ...args]
@@ -26,6 +31,7 @@ function runTx(args: string[], cwd: string): ExecResult {
     cwd,
     encoding: "utf-8",
     timeout: 60000,
+    env: env ? {...process.env, ...env} : process.env,
   })
   return {
     status: res.status ?? 1,
@@ -261,6 +267,109 @@ describe("tx doc lifecycle coverage", () => {
     if (existsSync(tmpProjectDir)) {
       rmSync(tmpProjectDir, { recursive: true, force: true })
     }
+  })
+
+  it.each(['"version"',"'version'",'"ver\\u0073ion"'])("versions valid quoted YAML keys without changing plan bodies: %s", key => {
+    expect(runTx(["doc","add","plan","quoted-version"],tmpProjectDir).status).toBe(0)
+    const path = join(tmpProjectDir,"specs","plan","quoted-version.md")
+    const source = readFileSync(path,"utf8").replace(/^version: 1$/m,`${key}: 1 # managed version`).replace(/\n/g,"\r\n")
+    writeFileSync(path,source)
+    expect(runTx(["doc","sync","quoted-version"],tmpProjectDir).status).toBe(0)
+    expect(runTx(["doc","lock","quoted-version"],tmpProjectDir).status).toBe(0)
+    const version = runTx(["doc","version","quoted-version"],tmpProjectDir)
+    expect(version.status,version.stderr).toBe(0)
+    const updated = readFileSync(path,"utf8")
+    expect(updated.split("\r\n---\r\n")[1]).toBe(source.split("\r\n---\r\n")[1])
+    expect((parseYaml(updated.split("\r\n---\r\n")[0]!.slice(5)) as {version:number}).version).toBe(2)
+    expect(updated).toContain("# managed version")
+    const sync = runTx(["doc","sync","quoted-version"],tmpProjectDir)
+    expect(sync.status,sync.stderr).toBe(0)
+    const current = runTx(["doc","show","quoted-version","--json"],tmpProjectDir)
+    expect(JSON.parse(current.stdout).version).toBe(2)
+  })
+
+  it("preserves locked version source and syncs only the current working documents [INV-LEAN-006]", () => {
+    expect(runTx(["doc", "add", "design", "versioned-source"], tmpProjectDir).status).toBe(0)
+    const mdPath = join(tmpProjectDir, "specs", "design", "versioned-source.md")
+    const original = readFileSync(mdPath, "utf8")
+    expect(runTx(["doc", "lock", "versioned-source"], tmpProjectDir).status).toBe(0)
+    const version = runTx(["doc", "version", "versioned-source", "--json"], tmpProjectDir)
+    expect(version.status, version.stderr).toBe(0)
+    const current = JSON.parse(version.stdout) as { docId: string; version: number }
+    expect(current.version).toBe(2)
+    const working = readFileSync(mdPath, "utf8")
+    expect(working).toContain("version: 2")
+    writeFileSync(mdPath, working + "\nWorking version two changes.\n")
+    for (const ref of [current.docId,"design/versioned-source","versioned-source"]) {
+      const historical = runTx(["doc", "show", ref, "--doc-version", "1", "--md"], tmpProjectDir)
+      expect(historical.status, historical.stderr).toBe(0)
+      expect(historical.stdout.trimEnd()).toBe(original.trimEnd())
+    }
+    const synced = runTx(["doc", "sync", "--json"], tmpProjectDir)
+    expect(synced.status, synced.stderr).toBe(0)
+    expect(JSON.parse(synced.stdout).synced).toBe(1)
+    const latest = runTx(["doc", "show", current.docId, "--md"], tmpProjectDir)
+    expect(latest.stdout).toContain("Working version two changes.")
+  })
+
+  it("restores working source and metadata when creating a version fails [INV-LEAN-006]", () => {
+    expect(runTx(["doc", "add", "plan", "failed-version"], tmpProjectDir).status).toBe(0)
+    expect(runTx(["doc", "lock", "failed-version"], tmpProjectDir).status).toBe(0)
+    const mdPath = join(tmpProjectDir, "specs", "plan", "failed-version.md")
+    const original = readFileSync(mdPath, "utf8")
+    const db = new Database(join(tmpProjectDir, ".tx", "tasks.db"))
+    try {
+      db.run("CREATE TRIGGER reject_doc_version BEFORE INSERT ON docs WHEN NEW.version = 2 BEGIN SELECT RAISE(ABORT, 'version insertion rejected'); END")
+    } finally { db.close() }
+    const failed = runTx(["doc", "version", "failed-version", "--json"], tmpProjectDir)
+    expect(failed.status).not.toBe(0)
+    const current = runTx(["doc", "show", "failed-version", "--json"], tmpProjectDir)
+    const doc = JSON.parse(current.stdout) as {docId:string;version:number;filePath:string}
+    expect(doc).toMatchObject({version:1,filePath:"plan/failed-version.md"})
+    expect(readFileSync(mdPath, "utf8")).toBe(original)
+    expect(existsSync(join(tmpProjectDir, "specs", ".versions", doc.docId, "v1.md"))).toBe(false)
+  })
+
+  it("rejects versioning changed locked content and leaves the locked file intact", () => {
+    expect(runTx(["doc", "add", "plan", "locked-content"], tmpProjectDir).status).toBe(0)
+    expect(runTx(["doc", "lock", "locked-content"], tmpProjectDir).status).toBe(0)
+    const mdPath = join(tmpProjectDir, "specs", "plan", "locked-content.md")
+    const changed = readFileSync(mdPath, "utf8") + "\nUnsynchronised edit.\n"
+    writeFileSync(mdPath, changed)
+    const failed = runTx(["doc", "version", "locked-content"], tmpProjectDir)
+    expect(failed.status).not.toBe(0)
+    expect(failed.stderr).toContain("Restore its locked content")
+    expect(readFileSync(mdPath, "utf8")).toBe(changed)
+    expect(JSON.parse(runTx(["doc", "sync", "--json"], tmpProjectDir).stdout).synced).toBe(0)
+    for (const value of ["0","-1","2.5","no"]) {
+      expect(runTx(["doc", "show", "locked-content", "--doc-version", value], tmpProjectDir).status).not.toBe(0)
+    }
+  })
+
+  it("rejects editing locked documents before invoking the editor", () => {
+    expect(runTx(["doc", "add", "plan", "locked-editor"], tmpProjectDir).status).toBe(0)
+    expect(runTx(["doc", "lock", "locked-editor"], tmpProjectDir).status).toBe(0)
+    const mdPath = join(tmpProjectDir, "specs", "plan", "locked-editor.md")
+    const original = readFileSync(mdPath, "utf8")
+    const editor = join(tmpProjectDir,"editor.mjs")
+    const marker = join(tmpProjectDir,"editor-invoked")
+    writeFileSync(editor, `import {writeFileSync} from "node:fs"; writeFileSync(${JSON.stringify(marker)}, "called"); writeFileSync(process.argv[2], "overwritten");`)
+    const failed = runTx(["doc", "edit", "locked-editor"], tmpProjectDir, {EDITOR:`${BUN_BIN} ${editor}`})
+    expect(failed.status).not.toBe(0)
+    expect(existsSync(marker)).toBe(false)
+    expect(readFileSync(mdPath,"utf8")).toBe(original)
+  })
+
+  it("rejects source paths outside the document root", () => {
+    expect(runTx(["doc", "add", "plan", "outside-source"], tmpProjectDir).status).toBe(0)
+    writeFileSync(join(tmpProjectDir,"outside.txt"),"Unrelated local content.")
+    const db = new Database(join(tmpProjectDir,".tx","tasks.db"))
+    try { db.run("UPDATE docs SET file_path = '../outside.txt' WHERE name = 'outside-source'") }
+    finally { db.close() }
+    const failed = runTx(["doc","show","outside-source","--md"],tmpProjectDir)
+    expect(failed.status).not.toBe(0)
+    expect(failed.stdout).not.toContain("Unrelated local content.")
+    expect(failed.stderr).toContain("escapes the docs root")
   })
 
   it("supports lock + version for PRDs", () => {
@@ -508,7 +617,7 @@ describe("tx doc lifecycle coverage", () => {
   })
 
   it("validate reflects unlinked tasks and clears after attach", () => {
-    const addTask = runTx(["add", "Implement docs flow", "--json"], tmpProjectDir)
+    const addTask = runTx(["task", "add", "Implement docs flow", "--json"], tmpProjectDir)
     expect(addTask.status).toBe(0)
     const task = JSON.parse(addTask.stdout) as { id: string }
 
@@ -552,7 +661,7 @@ describe("tx doc lifecycle coverage", () => {
   })
 
   it("detects content drift after markdown mutation", () => {
-    const addTask = runTx(["add", "Drift task", "--json"], tmpProjectDir)
+    const addTask = runTx(["task", "add", "Drift task", "--json"], tmpProjectDir)
     expect(addTask.status).toBe(0)
     const task = JSON.parse(addTask.stdout) as { id: string }
 
@@ -973,11 +1082,14 @@ describe("tx doc lifecycle coverage", () => {
   it("shows usage and flag errors for invariant show/record argument guards", () => {
     const showUsage = runTx(["invariant", "show"], tmpProjectDir)
     expect(showUsage.status).not.toBe(0)
-    expect(showUsage.stderr).toContain("Usage: tx invariant show <id>")
+    expect(showUsage.stderr).toContain("Usage: tx spec invariant show <id>")
 
     const recordMissingFlags = runTx(["invariant", "record", "INV-ANY"], tmpProjectDir)
     expect(recordMissingFlags.status).not.toBe(0)
-    expect(recordMissingFlags.stderr).toContain("Must specify --passed or --failed")
+    expect(recordMissingFlags.stderr).toContain("Specify exactly one of --passed or --failed")
+    const conflictingFlags = runTx(["spec", "invariant", "record", "INV-ANY", "--passed", "--failed"], tmpProjectDir)
+    expect(conflictingFlags.status).not.toBe(0)
+    expect(conflictingFlags.stderr).toContain("Specify exactly one of --passed or --failed")
   })
 
   it("fails doc-scoped invariant sync when the requested doc does not exist", () => {

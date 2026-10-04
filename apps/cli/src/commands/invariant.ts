@@ -6,7 +6,7 @@ import { Effect } from "effect"
 import { DocService } from "@jamesaphoenix/tx"
 import { toJson } from "../output.js"
 import { type Flags, flag, opt } from "../utils/parse.js"
-import { CliExitError } from "../cli-exit.js"
+import { CliUserError, unknownSubcommandError, usageError } from "../cli-errors.js"
 
 /** Dispatch invariant subcommands. */
 export const invariant = (pos: string[], flags: Flags) => {
@@ -18,11 +18,8 @@ export const invariant = (pos: string[], flags: Flags) => {
     case "record": return invariantRecord(rest, flags)
     case "sync": return invariantSync(rest, flags)
     default:
-      return Effect.sync(() => {
-        console.error(`Unknown invariant subcommand: ${sub ?? "(none)"}`)
-        console.error("Run 'tx invariant --help' for usage information")
-        throw new CliExitError(1)
-      })
+      return Effect.fail(unknownSubcommandError({command:"spec invariant",subcommand:sub ?? "(none)",
+        usage:"tx spec invariant <list|show|sync|record> [options]"}))
   }
 }
 
@@ -32,7 +29,7 @@ const invariantList = (_pos: string[], flags: Flags) =>
     const enforcement = opt(flags, "enforcement", "e") ?? undefined
 
     const svc = yield* DocService
-    const invariants = yield* svc.listInvariants({ subsystem, enforcement })
+    const invariants = yield* svc.listInvariants({ doc:opt(flags,"doc"), subsystem, enforcement })
 
     if (flag(flags, "json")) {
       console.log(toJson(invariants))
@@ -55,16 +52,17 @@ const invariantShow = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const id = pos[0]
     if (!id) {
-      console.error("Usage: tx invariant show <id>")
-      throw new CliExitError(1)
+      return yield* Effect.fail(usageError({message:"An invariant ID is required.",
+        usage:"tx spec invariant show <id> [--json]"}))
     }
 
     const svc = yield* DocService
     const all = yield* svc.listInvariants()
     const inv = all.find(i => i.id === id)
     if (!inv) {
-      console.error(`Invariant not found: ${id}`)
-      throw new CliExitError(1)
+      return yield* Effect.fail(new CliUserError({code:"service/invariant-not-found",
+        message:`Invariant not found: ${id}`,exitCode:2,
+        hint:"Run `tx spec invariant list` to see available invariants."}))
     }
 
     if (flag(flags, "json")) {
@@ -86,15 +84,15 @@ const invariantRecord = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const id = pos[0]
     if (!id) {
-      console.error("Usage: tx invariant record <id> --passed|--failed [--details <text>]")
-      throw new CliExitError(1)
+      return yield* Effect.fail(usageError({message:"An invariant ID is required.",
+        usage:"tx spec invariant record <id> --passed|--failed [--details <text>] [--json]"}))
     }
 
     const passed = flag(flags, "passed")
     const failed = flag(flags, "failed")
-    if (!passed && !failed) {
-      console.error("Must specify --passed or --failed")
-      throw new CliExitError(1)
+    if (passed === failed) {
+      return yield* Effect.fail(usageError({message:"Specify exactly one of --passed or --failed",
+        usage:"tx spec invariant record <id> --passed|--failed [--json]"}))
     }
 
     const details = opt(flags, "details", "d") ?? undefined
@@ -122,7 +120,7 @@ const invariantSync = (_pos: string[], flags: Flags) =>
       console.log(toJson({ synced: synced.length, invariants: synced }))
     } else {
       if (synced.length === 0) {
-        console.log("No invariants found in doc YAML files")
+        console.log("No invariants found in document schema blocks")
       } else {
         console.log(`Synced ${synced.length} invariant(s):`)
         for (const inv of synced) {

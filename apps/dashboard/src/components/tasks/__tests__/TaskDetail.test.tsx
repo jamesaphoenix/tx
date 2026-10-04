@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { http, HttpResponse } from 'msw'
 import { server } from '../../../../test/setup'
@@ -27,13 +27,6 @@ function createTask(overrides: Partial<TaskWithDeps> = {}): TaskWithDeps {
     blocks: [],
     children: [],
     isReady: true,
-    groupContext: null,
-    effectiveGroupContext: null,
-    effectiveGroupContextSourceTaskId: null,
-    orchestrationStatus: null,
-    claimedBy: null,
-    claimExpiresAt: null,
-    failedAttempts: 0,
     ...overrides,
   }
 }
@@ -64,14 +57,273 @@ function renderWithProviders(ui: React.ReactElement) {
 describe('TaskDetail', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    server.use(
+      http.get('/api/docs', () => HttpResponse.json({docs:[]})),
+      http.get('/api/docs/graph', () => HttpResponse.json({nodes:[],edges:[]})),
+      http.get('/api/labels', () => HttpResponse.json({labels:[]})),
+    )
   })
 
   afterEach(() => {
     server.resetHandlers()
   })
 
+  it('persists status from a standalone task detail and exposes failures for retry', async () => {
+    let task = createTask({id:'tx-standalone',status:'active'})
+    let fail = true
+    const patches: unknown[] = []
+    server.use(
+      http.get('/api/tasks/tx-standalone', () => HttpResponse.json({task,blockedByTasks:[],blocksTasks:[],childTasks:[]})),
+      http.patch('/api/tasks/tx-standalone', async ({request}) => {
+        const payload = await request.json() as {status:TaskWithDeps['status']}
+        patches.push(payload)
+        if (fail) return HttpResponse.json({error:'Database unavailable'},{status:503})
+        task = {...task,...payload}
+        return HttpResponse.json(task)
+      }),
+    )
+    const {queryClient} = renderWithProviders(<TaskDetail taskId="tx-standalone" onNavigateToTask={vi.fn()} />)
+    await screen.findByRole('heading',{name:'Test task'})
+    const chooseDone = () => {
+      const input = document.getElementById('react-select-task-detail-status-tx-standalone-input')!
+      fireEvent.keyDown(input,{key:'ArrowDown'})
+      fireEvent.click(document.getElementById('react-select-task-detail-status-tx-standalone-option-7')!)
+    }
+    chooseDone()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Database unavailable')
+    expect(queryClient.getQueryData<TaskDetailResponse>(['task','tx-standalone'])?.task.status).toBe('active')
+    fail = false
+    chooseDone()
+    await waitFor(() => expect(queryClient.getQueryData<TaskDetailResponse>(['task','tx-standalone'])?.task.status).toBe('done'))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(patches).toEqual([{status:'done'},{status:'done'}])
+  })
+
+  it('saves standalone assignments and prevents edits while the save is pending', async () => {
+    let task = createTask({id:'tx-standalone-assignment',assigneeType:'human',assigneeId:'alice'})
+    let release!: () => void
+    const pending = new Promise<void>(resolve => {release = resolve})
+    const patches: unknown[] = []
+    server.use(
+      http.get('/api/tasks/tx-standalone-assignment', () => HttpResponse.json({task,blockedByTasks:[],blocksTasks:[],childTasks:[]})),
+      http.patch('/api/tasks/tx-standalone-assignment', async ({request}) => {
+        const payload = await request.json() as Partial<TaskWithDeps>
+        patches.push(payload)
+        await pending
+        task = {...task,...payload}
+        return HttpResponse.json(task)
+      }),
+    )
+    renderWithProviders(<TaskDetail taskId="tx-standalone-assignment" onNavigateToTask={vi.fn()} />)
+    const input = await screen.findByRole('textbox',{name:'Assignee ID'})
+    await waitFor(() => expect(input).toHaveValue('alice'))
+    fireEvent.change(input,{target:{value:'bob'}})
+    fireEvent.keyDown(input,{key:'Enter'})
+    await waitFor(() => expect(input).toBeDisabled())
+    expect(document.getElementById('react-select-task-detail-assignee-type-tx-standalone-assignment-input')).toBeDisabled()
+    release()
+    await waitFor(() => expect(input).toBeEnabled())
+    expect(input).toHaveValue('bob')
+    expect(patches).toEqual([{assigneeType:'human',assigneeId:'bob',assignedBy:'dashboard:detail'}])
+  })
+
+  it('preserves the assignment error from a rejected parent save', async () => {
+    const task = createTask({id:'tx-assignment-failure',assigneeType:'human'})
+    server.use(http.get('/api/tasks/tx-assignment-failure', () => HttpResponse.json({task,blockedByTasks:[],blocksTasks:[],childTasks:[]})))
+    renderWithProviders(<TaskDetail taskId="tx-assignment-failure" onNavigateToTask={vi.fn()}
+      onUpdateAssignment={async () => {throw new Error('Assignment rejected')}} />)
+    const input = await screen.findByRole('textbox',{name:'Assignee ID'})
+    fireEvent.change(input,{target:{value:'bob'}})
+    fireEvent.keyDown(input,{key:'Enter'})
+    expect(await screen.findByRole('alert')).toHaveTextContent('Assignment rejected')
+    expect(input).toHaveValue('bob')
+  })
+
+  it('refreshes a clean assignee after an external task update', async () => {
+    const task = createTask({id:'tx-assignment-external',assigneeType:'human',assigneeId:'alice'})
+    server.use(http.get('/api/tasks/tx-assignment-external', () => HttpResponse.json({task,blockedByTasks:[],blocksTasks:[],childTasks:[]})))
+    const {queryClient} = renderWithProviders(<TaskDetail taskId="tx-assignment-external" onNavigateToTask={vi.fn()} />)
+    const input = await screen.findByRole('textbox',{name:'Assignee ID'})
+    await waitFor(() => expect(input).toHaveValue('alice'))
+    act(() => queryClient.setQueryData<TaskDetailResponse>(['task','tx-assignment-external'], existing => existing
+      ? {...existing,task:{...existing.task,assigneeId:'bob'}} : existing))
+    await waitFor(() => expect(input).toHaveValue('bob'))
+  })
+
+  it('assigns an existing label without requiring parent callbacks', async () => {
+    const label = {id:7,name:'polish',color:'#336699',createdAt:'2026-01-01',updatedAt:'2026-01-01'}
+    let task = createTask({id:'tx-label-standalone',labels:[]})
+    const assignments: unknown[] = []
+    server.use(
+      http.get('/api/labels', () => HttpResponse.json({labels:[label]})),
+      http.get('/api/tasks/tx-label-standalone', () => HttpResponse.json({task,blockedByTasks:[],blocksTasks:[],childTasks:[]})),
+      http.post('/api/tasks/tx-label-standalone/labels', async ({request}) => {
+        assignments.push(await request.json())
+        task = {...task,labels:[label]}
+        return HttpResponse.json({label})
+      }),
+    )
+    const {queryClient} = renderWithProviders(<TaskDetail taskId="tx-label-standalone" onNavigateToTask={vi.fn()} />)
+    await screen.findByRole('heading',{name:'Test task'})
+    const input = document.getElementById('react-select-task-detail-labels-tx-label-standalone-input')!
+    fireEvent.keyDown(input,{key:'ArrowDown'})
+    const option = await screen.findByText('polish')
+    fireEvent.click(option)
+    await waitFor(() => expect(queryClient.getQueryData<TaskDetailResponse>(['task','tx-label-standalone'])?.task.labels).toEqual([label]))
+    expect(assignments).toEqual([{labelId:7}])
+  })
+
+  it('renames the title through the task API and updates the detail cache', async () => {
+    let task = createTask({ id: 'tx-rename', title: 'Rename me' })
+    const patches: unknown[] = []
+    server.use(
+      http.get('/api/tasks/tx-rename', () => HttpResponse.json({task, blockedByTasks:[], blocksTasks:[], childTasks:[]})),
+      http.patch('/api/tasks/tx-rename', async ({request}) => {
+        const payload = await request.json() as {title:string}
+        patches.push(payload)
+        task = {...task, title:payload.title}
+        return HttpResponse.json(task)
+      }),
+    )
+    const {queryClient} = renderWithProviders(<TaskDetail taskId="tx-rename" onNavigateToTask={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button', {name:'Rename me'}))
+    const input = screen.getByRole('textbox', {name:'Task title'})
+    fireEvent.change(input, {target:{value:'  Clear title  '}})
+    fireEvent.keyDown(input, {key:'Enter'})
+    await screen.findByRole('heading', {name:'Clear title'})
+    expect(patches).toEqual([{title:'Clear title'}])
+    expect(queryClient.getQueryData<TaskDetailResponse>(['task','tx-rename'])?.task.title).toBe('Clear title')
+  })
+
+  it('hides previous task controls immediately when navigating', async () => {
+    let release!: () => void
+    const pending = new Promise<void>((resolve) => { release = resolve })
+    server.use(http.get('/api/tasks/:id', async ({params}) => {
+      if (params.id === 'tx-next') await pending
+      return HttpResponse.json({task:createTask({id:String(params.id),title:String(params.id)}), blockedByTasks:[],blocksTasks:[],childTasks:[]})
+    }))
+    const client = createTestQueryClient()
+    const view = (id:string) => <QueryClientProvider client={client}><TaskDetail taskId={id} onNavigateToTask={vi.fn()} /></QueryClientProvider>
+    const {rerender} = render(view('tx-first'))
+    await screen.findByRole('button', {name:'tx-first'})
+    rerender(view('tx-next'))
+    expect(screen.queryByRole('button', {name:'tx-first'})).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Loading task')
+    release()
+    await screen.findByRole('heading', {name:'tx-next'})
+  })
+
+  it.each(['title', 'description'] as const)('preserves both fields when a stale %s response arrives last', async (slowField) => {
+    let task = createTask({id:'tx-concurrent', title:'Original title', description:'Original description'})
+    let release!: () => void
+    const pending = new Promise<void>(resolve => {release = resolve})
+    const writes: string[] = []
+    server.use(
+      http.get('/api/tasks/tx-concurrent', () => HttpResponse.json({task,blockedByTasks:[],blocksTasks:[],childTasks:[]})),
+      http.patch('/api/tasks/tx-concurrent', async ({request}) => {
+        const payload = await request.json() as {title?:string;description?:string}
+        const field = payload.title === undefined ? 'description' : 'title'
+        task = {...task,...payload}
+        const snapshot = {...task}
+        writes.push(field)
+        if (field === slowField) await pending
+        return HttpResponse.json(snapshot)
+      }),
+    )
+    const {queryClient} = renderWithProviders(<TaskDetail taskId="tx-concurrent" onNavigateToTask={vi.fn()} />)
+    const description = await screen.findByRole('textbox',{name:'Task description'})
+    const rename = () => {
+      fireEvent.click(screen.getByRole('button',{name:'Original title'}))
+      fireEvent.change(screen.getByRole('textbox',{name:'Task title'}),{target:{value:'Updated title'}})
+      fireEvent.click(screen.getByRole('button',{name:'Save title'}))
+    }
+    if (slowField === 'title') rename()
+    else fireEvent.change(description,{target:{value:'Updated description'}})
+    await waitFor(() => expect(writes).toEqual([slowField]))
+    if (slowField === 'title') fireEvent.change(description,{target:{value:'Updated description'}})
+    else rename()
+    await waitFor(() => expect(writes).toHaveLength(2))
+    await waitFor(() => expect(queryClient.getQueryData<TaskDetailResponse>(['task','tx-concurrent'])?.task[slowField === 'title' ? 'description' : 'title'])
+      .toBe(slowField === 'title' ? 'Updated description' : 'Updated title'))
+    release()
+    await waitFor(() => expect(screen.queryByRole('textbox',{name:'Task title'})).not.toBeInTheDocument())
+    await waitFor(() => expect(queryClient.getQueryData<TaskDetailResponse>(['task','tx-concurrent'])?.task).toMatchObject({title:'Updated title',description:'Updated description'}))
+    expect(description).toHaveValue('Updated description')
+  })
+
+  it('refreshes a clean description after a CLI update without writing it back', async () => {
+    const task = createTask({id:'tx-external', description:'Before CLI update'})
+    const patch = vi.fn()
+    server.use(
+      http.get('/api/tasks/tx-external', () => HttpResponse.json({task,blockedByTasks:[],blocksTasks:[],childTasks:[]})),
+      http.patch('/api/tasks/tx-external', patch),
+    )
+    const {queryClient} = renderWithProviders(<TaskDetail taskId="tx-external" onNavigateToTask={vi.fn()} />)
+    const description = await screen.findByRole('textbox',{name:'Task description'})
+    await waitFor(() => expect(description).toHaveValue('Before CLI update'))
+    act(() => queryClient.setQueryData<TaskDetailResponse>(['task','tx-external'], existing => existing
+      ? {...existing, task:{...existing.task,description:'After CLI update'}} : existing))
+    await waitFor(() => expect(description).toHaveValue('After CLI update'))
+    expect(patch).not.toHaveBeenCalled()
+  })
+
+  it('serialises description saves so a slow request cannot overwrite the latest draft', async () => {
+    let release!: () => void
+    const pending = new Promise<void>((resolve) => { release = resolve })
+    const writes: string[] = []
+    let stored = 'Initial'
+    server.use(
+      http.get('/api/tasks/tx-serial', () => HttpResponse.json({task:createTask({id:'tx-serial',description:stored}),blockedByTasks:[],blocksTasks:[],childTasks:[]})),
+      http.patch('/api/tasks/tx-serial', async ({request}) => {
+        const {description} = await request.json() as {description:string}
+        writes.push(description)
+        if (writes.length === 1) await pending
+        stored = description
+        return HttpResponse.json(createTask({id:'tx-serial',description:stored}))
+      }),
+    )
+    renderWithProviders(<TaskDetail taskId="tx-serial" onNavigateToTask={vi.fn()} />)
+    const input = await screen.findByRole('textbox', {name:'Task description'})
+    fireEvent.change(input, {target:{value:'First draft'}})
+    await waitFor(() => expect(writes).toEqual(['First draft']))
+    vi.useFakeTimers()
+    try {
+      fireEvent.change(input, {target:{value:'Latest draft'}})
+      await act(async () => { await vi.advanceTimersByTimeAsync(700) })
+      expect(writes).toEqual(['First draft'])
+    } finally {
+      vi.useRealTimers()
+      release()
+    }
+    await waitFor(() => expect(stored).toBe('Latest draft'))
+    expect(input).toHaveValue('Latest draft')
+    expect(writes).toEqual(['First draft','Latest draft'])
+  })
+
+  it('keeps a failed description draft and lets the user retry explicitly', async () => {
+    let calls = 0
+    server.use(
+      http.get('/api/tasks/tx-retry', () => HttpResponse.json({task:createTask({id:'tx-retry'}),blockedByTasks:[],blocksTasks:[],childTasks:[]})),
+      http.patch('/api/tasks/tx-retry', async ({request}) => {
+        const payload = await request.json() as {description:string}
+        calls++
+        if (calls === 1) return HttpResponse.json({error:'Disk full'}, {status:500})
+        return HttpResponse.json(createTask({id:'tx-retry',description:payload.description}))
+      }),
+    )
+    renderWithProviders(<TaskDetail taskId="tx-retry" onNavigateToTask={vi.fn()} />)
+    const input = await screen.findByRole('textbox', {name:'Task description'})
+    fireEvent.change(input, {target:{value:'Keep this draft'}})
+    await screen.findByText('Disk full')
+    expect(input).toHaveValue('Keep this draft')
+    fireEvent.click(screen.getByRole('button', {name:'Retry saving description'}))
+    await waitFor(() => expect(calls).toBe(2))
+    await waitFor(() => expect(screen.queryByText('Autosave failed')).not.toBeInTheDocument())
+    expect(input).toHaveValue('Keep this draft')
+  })
+
   describe('loading state', () => {
-    it('shows nothing while fetching', async () => {
+    it('announces loading while fetching', async () => {
       server.use(
         http.get('/api/tasks/:id', async () => {
           await new Promise((resolve) => setTimeout(resolve, 100))
@@ -86,12 +338,11 @@ describe('TaskDetail', () => {
       )
 
       const onNavigate = vi.fn()
-      const { container } = renderWithProviders(
+      renderWithProviders(
         <TaskDetail taskId="tx-loading" onNavigateToTask={onNavigate} />
       )
 
-      // Loading state returns null (empty container)
-      expect(container).toBeEmptyDOMElement()
+      expect(screen.getByRole('status')).toHaveTextContent('Loading task')
     })
   })
 
@@ -711,196 +962,6 @@ describe('TaskDetail', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Task not found')).toBeInTheDocument()
-      })
-    })
-  })
-
-  describe('orchestration status display', () => {
-    it('shows orchestration badge when task is claimed', async () => {
-      const task = createTask({
-        id: 'tx-orch-claimed',
-        orchestrationStatus: 'claimed',
-        claimedBy: 'worker-42',
-        claimExpiresAt: '2026-01-30T13:00:00Z',
-      })
-
-      server.use(
-        http.get('/api/tasks/:id', () => {
-          return HttpResponse.json({
-            task,
-            blockedByTasks: [],
-            blocksTasks: [],
-            childTasks: [],
-          } satisfies TaskDetailResponse)
-        })
-      )
-
-      renderWithProviders(
-        <TaskDetail taskId="tx-orch-claimed" onNavigateToTask={vi.fn()} />
-      )
-
-      await waitFor(() => {
-        // The badge in the header and the properties panel
-        const claimedElements = screen.getAllByText('claimed')
-        expect(claimedElements.length).toBeGreaterThanOrEqual(1)
-      })
-
-      // Properties panel shows worker and lease info
-      await waitFor(() => {
-        expect(screen.getByText('worker-42')).toBeInTheDocument()
-        expect(screen.getByText(/Lease expires:/)).toBeInTheDocument()
-      })
-    })
-
-    it('shows running orchestration badge with worker details', async () => {
-      const task = createTask({
-        id: 'tx-orch-running',
-        status: 'active',
-        orchestrationStatus: 'running',
-        claimedBy: 'worker-77',
-        claimExpiresAt: '2026-01-30T14:00:00Z',
-      })
-
-      server.use(
-        http.get('/api/tasks/:id', () => {
-          return HttpResponse.json({
-            task,
-            blockedByTasks: [],
-            blocksTasks: [],
-            childTasks: [],
-          } satisfies TaskDetailResponse)
-        })
-      )
-
-      renderWithProviders(
-        <TaskDetail taskId="tx-orch-running" onNavigateToTask={vi.fn()} />
-      )
-
-      await waitFor(() => {
-        const runningElements = screen.getAllByText('running')
-        expect(runningElements.length).toBeGreaterThanOrEqual(1)
-        expect(screen.getByText('worker-77')).toBeInTheDocument()
-      })
-    })
-
-    it('shows lease_expired badge', async () => {
-      const task = createTask({
-        id: 'tx-orch-expired',
-        orchestrationStatus: 'lease_expired',
-        claimedBy: 'worker-dead',
-        claimExpiresAt: '2020-01-01T00:00:00Z',
-      })
-
-      server.use(
-        http.get('/api/tasks/:id', () => {
-          return HttpResponse.json({
-            task,
-            blockedByTasks: [],
-            blocksTasks: [],
-            childTasks: [],
-          } satisfies TaskDetailResponse)
-        })
-      )
-
-      renderWithProviders(
-        <TaskDetail taskId="tx-orch-expired" onNavigateToTask={vi.fn()} />
-      )
-
-      await waitFor(() => {
-        const expiredElements = screen.getAllByText('lease expired')
-        expect(expiredElements.length).toBeGreaterThanOrEqual(1)
-        expect(screen.getByText('worker-dead')).toBeInTheDocument()
-      })
-    })
-
-    it('hides orchestration section when status is unclaimed', async () => {
-      const task = createTask({
-        id: 'tx-orch-unclaimed',
-        orchestrationStatus: 'unclaimed',
-        claimedBy: null,
-        claimExpiresAt: null,
-      })
-
-      server.use(
-        http.get('/api/tasks/:id', () => {
-          return HttpResponse.json({
-            task,
-            blockedByTasks: [],
-            blocksTasks: [],
-            childTasks: [],
-          } satisfies TaskDetailResponse)
-        })
-      )
-
-      renderWithProviders(
-        <TaskDetail taskId="tx-orch-unclaimed" onNavigateToTask={vi.fn()} />
-      )
-
-      await waitFor(() => {
-        expect(screen.getByRole('heading', { name: 'Test task' })).toBeInTheDocument()
-      })
-
-      // Orchestration section label should not be present
-      expect(screen.queryByText('Orchestration')).not.toBeInTheDocument()
-    })
-
-    it('hides orchestration section when status is null', async () => {
-      const task = createTask({
-        id: 'tx-orch-null',
-        orchestrationStatus: null,
-        claimedBy: null,
-        claimExpiresAt: null,
-      })
-
-      server.use(
-        http.get('/api/tasks/:id', () => {
-          return HttpResponse.json({
-            task,
-            blockedByTasks: [],
-            blocksTasks: [],
-            childTasks: [],
-          } satisfies TaskDetailResponse)
-        })
-      )
-
-      renderWithProviders(
-        <TaskDetail taskId="tx-orch-null" onNavigateToTask={vi.fn()} />
-      )
-
-      await waitFor(() => {
-        expect(screen.getByRole('heading', { name: 'Test task' })).toBeInTheDocument()
-      })
-
-      expect(screen.queryByText('Orchestration')).not.toBeInTheDocument()
-    })
-
-    it('shows failed attempts count when non-zero', async () => {
-      const task = createTask({
-        id: 'tx-orch-failed',
-        orchestrationStatus: 'claimed',
-        claimedBy: 'worker-retry',
-        failedAttempts: 3,
-      })
-
-      server.use(
-        http.get('/api/tasks/:id', () => {
-          return HttpResponse.json({
-            task,
-            blockedByTasks: [],
-            blocksTasks: [],
-            childTasks: [],
-          } satisfies TaskDetailResponse)
-        })
-      )
-
-      renderWithProviders(
-        <TaskDetail taskId="tx-orch-failed" onNavigateToTask={vi.fn()} />
-      )
-
-      await waitFor(() => {
-        const claimedElements = screen.getAllByText('claimed')
-        expect(claimedElements.length).toBeGreaterThanOrEqual(1)
-        expect(screen.getByText('Failed attempts: 3')).toBeInTheDocument()
       })
     })
   })

@@ -16,21 +16,21 @@ describe("minimal skill bundle", () => {
       expect(content).toBe(readFileSync(new URL(`../../apps/cli/src/templates/shared-skills/${id}/SKILL.md`, import.meta.url), "utf8"))
     }
   })
-  it("ships exactly three guides and no harness [INV-MINIMAL-001]", () => {
-    expect(listAvailableSkills().map(s => s.id)).toEqual(["tx-tasks", "tx-docs", "verify-invariants"])
+  it("ships exactly four guides and no harness [INV-MINIMAL-001]", () => {
+    expect(listAvailableSkills().map(s => s.id)).toEqual(["tx-plan", "tx-tasks", "tx-docs", "verify-invariants"])
     const root = sandbox()
     scaffoldCodex(root)
     expect(readdirSync(join(root, ".codex")).sort()).toEqual(["skills"])
-    expect(readdirSync(join(root, ".codex", "skills")).sort()).toEqual(["manifest.json", "tx-docs", "tx-tasks", "verify-invariants"])
+    expect(readdirSync(join(root, ".codex", "skills")).sort()).toEqual(["manifest.json", "tx-docs", "tx-plan", "tx-tasks", "verify-invariants"])
     const result = generateSkillBundles({ outputDir: sandbox(), clean: true })
-    for (const target of result.targets) { expect(target.skillCount).toBe(3); expect(target.fileCount).toBe(4) }
+    for (const target of result.targets) { expect(target.skillCount).toBe(4); expect(target.fileCount).toBe(5) }
   })
   it("prunes retired manifest skills while preserving custom guides [INV-MINIMAL-002]", () => {
     const root = sandbox(), skills = join(root, ".codex", "skills")
     for (const id of ["ralph-loop", "custom-local"]) { mkdirSync(join(skills,id), {recursive:true}); writeFileSync(join(skills,id,"SKILL.md"), id) }
     writeFileSync(join(skills,"manifest.json"), JSON.stringify({generator:"tx skills generate", target:"codex", skills:[{id:"ralph-loop",installPath:".codex/skills/ralph-loop"}]}))
     syncSkillBundles({ projectDir: root, target: "codex" })
-    expect(readdirSync(skills).sort()).toEqual(["custom-local", "manifest.json", "tx-docs", "tx-tasks", "verify-invariants"])
+    expect(readdirSync(skills).sort()).toEqual(["custom-local", "manifest.json", "tx-docs", "tx-plan", "tx-tasks", "verify-invariants"])
     expect(readFileSync(join(skills,"custom-local","SKILL.md"),"utf8")).toBe("custom-local")
     expect(syncSkillBundles({projectDir:root,target:"codex"}).targets[0]?.updated).toEqual([])
   })

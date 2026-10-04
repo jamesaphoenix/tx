@@ -28,6 +28,7 @@ export type DocInsertInput = {
 }
 
 export type DocUpdateInput = {
+  filePath?: string
   docId?: DocStableId
   hash?: string
   title?: string

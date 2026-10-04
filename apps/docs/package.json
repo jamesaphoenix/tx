@@ -1,6 +1,6 @@
 {
   "name": "@jamesaphoenix/tx-docs",
-  "version": "0.19.0",
+  "version": "0.20.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,22 +10,23 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "fumadocs-core": "^16.5.0",
-    "fumadocs-mdx": "^14.2.6",
-    "fumadocs-ui": "^16.5.0",
+    "fumadocs-core": "^16.7.0",
+    "fumadocs-mdx": "^15.2.3",
+    "fumadocs-ui": "^16.7.0",
     "mermaid": "^11.12.3",
-    "next": "^16.1.6",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "next": "^16.3.8",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
   },
   "devDependencies": {
     "@opennextjs/cloudflare": "^1.20.1",
-    "@tailwindcss/postcss": "^4.0.0",
+    "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.1.2",
     "@types/react": "^19.0.8",
     "@types/react-dom": "^19.0.3",
-    "tailwindcss": "^4.0.0",
-    "typescript": "~5.9.3",
-    "wrangler": "^4.110.0"
+    "tailwindcss": "^4.3.3",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "wrangler": "^4.110.0",
+    "@typescript/native": "npm:typescript@^7.0.2"
   }
 }

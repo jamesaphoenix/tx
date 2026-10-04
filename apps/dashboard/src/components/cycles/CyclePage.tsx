@@ -11,7 +11,6 @@ type ThemeMode = "light" | "dark"
 
 interface CyclePageProps {
   themeMode?: ThemeMode
-  autoAddStatuses?: string[]
 }
 
 function sortCyclesByStartDesc<T extends { startDate: string }>(cycles: T[]): T[] {
@@ -34,9 +33,7 @@ function writeCycleUrl(cycleId: string | null) {
   window.history.pushState(null, "", url)
 }
 
-const DEFAULT_AUTO_ADD_STATUSES = ["backlog", "ready"]
-
-export function CyclePage({ themeMode = "dark", autoAddStatuses = DEFAULT_AUTO_ADD_STATUSES }: CyclePageProps) {
+export function CyclePage({ themeMode = "dark" }: CyclePageProps) {
   const isDarkTheme = themeMode === "dark"
   const queryClient = useQueryClient()
   const [selectedCycleId, setSelectedCycleId] = useState<string | null>(readCycleIdFromUrl)
@@ -55,23 +52,9 @@ export function CyclePage({ themeMode = "dark", autoAddStatuses = DEFAULT_AUTO_A
     writeCycleUrl(cycleId)
   }, [])
 
-  const { mutate: createCycle, isPending: isCreateCyclePending } = useMutation({
+  const { mutate: createCycle, isPending: isCreateCyclePending, error: createCycleError } = useMutation({
     mutationFn: async () => {
       const createdCycle = await fetchers.createCycle()
-      // Auto-add tasks with matching statuses to the new cycle
-      if (autoAddStatuses.length > 0) {
-        try {
-          const { tasks } = await fetchers.tasks()
-          const matchingTaskIds = tasks
-            .filter((task) => autoAddStatuses.includes(task.status))
-            .map((task) => task.id)
-          if (matchingTaskIds.length > 0) {
-            await fetchers.addTasksToCycle(createdCycle.id, matchingTaskIds)
-          }
-        } catch {
-          // Non-critical: cycle was created, auto-add failed silently
-        }
-      }
       return createdCycle
     },
     onSuccess: async (createdCycle) => {
@@ -194,6 +177,8 @@ export function CyclePage({ themeMode = "dark", autoAddStatuses = DEFAULT_AUTO_A
           {isCreateCyclePending ? "Creating…" : "+ New Cycle"}
         </Button>
       </header>
+
+      {createCycleError && <p role="alert" className="mb-4 text-sm text-red-400">Could not create cycle: {createCycleError.message}</p>}
 
       {isLoading ? (
         <div className="space-y-3">

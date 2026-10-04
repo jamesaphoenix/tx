@@ -6,6 +6,8 @@ import {
   discoverSpecTests,
   readSpecManifest,
   defaultSpecTestPatterns,
+  readTxConfig,
+  scaffoldConfigToml,
 } from "@jamesaphoenix/tx"
 
 const tempDirs: string[] = []
@@ -81,6 +83,58 @@ describe("spec-discovery", () => {
     expect(result.discovered.find((row) => row.invariantId === "INV-DISC-001")?.framework).toBe("vitest")
     expect(result.discovered.find((row) => row.invariantId === "INV-DISC-004")?.framework).toBe("pytest")
     expect(result.discovered.find((row) => row.invariantId === "INV-DISC-005")?.framework).toBe("go")
+  })
+
+  it("recognises each/for titles across multiline data and keeps literal titles exact", async () => {
+    const root = makeTempProject()
+    writeRelative(root,"test/parameterised.test.ts",[
+      'it.each(',
+      '  [makeCase("(nested)"), {name:"other"}],',
+      ')("case %s [INV-EACH-101]", () => {})',
+      'test.concurrent.for([{name:"one"}])("object $name [INV-EACH-102]", () => {})',
+      'it("literal %s [INV-EACH-103]", () => {})',
+    ].join("\n"))
+    const result = await discoverSpecTests(root,["test/**/*.test.ts"])
+    expect(result.discovered).toEqual([
+      expect.objectContaining({invariantId:"INV-EACH-101",testName:"case %s [INV-EACH-101]",framework:"vitest-each"}),
+      expect.objectContaining({invariantId:"INV-EACH-102",testName:"object $name [INV-EACH-102]",framework:"vitest-each"}),
+      expect.objectContaining({invariantId:"INV-EACH-103",testName:"literal %s [INV-EACH-103]",framework:"vitest"}),
+    ])
+  })
+
+  it("uses scaffolded defaults to discover app and package component tests",async () => {
+    const root = makeTempProject()
+    scaffoldConfigToml(root)
+    writeRelative(root,"apps/web/src/editor.test.tsx",'it("editor [INV-DEFAULT-001]", () => {})')
+    writeRelative(root,"packages/content/src/format.test.ts",'it("format [INV-DEFAULT-002]", () => {})')
+    const config = readTxConfig(root)
+    const scan = await discoverSpecTests(root,config.spec.testPatterns)
+    expect(scan.discovered.map(row => row.invariantId).sort()).toEqual(["INV-DEFAULT-001","INV-DEFAULT-002"])
+    expect(config.spec.testPatterns).toEqual(defaultSpecTestPatterns())
+  })
+
+  it("marks production annotations as source references across languages", async () => {
+    const root = makeTempProject()
+    writeRelative(root,"src/owner.ts","// @spec INV-SOURCE-001\nexport const owner = true")
+    writeRelative(root,"src/retry.py","# @spec INV-SOURCE-002\ndef test_helper(): pass")
+    const result = await discoverSpecTests(root,["test/**/*.test.ts"])
+    expect([...result.discovered].sort((a,b) => a.testFile.localeCompare(b.testFile))).toEqual([
+      expect.objectContaining({testFile:"src/owner.ts",testName:null,framework:"source",testId:"src/owner.ts::spec@line-1"}),
+      expect.objectContaining({testFile:"src/retry.py",testName:null,framework:"source",testId:"src/retry.py::spec@line-1"}),
+    ])
+  })
+
+  it("does not discover copies from generated output or other worktrees", async () => {
+    const root = makeTempProject()
+    for (const dir of [".next",".source",".worktrees",".tx",".vitest",".cache"]) {
+      writeRelative(root,`${dir}/duplicate.test.ts`,'it("copy [INV-COPY-001]", () => {})')
+      writeRelative(root,`${dir}/enforcer.ts`,"// @spec INV-COPY-001\nexport const compiled = true")
+    }
+    writeRelative(root,"src/owner.ts","// @spec INV-COPY-001\nexport const owner = true")
+    const result = await discoverSpecTests(root,defaultSpecTestPatterns())
+    expect(result.scannedFiles).toBe(1)
+    expect(result.discovered).toHaveLength(1)
+    expect(result.discovered[0]?.testFile).toBe("src/owner.ts")
   })
 
   it("discovers whitespace-separated invariant IDs in @spec comments", async () => {

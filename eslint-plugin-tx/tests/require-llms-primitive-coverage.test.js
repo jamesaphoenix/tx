@@ -65,9 +65,9 @@ describe("require-llms-primitive-coverage rule", () => {
   it("passes when llms.txt includes every primitive URL", () => {
     setupReadFileMock({
       llmsContent: `
-        - [tx ready](https://tx-docs.vercel.app/docs/primitives/ready)
-        - [tx memory](https://tx-docs.vercel.app/docs/primitives/memory)
-        - [tx spec](https://tx-docs.vercel.app/docs/primitives/spec-trace)
+        - [tx ready](https://txdocs.dev/docs/primitives/ready)
+        - [tx memory](https://txdocs.dev/docs/primitives/memory)
+        - [tx spec](https://txdocs.dev/docs/primitives/spec-trace)
       `,
     })
 
@@ -82,7 +82,7 @@ describe("require-llms-primitive-coverage rule", () => {
     setupReadFileMock({
       pages: ["index", "ready", "memory", "spec-trace"],
       llmsContent: `
-        - [tx ready](https://tx-docs.vercel.app/docs/primitives/ready)
+        - [tx ready](https://txdocs.dev/docs/primitives/ready)
       `,
     })
 

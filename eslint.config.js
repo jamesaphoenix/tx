@@ -630,7 +630,7 @@ export default [
       'tx/require-llms-primitive-coverage': ['error', {
         metaPath: 'apps/docs/content/docs/primitives/meta.json',
         llmsPath: 'apps/docs/public/llms.txt',
-        urlBase: 'https://tx-docs.vercel.app/docs/primitives'
+        urlBase: 'https://txdocs.dev/docs/primitives'
       }]
     }
   },
@@ -677,6 +677,15 @@ export default [
 
       // tx plugin rules - disallow generic utility filenames (prefer domain-specific modules)
       'tx/no-generic-utility-file-names': GENERIC_UTILITY_FILE_NAME_RULE
+    }
+  },
+  // Shared spec-health helper is exercised through actual checkout fixtures.
+  {
+    files: ['apps/dashboard/server/spec-health.ts'],
+    rules: {
+      'tx/require-integration-tests': ['error', {
+        api: { src: 'apps/dashboard/server/spec-health.ts', test: 'test/integration/dashboard-spec-health.test.ts', threshold: 80 }
+      }]
     }
   },
   // Dashboard React components and hooks (require component tests)

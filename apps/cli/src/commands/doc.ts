@@ -21,7 +21,8 @@ import type { SpecTypeDefinition, SpecTypeRegistry } from "@jamesaphoenix/tx"
 import { DOC_KINDS, asDocKind } from "@jamesaphoenix/tx/types"
 import type { DocKind, DocLinkType, TaskDocLinkType } from "@jamesaphoenix/tx/types"
 import { toJson } from "../output.js"
-import { type Flags, flag, opt } from "../utils/parse.js"
+import { type Flags, flag, opt, parseIntOpt } from "../utils/parse.js"
+import { CliUserError } from "../cli-errors.js"
 import { CliExitError } from "../cli-exit.js"
 
 const docKindStrings: readonly string[] = DOC_KINDS
@@ -143,21 +144,20 @@ const docAdd = (pos: string[], flags: Flags) =>
     const name = pos[1]
     if (!kind || !name) {
       console.error("Usage: tx doc add <kind> <name> [--title <title>] [--path <file>]")
-      console.error("  Kinds: overview, prd, design")
+      console.error("  Kinds: overview, prd, design, plan")
       console.error("  --path: register an existing file instead of scaffolding")
       throw new CliExitError(1)
     }
     const root = contentRoot(flags)
     const registry = resolveSpecTypes(readTxConfig(root))
-    if (!registry.types.has(kind) && !docKindStrings.includes(kind)) {
+    const normalizedKind = normalizeDocKind(kind as DocKind)
+    if (!registry.types.has(normalizedKind) && !docKindStrings.includes(normalizedKind)) {
       console.error(`Invalid kind: ${kind}. Must be one of: ${specTypeNames(registry).join(", ")}`)
       console.error(`Define a new one by adding a [spec.types.${kind}] section to .tx/config.toml`)
       throw new CliExitError(1)
     }
 
     const pathFlag = opt(flags, "path", "p")
-    const requestedKind = kind as DocKind
-    const normalizedKind = normalizeDocKind(requestedKind)
 
     let content: string
     let relFilePath: string | undefined
@@ -237,6 +237,10 @@ const docEdit = (pos: string[], flags: Flags) =>
 
     const svc = yield* DocService
     const doc = yield* svc.get(ref)
+    if (doc.status === "locked") throw new CliUserError({
+      code: "cli/doc-locked", message: `Doc '${ref}' v${doc.version} is locked.`,
+      hint: "Create an editable version with tx doc version before editing.",
+    })
     const editor = process.env.EDITOR ?? "vi"
     const absPath = resolve(docsRoot(flags), doc.filePath)
 
@@ -262,12 +266,16 @@ const docShow = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const ref = pos[0]
     if (!ref) {
-      console.error("Usage: tx doc show <ref> [--md] [--json]")
+      console.error("Usage: tx doc show <ref> [--doc-version <n>] [--md] [--json]")
       throw new CliExitError(1)
     }
 
+    const version = parseIntOpt(flags, "doc-version", "doc-version")
+    if (version !== undefined && version < 1) throw new CliUserError({
+      code: "cli/invalid-flag-value", message: "--doc-version must be a positive integer.",
+    })
     const svc = yield* DocService
-    const doc = yield* svc.get(ref)
+    const doc = yield* svc.get(ref, version)
 
     if (flag(flags, "json")) {
       console.log(toJson(doc))

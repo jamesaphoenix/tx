@@ -1,3 +1,4 @@
+const normaliseTaskCommand = (args: string[]): string[] => /^(add|list|ready|show|update|done|reset|delete|bulk|label|dep|block|unblock|children|tree)$/.test(args[0] ?? "") ? ["task", ...(/^(block|unblock|children|tree)$/.test(args[0]) ? ["dep"] : []), ...args] : args
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { spawnSync } from "child_process"
 import { mkdtempSync, rmSync, existsSync, writeFileSync, mkdirSync } from "node:fs"
@@ -13,6 +14,8 @@ interface ExecResult {
 }
 
 function runTx(args: string[], dbPath: string, cwd: string): ExecResult {
+  args = normaliseTaskCommand(args)
+
   const result = spawnSync("bun", [CLI_SRC, ...args, "--db", dbPath], {
     encoding: "utf-8",
     cwd,
@@ -87,7 +90,7 @@ describe("CLI sync stream events", () => {
   })
 
   it("exports stream events", () => {
-    const add = runTx(["add", "CLI sync export task", "--json"], dbPath, tmpDir)
+    const add = runTx(["task", "add", "CLI sync export task", "--json"], dbPath, tmpDir)
     expect(add.status).toBe(0)
 
     const exported = runTx(["sync", "export", "--json"], dbPath, tmpDir)
@@ -145,7 +148,7 @@ describe("CLI sync stream events", () => {
     const parsed = JSON.parse(imported.stdout)
     expect(parsed.appliedEvents).toBeGreaterThanOrEqual(1)
 
-    const shown = runTx(["show", taskId, "--json"], dbPath, tmpDir)
+    const shown = runTx(["task", "show", taskId, "--json"], dbPath, tmpDir)
     expect(shown.status).toBe(0)
     const task = JSON.parse(shown.stdout)
     expect(task.title).toBe("Imported via stream")
@@ -169,16 +172,16 @@ describe("CLI sync stream events", () => {
     const firstHydrate = runTx(["sync", "hydrate", "--json"], dbPath, tmpDir)
     expect(firstHydrate.status).toBe(0)
     const firstHydrateJson = JSON.parse(firstHydrate.stdout) as { rebuilt: boolean; appliedEvents: number }
-    expect(firstHydrateJson.rebuilt).toBe(true)
+    expect(firstHydrateJson.rebuilt).toBe(false)
     expect(firstHydrateJson.appliedEvents).toBeGreaterThanOrEqual(1)
 
     const secondHydrate = runTx(["sync", "hydrate", "--json"], dbPath, tmpDir)
     expect(secondHydrate.status).toBe(0)
     const secondHydrateJson = JSON.parse(secondHydrate.stdout) as { rebuilt: boolean; appliedEvents: number }
-    expect(secondHydrateJson.rebuilt).toBe(true)
+    expect(secondHydrateJson.rebuilt).toBe(false)
     expect(secondHydrateJson.appliedEvents).toBeGreaterThanOrEqual(1)
 
-    const listed = runTx(["list", "--json"], dbPath, tmpDir)
+    const listed = runTx(["task", "list", "--json"], dbPath, tmpDir)
     expect(listed.status).toBe(0)
     const tasks = JSON.parse(listed.stdout) as Array<{ id: string; title: string }>
     const hydratedTasks = tasks.filter(task => task.id === taskId)
@@ -220,14 +223,14 @@ describe("CLI sync stream events", () => {
     const recoveredJson = JSON.parse(recoveredImport.stdout) as { appliedEvents: number }
     expect(recoveredJson.appliedEvents).toBeGreaterThanOrEqual(1)
 
-    const shown = runTx(["show", taskId, "--json"], dbPath, tmpDir)
+    const shown = runTx(["task", "show", taskId, "--json"], dbPath, tmpDir)
     expect(shown.status).toBe(0)
     const task = JSON.parse(shown.stdout) as { title: string }
     expect(task.title).toBe("Recoverable import task")
   })
 
   it("exports repeatedly and hydrate restores deleted tasks", () => {
-    const created = runTx(["add", "CLI export replay task", "--json"], dbPath, tmpDir)
+    const created = runTx(["task", "add", "CLI export replay task", "--json"], dbPath, tmpDir)
     expect(created.status).toBe(0)
     const createdTask = JSON.parse(created.stdout) as { id: string; title: string }
 
@@ -241,18 +244,18 @@ describe("CLI sync stream events", () => {
     const secondExportJson = JSON.parse(secondExport.stdout) as { eventCount: number }
     expect(secondExportJson.eventCount).toBe(firstExportJson.eventCount)
 
-    const deleted = runTx(["delete", createdTask.id], dbPath, tmpDir)
+    const deleted = runTx(["task", "delete", createdTask.id], dbPath, tmpDir)
     expect(deleted.status).toBe(0)
 
-    const missing = runTx(["show", createdTask.id, "--json"], dbPath, tmpDir)
+    const missing = runTx(["task", "show", createdTask.id, "--json"], dbPath, tmpDir)
     expect(missing.status).not.toBe(0)
 
     const hydrated = runTx(["sync", "hydrate", "--json"], dbPath, tmpDir)
     expect(hydrated.status).toBe(0)
     const hydratedJson = JSON.parse(hydrated.stdout) as { rebuilt: boolean }
-    expect(hydratedJson.rebuilt).toBe(true)
+    expect(hydratedJson.rebuilt).toBe(false)
 
-    const restored = runTx(["show", createdTask.id, "--json"], dbPath, tmpDir)
+    const restored = runTx(["task", "show", createdTask.id, "--json"], dbPath, tmpDir)
     expect(restored.status).toBe(0)
     const restoredTask = JSON.parse(restored.stdout) as { title: string }
     expect(restoredTask.title).toBe(createdTask.title)

@@ -1,35 +1,23 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import {
-  mkdirSync,
   existsSync,
   readFileSync,
   writeFileSync,
   rmSync,
-  statSync,
-  chmodSync,
   mkdtempSync,
 } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { scaffoldClaude, scaffoldCodex, scaffoldWatchdog } from "../../apps/cli/src/commands/scaffold.js"
+import { scaffoldClaude, scaffoldCodex } from "../../apps/cli/src/commands/scaffold.js"
 
 let testDir = ""
 
-const BUNDLED_SPEC_SKILLS = ["tx-tasks", "tx-docs", "verify-invariants"] as const
+const BUNDLED_SPEC_SKILLS = ["tx-plan", "tx-tasks", "tx-docs", "verify-invariants"] as const
 
 function cleanup() {
   if (existsSync(testDir)) {
     rmSync(testDir, { recursive: true })
   }
-}
-
-function createMockRuntime(name: string): string {
-  const binDir = join(testDir, ".bin")
-  mkdirSync(binDir, { recursive: true })
-  const cmdPath = join(binDir, name)
-  writeFileSync(cmdPath, "#!/bin/bash\nexit 0\n")
-  chmodSync(cmdPath, 0o755)
-  return binDir
 }
 
 function skillRoot(target: "claude" | "codex"): string {
@@ -66,7 +54,7 @@ describe("scaffold", () => {
   })
 
   describe("scaffoldClaude", () => {
-    it("installs the three Claude guides by default", () => {
+    it("installs the four Claude guides by default", () => {
       const result = scaffoldClaude(testDir)
       const root = skillRoot("claude")
 
@@ -82,7 +70,7 @@ describe("scaffold", () => {
 
       const coreSkill = readFileSync(join(root, "tx-tasks", "SKILL.md"), "utf-8")
       expect(coreSkill).toContain("Create tasks")
-      expect(coreSkill).toContain("tx add")
+      expect(coreSkill).toContain("tx task add")
 
       const prdSkill = readFileSync(join(root, "tx-docs", "SKILL.md"), "utf-8")
       expect(prdSkill).toContain("tx doc add prd")
@@ -129,8 +117,8 @@ describe("scaffold", () => {
       expect(existsSync(join(testDir, "CLAUDE.md"))).toBe(true)
 
       const content = readFileSync(join(testDir, "CLAUDE.md"), "utf-8")
-      expect(content).toContain("Start Here")
-      expect(content).toContain("tx ready")
+      expect(content).toContain("tx task and spec workflow")
+      expect(content).toContain("tx task")
     })
 
     it("skips opt-in CLAUDE.md when the tx heading is already present", () => {
@@ -152,7 +140,7 @@ describe("scaffold", () => {
   })
 
   describe("scaffoldCodex", () => {
-    it("installs the three Codex guides without rules by default", () => {
+    it("installs the four Codex guides without rules by default", () => {
       const result = scaffoldCodex(testDir)
       const root = skillRoot("codex")
 
@@ -217,8 +205,8 @@ describe("scaffold", () => {
       expect(existsSync(join(testDir, "AGENTS.md"))).toBe(true)
 
       const content = readFileSync(join(testDir, "AGENTS.md"), "utf-8")
-      expect(content).toContain("Start Here")
-      expect(content).toContain("tx ready")
+      expect(content).toContain("tx task and spec workflow")
+      expect(content).toContain("tx task")
     })
 
     it("skips opt-in AGENTS.md when the tx heading is already present", () => {
@@ -239,83 +227,6 @@ describe("scaffold", () => {
       writeFileSync(join(testDir, ".codex"), "not-a-directory")
 
       expect(() => scaffoldCodex(testDir)).toThrow(/parent path exists as a file/i)
-    })
-  })
-
-  describe("scaffoldWatchdog", () => {
-    it("creates watchdog scripts/service assets and runtime-enabled env config", () => {
-      const pathEnv = createMockRuntime("codex")
-      const result = scaffoldWatchdog(testDir, { runtimeMode: "auto", pathEnv })
-
-      expect(result.warnings).toEqual([])
-      expect(result.watchdogEnabled).toBe(true)
-      expect(result.codexEnabled).toBe(true)
-      expect(result.claudeEnabled).toBe(false)
-
-      expect(existsSync(join(testDir, "scripts", "ralph-watchdog.sh"))).toBe(true)
-      expect(existsSync(join(testDir, "scripts", "ralph-hourly-supervisor.sh"))).toBe(true)
-      expect(existsSync(join(testDir, "scripts", "watchdog-launcher.sh"))).toBe(true)
-      expect(existsSync(join(testDir, "ops", "watchdog", "com.tx.ralph-watchdog.plist"))).toBe(true)
-      expect(existsSync(join(testDir, "ops", "watchdog", "tx-ralph-watchdog.service"))).toBe(true)
-      expect(existsSync(join(testDir, ".tx", "watchdog.env"))).toBe(true)
-
-      const env = readFileSync(join(testDir, ".tx", "watchdog.env"), "utf-8")
-      expect(env).toContain("WATCHDOG_ENABLED=1")
-      expect(env).toContain("WATCHDOG_RUNTIME_MODE=auto")
-      expect(env).toContain("WATCHDOG_CODEX_ENABLED=1")
-      expect(env).toContain("WATCHDOG_CLAUDE_ENABLED=0")
-      expect(env).toContain("WATCHDOG_TRANSCRIPT_IDLE_SECONDS=600")
-      expect(env).toContain("WATCHDOG_CLAUDE_STALL_GRACE_SECONDS=900")
-      expect(env).toContain("WATCHDOG_ERROR_BURST_GRACE_SECONDS=600")
-      expect(env).toContain("WATCHDOG_DETACHED=1")
-
-      if (process.platform !== "win32") {
-        const stat = statSync(join(testDir, "scripts", "watchdog-launcher.sh"))
-        expect(stat.mode & 0o100).toBeTruthy()
-      }
-    })
-
-    it("auto runtime with no detected CLIs scaffolds disabled watchdog config and warnings", () => {
-      const result = scaffoldWatchdog(testDir, { runtimeMode: "auto", pathEnv: "" })
-
-      expect(result.watchdogEnabled).toBe(false)
-      expect(result.codexEnabled).toBe(false)
-      expect(result.claudeEnabled).toBe(false)
-      expect(result.warnings.length).toBeGreaterThan(0)
-      expect(result.warnings.some((warning) => warning.includes("auto-detect found no codex/claude"))).toBe(true)
-
-      expect(existsSync(join(testDir, "scripts", "ralph-watchdog.sh"))).toBe(true)
-      expect(existsSync(join(testDir, "scripts", "ralph-hourly-supervisor.sh"))).toBe(true)
-      expect(existsSync(join(testDir, "scripts", "watchdog-launcher.sh"))).toBe(true)
-      expect(existsSync(join(testDir, "ops", "watchdog", "com.tx.ralph-watchdog.plist"))).toBe(true)
-      expect(existsSync(join(testDir, "ops", "watchdog", "tx-ralph-watchdog.service"))).toBe(true)
-      expect(existsSync(join(testDir, ".tx", "watchdog.env"))).toBe(true)
-
-      const env = readFileSync(join(testDir, ".tx", "watchdog.env"), "utf-8")
-      expect(env).toContain("WATCHDOG_ENABLED=0")
-      expect(env).toContain("WATCHDOG_RUNTIME_MODE=auto")
-      expect(env).toContain("WATCHDOG_CODEX_ENABLED=0")
-      expect(env).toContain("WATCHDOG_CLAUDE_ENABLED=0")
-      expect(env).toContain("WATCHDOG_DETACHED=1")
-    })
-
-    it("fails clearly when runtime mode requires unavailable CLIs", () => {
-      expect(() => scaffoldWatchdog(testDir, { runtimeMode: "both", pathEnv: "" }))
-        .toThrow(/requires codex and claude; missing: codex, claude/i)
-    })
-
-    it("does not overwrite existing watchdog assets", () => {
-      mkdirSync(join(testDir, "scripts"), { recursive: true })
-      mkdirSync(join(testDir, ".tx"), { recursive: true })
-      writeFileSync(join(testDir, "scripts", "ralph-watchdog.sh"), "# sentinel-watchdog\n")
-      writeFileSync(join(testDir, ".tx", "watchdog.env"), "WATCHDOG_ENABLED=0\n")
-
-      const result = scaffoldWatchdog(testDir, { runtimeMode: "auto", pathEnv: "" })
-
-      expect(result.skipped).toContain("scripts/ralph-watchdog.sh")
-      expect(result.skipped).toContain(".tx/watchdog.env")
-      expect(readFileSync(join(testDir, "scripts", "ralph-watchdog.sh"), "utf-8")).toBe("# sentinel-watchdog\n")
-      expect(readFileSync(join(testDir, ".tx", "watchdog.env"), "utf-8")).toBe("WATCHDOG_ENABLED=0\n")
     })
   })
 })

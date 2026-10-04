@@ -1,3 +1,4 @@
+import { getSpecHealth } from "@jamesaphoenix/tx"
 /**
  * Spec traceability MCP tools.
  */
@@ -34,6 +35,7 @@ const serializeMatrixEntry = (entry: TraceabilityMatrixEntry) => ({
   invariantId: entry.invariantId,
   rule: entry.rule,
   subsystem: entry.subsystem,
+  sourceRefs: entry.sourceRefs ?? [],
   tests: entry.tests.map((test) => ({
     specTestId: test.specTestId,
     testId: test.testId,
@@ -426,11 +428,13 @@ const handleSpecComplete = async (args: {
 }
 
 export const registerSpecTraceTools = (server: McpServer): void => {
+  registerEffectTool(server, "tx_spec_health", "Inspect spec coverage, evidence and drift", {}, async () => ({ content: [{ type: "text", text: JSON.stringify(await runEffect(getSpecHealth())) }], isError: false }))
+
   registerEffectTool(server,
     "tx_spec_discover",
     "Discover invariant-to-test mappings from source annotations and .tx/spec-tests.yml",
     {
-      doc: z.string().optional().describe("Optional doc name to sync before discovery"),
+      doc: z.string().optional().describe("Optional document stable ID, kind/name or unique name to sync before discovery"),
       patterns: z.array(z.string()).optional().describe("Optional file globs overriding configured [spec].test_patterns"),
       dryRun: z.boolean().optional().describe("Preview discovery and prospective pruning without writing mappings"),
       prune: z.boolean().optional().describe("Explicitly remove stale auto-discovered mappings"),

@@ -1,6 +1,6 @@
 ---
 name: tx-docs
-description: Create configured tx documents, including paired PRD and design documents for feature work.
+description: Create design docs, optional product requirements and system overviews beside the code.
 ---
 
 # Create documents
@@ -15,7 +15,8 @@ tx doc add <type> <name> --title "Title"
 ```
 
 Use the configured headings and required frontmatter. Replace scaffold placeholders
-with the requested content. For feature work create a paired PRD and design doc:
+with the requested content. Start with a design doc. Add a PRD when a separate
+product contract helps, then link it to the design:
 
 ```bash
 tx doc add prd <feature>-prd --title "Feature requirements"
@@ -28,7 +29,10 @@ the implementation, interfaces, invariants, failure handling and verification.
 Use distinct names or kind-scoped references to avoid ambiguous document slugs.
 
 Edit existing documents in place, then `tx doc sync <doc-ref>` and `tx spec lint`.
-Do not remove and recreate documents to refresh their hashes. For a worktree,
+Do not remove and recreate documents to refresh their hashes. Sync before locking
+a reviewed version. `tx doc version` preserves locked source under `.versions/`
+in the docs directory and creates the working version at its normal path. Commit
+both files; use `tx doc show --doc-version <n>` to read historical content. For a worktree,
 keep the main state root and explicitly select the worktree content root using
 `--state-root` and `--content-root`.
 

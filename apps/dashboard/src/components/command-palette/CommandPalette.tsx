@@ -70,7 +70,7 @@ function groupCommands(commands: Command[]): { group: string; items: Command[] }
 }
 
 export function CommandPalette() {
-  const { commands, isOpen, setOpen } = useCommandContext()
+  const { commands, isOpen, setOpen, executeCommand } = useCommandContext()
   const [query, setQuery] = useState("")
   const [activeIndex, setActiveIndex] = useState(0)
   // Hierarchical drill-down: stack of parent commands
@@ -185,9 +185,9 @@ export function CommandPalette() {
       }
       setOpen(false)
       setBreadcrumb([])
-      cmd.action()
+      void executeCommand(cmd)
     },
-    [setOpen, drillInto]
+    [setOpen, drillInto, executeCommand]
   )
 
   // Keyboard navigation inside palette

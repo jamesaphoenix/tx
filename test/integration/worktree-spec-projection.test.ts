@@ -276,7 +276,7 @@ describe("worktree-scoped spec projections", () => {
     writeFileSync(testA, 'it("annotation removed in A", () => {})\n', "utf-8")
     rmSync(docA)
 
-    const doctor = runTx(checkoutA, stateRoot, checkoutA, ["doctor", "--json"])
+    const doctor = runTx(checkoutA, stateRoot, checkoutA, ["diag", "doctor", "--json"])
     expect(doctor.status).toBe(0)
     const doctorJson = JSON.parse(doctor.stdout) as {
       workspace: {

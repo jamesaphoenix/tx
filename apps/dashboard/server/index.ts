@@ -1,42 +1,32 @@
+import { dashboardSpecHealth } from "./spec-health.js"
 import { Database } from "bun:sqlite"
 import { randomUUID } from "node:crypto"
+import { Schema } from "effect"
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs"
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 import { resolve, dirname } from "node:path"
-import { homedir } from "node:os"
 import { fileURLToPath } from "node:url"
-import { spawn, execSync, type ChildProcess } from "node:child_process"
-import { TASK_STATUSES, type TaskRow, type DependencyRow } from "@jamesaphoenix/tx/types"
-import type { ActorRef } from "@jamesaphoenix/tx/types"
+import { TASK_STATUSES, DocStableIdSchema, type TaskRow, type DependencyRow, type TaskLinkedDocRef } from "@jamesaphoenix/tx/types"
 import { parse as parseYaml } from "yaml"
-import { Effect } from "effect"
 import {
   applyMigrations,
   asDocKind,
   computeDocHash,
   deriveDocStableId,
   escapeLikePattern,
-  isPathWithin,
   isValidDocKind,
-  makeMinimalLayer,
   MdDocParseError,
   parseMdDocSync,
   readTxConfig,
+  writeDashboardAutoAddStatuses,
   renderDocToMarkdown,
   resolvePathWithin,
-  SupervisionService,
+  resolveWorkspaceContext,
 } from "@jamesaphoenix/tx"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const fallbackRoot = resolve(__dirname, "../../..")
 // TX_DB_PATH is set by the dashboard command to scope to the caller's CWD
-const configuredDbPath = process.env.TX_DB_PATH ?? resolve(fallbackRoot, ".tx/tasks.db")
-const dbPath = resolve(configuredDbPath)
-const dbDir = dirname(dbPath)
-const ralphLogPath = resolve(dbDir, "ralph-output.log")
-const ralphPidPath = resolve(dbDir, "ralph.pid")
-const txDir = resolve(dbDir)
-const claudeDir = resolve(homedir(), ".claude")
 const VALID_TASK_STATUSES = new Set<string>(TASK_STATUSES)
 type DashboardDefaultTaskAssigmentType = "human" | "agent"
 type DashboardDefaultTaskView = "list" | "kanban"
@@ -53,6 +43,7 @@ type DashboardCycleSettings = {
   cycleLengthDays: number
   cycleStartDay: DashboardCycleStartDay
   carryStatuses: string[]
+  autoAddStatuses: string[]
 }
 const VALID_ASSIGNEE_TYPES = new Set<DashboardDefaultTaskAssigmentType>(["human", "agent"])
 const VALID_TASK_VIEWS = new Set<DashboardDefaultTaskView>(["list", "kanban"])
@@ -72,11 +63,6 @@ const DASHBOARD_CYCLES_SECTION = "dashboard.cycles"
 const DASHBOARD_CYCLE_LENGTH_DAYS_KEY = "cycle_length_days"
 const DASHBOARD_CYCLE_START_DAY_KEY = "cycle_start_day"
 const DASHBOARD_CARRY_STATUSES_KEY = "carry_statuses"
-const DEFAULT_DASHBOARD_CYCLE_SETTINGS: DashboardCycleSettings = {
-  cycleLengthDays: 7,
-  cycleStartDay: "monday",
-  carryStatuses: ["planning", "active", "blocked", "review", "needs_review"],
-}
 const IN_PROGRESS_TASK_STATUSES = new Set<string>(["planning", "active", "blocked", "review", "needs_review"])
 const DEFAULT_LABEL_COLORS = [
   "#2563eb", // blue
@@ -132,19 +118,28 @@ type Route = {
 }
 
 const CORS_HEADERS: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET,POST,PATCH,DELETE,OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Vary": "Origin",
 }
 
-const applyCorsHeaders = (res: ServerResponse): void => {
+const isLoopbackUrl = (value: string): boolean => {
+  try {
+    const url = new URL(value)
+    return (url.protocol === "http:" || url.protocol === "https:")
+      && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
+      && !url.username && !url.password
+  } catch { return false }
+}
+
+const applyCorsHeaders = (res: ServerResponse, origin?: string): void => {
   for (const [key, value] of Object.entries(CORS_HEADERS)) {
     res.setHeader(key, value)
   }
+  if (origin) res.setHeader("Access-Control-Allow-Origin", origin)
 }
 
 const writeJsonResponse = (res: ServerResponse, response: JsonResponse): void => {
-  applyCorsHeaders(res)
   for (const [key, value] of Object.entries(response.headers)) {
     res.setHeader(key, value)
   }
@@ -202,8 +197,17 @@ class DashboardRouter {
   }
 
   async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const origin = req.headers.origin
+    if (!isLoopbackUrl(`http://${req.headers.host ?? ""}`) || (origin !== undefined && !isLoopbackUrl(origin))) {
+      writeJsonResponse(res, {
+        status:403,
+        headers:{"Content-Type":"application/json; charset=utf-8"},
+        body:JSON.stringify({error:"The dashboard only accepts local requests"}),
+      })
+      return
+    }
+    applyCorsHeaders(res, origin)
     if (req.method === "OPTIONS") {
-      applyCorsHeaders(res)
       res.statusCode = 204
       res.end()
       return
@@ -251,7 +255,7 @@ class DashboardRouter {
             total += buf.length
             if (total > MAX_BODY_BYTES) {
               // Stop buffering; the route's catch maps this to a 413.
-              rejectBody(new Error("Request body too large"))
+              rejectBody(new DashboardRequestError("Request body too large", 413))
               return
             }
             chunks.push(buf)
@@ -270,7 +274,13 @@ class DashboardRouter {
           param: (name: string): string => params.get(name) ?? "",
           json: async <T>(): Promise<T> => {
             const raw = await readBodyText()
-            return JSON.parse(raw) as T
+            let parsed: unknown
+            try { parsed = JSON.parse(raw) }
+            catch { throw new DashboardRequestError("Request body must be valid JSON", 400) }
+            if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+              throw new DashboardRequestError("Request body must be a JSON object", 400)
+            }
+            return parsed as T
           },
         },
         json: (body: unknown, status = 200): JsonResponse => ({
@@ -305,31 +315,30 @@ class DashboardRouter {
   }
 }
 
-/**
- * Validate that a file path is within an allowed directory.
- * Allows paths within:
- *   - .tx/ directory (locally stored transcripts)
- *   - ~/.claude/ directory (Claude Code native transcripts)
- * Prevents path traversal attacks (e.g., ../../etc/passwd).
- * Returns the resolved absolute path if valid, null if invalid.
- */
-const validateTranscriptPath = (filePath: string): string | null => {
-  const resolved = resolve(dirname(dbPath), filePath)
-  // Allow paths within the .tx directory
-  if (isPathWithin(txDir, resolved, { useRealpath: true })) {
-    return resolved
-  }
-  // Allow paths within ~/.claude directory (Claude Code transcripts)
-  if (isPathWithin(claudeDir, resolved, { useRealpath: true })) {
-    return resolved
-  }
-  return null
+class DashboardRequestError extends Error {
+  constructor(message: string, readonly status: 400 | 413) { super(message) }
 }
 
+const routeError = (context: Context, error: unknown): JsonResponse => {
+  if (error instanceof DashboardRequestError) return context.json({ error: error.message }, error.status)
+  console.error("[dashboard] Route failed:", error)
+  return context.json({ error: "Internal server error" }, 500)
+}
+
+export interface DashboardServerOptions {
+  readonly db?: Database
+  readonly dbPath?: string
+  readonly contentRoot?: string
+}
+
+/** Build the same HTTP server used by the CLI, without opening a listening port. */
+export function createDashboardServer(options: DashboardServerOptions = {}) {
+const dbPath = resolve(options.dbPath ?? process.env.TX_DB_PATH ?? resolve(fallbackRoot, ".tx/tasks.db"))
+const contentRoot = options.contentRoot ?? resolveWorkspaceContext({ dbPath }).contentRoot
 const app = new DashboardRouter()
 
 // Lazy DB connection
-let db: Database | null = null
+let db: Database | null = options.db ?? null
 const getDb = () => {
   if (!db) {
     if (!existsSync(dbPath)) {
@@ -465,6 +474,8 @@ interface TaskCreatePayload {
   assignedAt?: string | null
   assignedBy?: string | null
   metadata?: Record<string, unknown>
+  labels?: readonly AssignLabelPayload[]
+  cycleId?: string
 }
 
 interface TaskUpdatePayload {
@@ -496,6 +507,7 @@ interface SettingsPatchPayload {
       cycleLengthDays?: number
       cycleStartDay?: string
       carryStatuses?: string[]
+      autoAddStatuses?: string[]
     }
   }
 }
@@ -548,16 +560,6 @@ interface AddCycleTasksPayload {
   taskIds?: string[]
 }
 
-interface CreateLabelPayload {
-  name?: string
-  color?: string
-}
-
-interface UpdateLabelPayload {
-  name?: string
-  color?: string
-}
-
 interface AssignLabelPayload {
   labelId?: number
   name?: string
@@ -568,7 +570,7 @@ interface DocRow {
   id: number
   doc_id: string | null
   hash: string
-  kind: "overview" | "prd" | "design" | "requirement" | "system_design" | "runbook" | "decision"
+  kind: string
   name: string
   title: string
   version: number
@@ -595,7 +597,7 @@ interface DocResponse {
   id: number
   docId: string
   hash: string
-  kind: "overview" | "prd" | "design" | "requirement" | "system_design" | "runbook" | "decision"
+  kind: string
   name: string
   title: string
   version: number
@@ -619,8 +621,38 @@ function defaultLabelColor(name: string): string {
   return DEFAULT_LABEL_COLORS[hashString(name) % DEFAULT_LABEL_COLORS.length]!
 }
 
+function validateTaskFields(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return "Task fields must be an object"
+  const fields = payload as Record<string,unknown>
+  for (const field of ["title", "description", "status"]) {
+    if (fields[field] !== undefined && typeof fields[field] !== "string") return `${field} must be a string`
+  }
+  for (const field of ["parentId", "assigneeId", "assignedAt", "assignedBy"]) {
+    if (fields[field] !== undefined && fields[field] !== null && typeof fields[field] !== "string") return `${field} must be a string or null`
+  }
+  if (fields.metadata !== undefined && (!fields.metadata || typeof fields.metadata !== "object" || Array.isArray(fields.metadata))) return "metadata must be an object"
+  return null
+}
+
 function normalizeLabelName(name: string): string {
   return name.trim().replace(/\s+/g, " ")
+}
+
+const labelNameSchema = Schema.String.pipe(Schema.filter(value => value.trim().length > 0))
+const labelColorSchema = Schema.String.pipe(Schema.pattern(/^#[0-9a-f]{6}$/i))
+const labelMetadataSchema = Schema.Struct({name:Schema.optional(labelNameSchema),color:Schema.optional(labelColorSchema)})
+const newLabelSchema = Schema.Struct({name:labelNameSchema,color:Schema.optional(labelColorSchema)})
+const labelAssignmentSchema = Schema.Union(
+  Schema.Struct({labelId:Schema.Number.pipe(Schema.filter(value => Number.isSafeInteger(value) && value > 0)),
+    name:Schema.optional(Schema.Never),color:Schema.optional(Schema.Never)}),
+  Schema.Struct({name:labelNameSchema,color:Schema.optional(labelColorSchema),labelId:Schema.optional(Schema.Never)}),
+)
+
+function decodeLabelPayload<A,I>(schema: Schema.Schema<A,I>, payload: unknown): A {
+  try { return Schema.decodeUnknownSync(schema)(payload) }
+  catch {
+    throw new DashboardRequestError("A label needs a positive integer labelId or a non-empty name and optional six-digit hex colour. Do not combine labelId with name or colour.",400)
+  }
 }
 
 function isTaskStatus(value: string): value is (typeof TASK_STATUSES)[number] {
@@ -654,9 +686,9 @@ function normalizeAssigneeType(
 function toSettingsResponse(): SettingsResponse {
   return {
     dashboard: {
-      defaultTaskAssigmentType: readDashboardDefaultTaskAssigmentType(process.cwd()),
-      defaultTaskView: readDashboardDefaultTaskView(process.cwd()),
-      cycles: readDashboardCycleSettings(process.cwd()),
+      defaultTaskAssigmentType: readDashboardDefaultTaskAssigmentType(contentRoot),
+      defaultTaskView: readDashboardDefaultTaskView(contentRoot),
+      cycles: readDashboardCycleSettings(contentRoot),
     },
   }
 }
@@ -728,55 +760,7 @@ function readDashboardDefaultTaskView(cwd: string): DashboardDefaultTaskView {
 }
 
 function readDashboardCycleSettings(cwd: string): DashboardCycleSettings {
-  const configPath = resolve(cwd, ".tx", "config.toml")
-  if (!existsSync(configPath)) {
-    return {
-      ...DEFAULT_DASHBOARD_CYCLE_SETTINGS,
-      carryStatuses: [...DEFAULT_DASHBOARD_CYCLE_SETTINGS.carryStatuses],
-    }
-  }
-  try {
-    const raw = readFileSync(configPath, "utf8")
-    const cycleLengthRaw = extractTomlValue(
-      raw,
-      DASHBOARD_CYCLES_SECTION,
-      DASHBOARD_CYCLE_LENGTH_DAYS_KEY
-    )
-    const cycleStartDayRaw = extractTomlValue(
-      raw,
-      DASHBOARD_CYCLES_SECTION,
-      DASHBOARD_CYCLE_START_DAY_KEY
-    )
-    const carryStatusesRaw = extractTomlArray(
-      raw,
-      DASHBOARD_CYCLES_SECTION,
-      DASHBOARD_CARRY_STATUSES_KEY
-    )
-
-    const cycleLengthParsed = cycleLengthRaw ? parseInt(cycleLengthRaw, 10) : NaN
-    const cycleLengthDays = Number.isFinite(cycleLengthParsed) && cycleLengthParsed > 0
-      ? cycleLengthParsed
-      : DEFAULT_DASHBOARD_CYCLE_SETTINGS.cycleLengthDays
-    const cycleStartDay = isDashboardCycleStartDay(cycleStartDayRaw)
-      ? cycleStartDayRaw
-      : DEFAULT_DASHBOARD_CYCLE_SETTINGS.cycleStartDay
-    const carryStatuses = carryStatusesRaw
-      .map((status) => status.trim())
-      .filter((status) => status.length > 0)
-
-    return {
-      cycleLengthDays,
-      cycleStartDay,
-      carryStatuses: carryStatuses.length > 0
-        ? carryStatuses
-        : [...DEFAULT_DASHBOARD_CYCLE_SETTINGS.carryStatuses],
-    }
-  } catch {
-    return {
-      ...DEFAULT_DASHBOARD_CYCLE_SETTINGS,
-      carryStatuses: [...DEFAULT_DASHBOARD_CYCLE_SETTINGS.carryStatuses],
-    }
-  }
+  return readTxConfig(cwd).dashboard.cycles
 }
 
 function writeDashboardDefaultTaskAssigmentType(
@@ -874,47 +858,6 @@ function extractTomlValue(toml: string, section: string, key: string): string | 
     }
   }
   return null
-}
-
-function extractTomlArray(toml: string, section: string, key: string): string[] {
-  const lines = toml.split("\n")
-  let inSection = false
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]
-    const trimmed = line.trim()
-    if (trimmed === `[${section}]`) {
-      inSection = true
-      continue
-    }
-    if (trimmed.startsWith("[") && inSection) {
-      break
-    }
-    if (!inSection) continue
-
-    const arrayStart = new RegExp(`^${key}\\s*=\\s*\\[`).exec(trimmed)
-    if (!arrayStart) continue
-
-    let collected = trimmed
-    while (!collected.includes("]") && i + 1 < lines.length) {
-      i += 1
-      collected += lines[i]!.trim()
-    }
-
-    const out: string[] = []
-    const quoted = /["']([^"']+)["']/g
-    let match: RegExpExecArray | null
-    while ((match = quoted.exec(collected)) !== null) {
-      if (match[1].trim().length > 0) {
-        out.push(match[1].trim())
-      }
-    }
-    return out
-  }
-
-  const fallback = extractTomlValue(toml, section, key)
-  if (!fallback) return []
-  return fallback.split(",").map((value) => value.trim()).filter(Boolean)
 }
 
 function patchTomlKey(
@@ -1067,6 +1010,7 @@ interface TaskRowWithDeps extends TaskRowWithAssignment {
   children: string[]
   isReady: boolean
   labels: TaskLabel[]
+  linkedDocs: TaskLinkedDocRef[]
 }
 
 interface TaskDependencySnapshot {
@@ -1096,6 +1040,7 @@ interface TaskWithDepsResponse {
   children: string[]
   isReady: boolean
   labels: TaskLabel[]
+  linkedDocs: TaskLinkedDocRef[]
 }
 
 function parseTaskMetadata(value: string): Record<string, unknown> {
@@ -1128,6 +1073,7 @@ function serializeTask(task: TaskRowWithDeps): TaskWithDepsResponse {
     children: task.children,
     isReady: task.isReady,
     labels: task.labels,
+    linkedDocs: task.linkedDocs,
   }
 }
 
@@ -1291,47 +1237,6 @@ function getNextUpcomingCycle(db: Database): CycleRow | null {
   return row ?? null
 }
 
-function getLatestCycleWindow(db: Database): { end_date: string } | null {
-  const row = db.prepare(`
-    SELECT end_date
-    FROM cycles
-    ORDER BY start_date DESC, created_at DESC
-    LIMIT 1
-  `).get() as { end_date: string } | undefined
-
-  return row ?? null
-}
-
-function computeCycleWindowAfter(endDate: string, config: DashboardCycleSettings): { startDate: string; endDate: string } {
-  const parsed = parseDateOnly(endDate)
-  if (!parsed) {
-    return computeDefaultCycleWindow(config)
-  }
-
-  const startDate = formatDateOnly(startOfUtcDay(parsed))
-  const nextEndDate = formatDateOnly(addUtcDays(parsed, config.cycleLengthDays))
-  return { startDate, endDate: nextEndDate }
-}
-
-function getOrCreateNextCycle(db: Database, config: DashboardCycleSettings): CycleRow {
-  const existingUpcoming = getNextUpcomingCycle(db)
-  if (existingUpcoming) {
-    return existingUpcoming
-  }
-
-  const latestCycle = getLatestCycleWindow(db)
-  const window = latestCycle?.end_date
-    ? computeCycleWindowAfter(latestCycle.end_date, config)
-    : computeDefaultCycleWindow(config)
-  const status: CycleStatus = hasCurrentCycle(db) ? "upcoming" : "current"
-
-  return insertCycle(db, {
-    startDate: window.startDate,
-    endDate: window.endDate,
-    status,
-  })
-}
-
 function hasActiveCycleAssignment(db: Database, taskId: string): boolean {
   const row = db.prepare(`
     SELECT 1
@@ -1345,17 +1250,12 @@ function hasActiveCycleAssignment(db: Database, taskId: string): boolean {
   return Boolean(row)
 }
 
-function maybeAddTaskToNextCycle(db: Database, taskId: string, taskStatus: string): void {
-  if (taskStatus === "backlog" || hasActiveCycleAssignment(db, taskId)) {
-    return
-  }
-
-  const config = readDashboardCycleSettings(process.cwd())
-  const cycle = getOrCreateNextCycle(db, config)
-  db.prepare(`
-    INSERT OR IGNORE INTO cycle_tasks (cycle_id, task_id)
-    VALUES (?, ?)
-  `).run(cycle.id, taskId)
+function maybeAddTaskToCurrentCycle(db: Database, taskId: string, taskStatus: string): void {
+  const config = readDashboardCycleSettings(contentRoot)
+  if (!config.autoAddStatuses.includes(taskStatus) || hasActiveCycleAssignment(db, taskId)) return
+  const cycle = db.prepare("SELECT id FROM cycles WHERE status='current' LIMIT 1").get() as {id:string} | undefined
+  if (!cycle) return
+  db.prepare("INSERT OR IGNORE INTO cycle_tasks(cycle_id,task_id) VALUES(?,?)").run(cycle.id,taskId)
 }
 
 function nextCycleName(db: Database): string {
@@ -1409,7 +1309,7 @@ function computeCurrentCycleWindow(config: DashboardCycleSettings): { startDate:
 }
 
 function shouldAutoCreateCurrentCycle(autoCreateQueryValue: string | undefined): boolean {
-  if (!autoCreateQueryValue) return true
+  if (!autoCreateQueryValue) return false
   return autoCreateQueryValue !== "false" && autoCreateQueryValue !== "0"
 }
 
@@ -1434,11 +1334,17 @@ function materializeDocId(doc: Pick<DocRow, "doc_id" | "name" | "version">): str
   return doc.doc_id ?? deriveDocStableId(`${doc.name}:${doc.version}`)
 }
 
+function parsePositiveIntegerSelector(raw: string, label: string): number {
+  const parsed = Number(raw)
+  if (!/^[1-9]\d*$/.test(raw) || !Number.isSafeInteger(parsed)) {
+    throw new DashboardRequestError(`Invalid ${label}: ${raw}. Expected a positive safe integer.`,400)
+  }
+  return parsed
+}
+
 function parseDocVersionQuery(c: Context): number | undefined {
   const raw = c.req.query("version")
-  if (!raw) return undefined
-  const parsed = Number.parseInt(raw, 10)
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined
+  return raw === undefined ? undefined : parsePositiveIntegerSelector(raw,"document version")
 }
 
 function parseKindScopedDocRef(ref: string): { kind: string; name: string } | null {
@@ -1549,12 +1455,7 @@ function renderMarkdownFromYaml(yamlContent: string, filePath: string): string {
 }
 
 function getDocsRootPath(): string {
-  try {
-    const config = readTxConfig(process.cwd())
-    return resolve(process.cwd(), config.docs.path)
-  } catch {
-    return resolve(dbDir, "docs")
-  }
+  return resolve(contentRoot, readTxConfig(contentRoot).docs.path)
 }
 
 /**
@@ -1739,22 +1640,8 @@ function parseTaskCursor(cursor: string): { score: number; id: string } {
   }
 }
 
-function parseRunCursor(cursor: string): { startedAt: string; id: string } {
-  // Format: "2026-01-30T10:00:00Z:run-abc123"
-  // Find the last colon that separates timestamp from id
-  const match = cursor.match(/^(.+):(run-.+)$/)
-  if (!match) {
-    return { startedAt: cursor, id: '' }
-  }
-  return { startedAt: match[1]!, id: match[2]! }
-}
-
 function buildTaskCursor(task: TaskRowWithAssignment): string {
   return `${task.score}:${task.id}`
-}
-
-function buildRunCursor(run: { startedAt: string; id: string }): string {
-  return `${run.startedAt}:${run.id}`
 }
 
 
@@ -1766,6 +1653,20 @@ function enrichTasksWithDeps(
 ): TaskRowWithDeps[] {
   const dependencySnapshot = snapshot ?? buildDependencySnapshot(db)
   const labelsByTask = loadTaskLabelsMap(db, tasks.map(t => t.id))
+  const docsByTask = new Map<string, TaskLinkedDocRef[]>()
+  if (tasks.length && hasDocsSchema(db) && hasTaskDocLinksSchema(db)) {
+    const placeholders = tasks.map(() => "?").join(",")
+    const rows = db.prepare(`SELECT d.*, l.task_id, l.link_type FROM task_doc_links l
+      JOIN docs d ON d.id = l.doc_id WHERE l.task_id IN (${placeholders}) ORDER BY d.kind, d.name, d.version
+    `).all(...tasks.map(task => task.id)) as (DocRow & { task_id: string; link_type: "implements" | "references" })[]
+    for (const doc of rows) {
+      const links = docsByTask.get(doc.task_id) ?? []
+      links.push({ docId: DocStableIdSchema.make(materializeDocId(doc)), kind: asDocKind(doc.kind),
+        name: doc.name, title: doc.title, version: doc.version, status: doc.status,
+        filePath: doc.file_path, linkType: doc.link_type })
+      docsByTask.set(doc.task_id, links)
+    }
+  }
 
   return tasks.map(task => {
     const blockedBy = dependencySnapshot.blockedByMap.get(task.id) ?? []
@@ -1775,7 +1676,7 @@ function enrichTasksWithDeps(
     const isReady = WORKABLE_TASK_STATUSES.has(task.status) && allBlockersDone
     const labels = labelsByTask.get(task.id) ?? []
 
-    return { ...task, blockedBy, blocks, children, isReady, labels }
+    return { ...task, blockedBy, blocks, children, isReady, labels, linkedDocs: docsByTask.get(task.id) ?? [] }
   })
 }
 
@@ -1783,7 +1684,7 @@ app.get("/api/settings", (c) => {
   try {
     return c.json(toSettingsResponse())
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -1795,6 +1696,7 @@ app.patch("/api/settings", async (c) => {
     const nextCycleLengthDays = payload?.dashboard?.cycles?.cycleLengthDays
     const nextCycleStartDay = payload?.dashboard?.cycles?.cycleStartDay
     const nextCarryStatuses = payload?.dashboard?.cycles?.carryStatuses
+    const nextAutoAddStatuses = payload?.dashboard?.cycles?.autoAddStatuses
 
     if (
       nextType === undefined
@@ -1802,6 +1704,7 @@ app.patch("/api/settings", async (c) => {
       && nextCycleLengthDays === undefined
       && nextCycleStartDay === undefined
       && nextCarryStatuses === undefined
+      && nextAutoAddStatuses === undefined
     ) {
       return c.json({ error: "At least one dashboard setting must be provided" }, 400)
     }
@@ -1827,6 +1730,12 @@ app.patch("/api/settings", async (c) => {
       }, 400)
     }
 
+    for (const [field, statuses] of [["carryStatuses", nextCarryStatuses], ["autoAddStatuses", nextAutoAddStatuses]] as const) {
+      if (statuses !== undefined && (!Array.isArray(statuses) || !statuses.every(status => typeof status === "string" && isTaskStatus(status.trim())))) {
+        return c.json({error:`dashboard.cycles.${field} must be an array of valid task statuses`}, 400)
+      }
+    }
+
     const normalizedCarryStatuses = nextCarryStatuses
       ?.map((status) => status.trim())
       .filter((status) => status.length > 0)
@@ -1836,23 +1745,24 @@ app.patch("/api/settings", async (c) => {
     }
 
     if (nextType !== undefined) {
-      writeDashboardDefaultTaskAssigmentType(nextType, process.cwd())
+      writeDashboardDefaultTaskAssigmentType(nextType, contentRoot)
     }
     if (nextTaskView !== undefined) {
-      writeDashboardDefaultTaskView(nextTaskView, process.cwd())
+      writeDashboardDefaultTaskView(nextTaskView, contentRoot)
     }
     if (nextCycleLengthDays !== undefined) {
-      writeDashboardCycleLengthDays(nextCycleLengthDays, process.cwd())
+      writeDashboardCycleLengthDays(nextCycleLengthDays, contentRoot)
     }
     if (nextCycleStartDay !== undefined) {
-      writeDashboardCycleStartDay(nextCycleStartDay, process.cwd())
+      writeDashboardCycleStartDay(nextCycleStartDay, contentRoot)
     }
     if (normalizedCarryStatuses !== undefined) {
-      writeDashboardCarryStatuses(normalizedCarryStatuses, process.cwd())
+      writeDashboardCarryStatuses(normalizedCarryStatuses, contentRoot)
     }
+    if (nextAutoAddStatuses !== undefined) writeDashboardAutoAddStatuses(nextAutoAddStatuses, contentRoot)
     return c.json(toSettingsResponse())
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -1860,7 +1770,7 @@ app.patch("/api/settings", async (c) => {
 app.get("/api/cycles", (c) => {
   try {
     const db = getDb()
-    const config = readDashboardCycleSettings(process.cwd())
+    const config = readDashboardCycleSettings(contentRoot)
     const shouldAutoCreate = shouldAutoCreateCurrentCycle(c.req.query("autoCreate"))
 
     if (shouldAutoCreate && !hasCurrentCycle(db)) {
@@ -1886,7 +1796,7 @@ app.get("/api/cycles", (c) => {
 
     return c.json({ cycles: listCyclesWithStats(db) })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -1894,7 +1804,7 @@ app.get("/api/cycles", (c) => {
 app.post("/api/cycles", (c) => {
   try {
     const db = getDb()
-    const config = readDashboardCycleSettings(process.cwd())
+    const config = readDashboardCycleSettings(contentRoot)
     const latestCycle = db.prepare(`
       SELECT end_date
       FROM cycles
@@ -1913,18 +1823,21 @@ app.post("/api/cycles", (c) => {
       : computeDefaultCycleWindow(config)
 
     const status: CycleStatus = hasCurrentCycle(db) ? "upcoming" : "current"
-    const created = insertCycle(db, {
-      startDate: window.startDate,
-      endDate: window.endDate,
-      status,
-    })
+    const created = db.transaction(() => {
+      const cycle = insertCycle(db, {startDate:window.startDate,endDate:window.endDate,status})
+      if (config.autoAddStatuses.length) {
+        const placeholders = config.autoAddStatuses.map(() => "?").join(",")
+        db.prepare(`INSERT OR IGNORE INTO cycle_tasks(cycle_id,task_id) SELECT ?,id FROM tasks WHERE status IN (${placeholders})`).run(cycle.id,...config.autoAddStatuses)
+      }
+      return cycle
+    })()
     const createdWithStats = getCycleWithStats(db, created.id)
     if (!createdWithStats) {
       return c.json({ error: "Failed to load created cycle" }, 500)
     }
     return c.json(createdWithStats, 201)
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -1965,7 +1878,7 @@ app.get("/api/cycles/:id", (c) => {
 
     return c.json(detail)
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -2020,7 +1933,7 @@ app.patch("/api/cycles/:id", async (c) => {
     }
     return c.json(updated)
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -2067,7 +1980,7 @@ app.post("/api/cycles/:id/tasks", async (c) => {
 
     return c.json({ success: true, cycleId, addedCount })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -2094,7 +2007,7 @@ app.delete("/api/cycles/:id/tasks/:taskId", (c) => {
       removed: Number(result.changes ?? 0) > 0,
     })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -2114,7 +2027,7 @@ app.post("/api/cycles/:id/complete", (c) => {
       return c.json({ error: "Only current cycles can be completed" }, 400)
     }
 
-    const config = readDashboardCycleSettings(process.cwd())
+    const config = readDashboardCycleSettings(contentRoot)
     const carryStatuses = config.carryStatuses.map((status) => status.trim()).filter((status) => status.length > 0)
     const now = new Date().toISOString()
     let nextCycleId = ""
@@ -2186,7 +2099,7 @@ app.post("/api/cycles/:id/complete", (c) => {
 
     return c.json({ completedCycle, newCycle, carriedTaskIds })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -2203,11 +2116,7 @@ app.get("/api/tasks", (c) => {
     let labelId: number | null = null
 
     if (labelIdRaw !== undefined) {
-      const parsedLabelId = parseInt(labelIdRaw, 10)
-      if (Number.isNaN(parsedLabelId)) {
-        return c.json({ error: `Invalid label ID: ${labelIdRaw}` }, 400)
-      }
-      labelId = parsedLabelId
+      labelId = parsePositiveIntegerSelector(labelIdRaw,"label ID")
     }
 
     // Build WHERE clauses
@@ -2297,7 +2206,7 @@ app.get("/api/tasks", (c) => {
       summary: { total, byStatus },
     })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -2306,7 +2215,24 @@ app.post("/api/tasks", async (c) => {
   try {
     const db = getDb()
     const payload = await c.req.json<TaskCreatePayload>()
-    const title = payload.title?.trim()
+    const fieldError = validateTaskFields(payload)
+    if (fieldError) return c.json({error:fieldError},400)
+    if (payload.cycleId !== undefined && (typeof payload.cycleId !== "string" || !payload.cycleId.trim())) {
+      return c.json({error:"cycleId must be a non-empty string"},400)
+    }
+    if (payload.cycleId && !db.prepare("SELECT 1 FROM cycles WHERE id=?").get(payload.cycleId)) {
+      return c.json({error:`Cycle not found: ${payload.cycleId}`},400)
+    }
+    if (payload.labels !== undefined) {
+      if (!Array.isArray(payload.labels) || payload.labels.length > 200) return c.json({error:"labels must be an array of at most 200 labels"},400)
+      for (const label of payload.labels) {
+        const decoded = decodeLabelPayload(labelAssignmentSchema,label)
+        if (decoded.labelId !== undefined && !db.prepare("SELECT 1 FROM task_labels WHERE id=?").get(decoded.labelId)) {
+          return c.json({error:`Label not found: ${decoded.labelId}`},400)
+        }
+      }
+    }
+    const title = payload.title?.replace(/\0/g, "").replace(/^[\s\p{Cf}]+|[\s\p{Cf}]+$/gu, "")
 
     if (!title) {
       return c.json({ error: "Task title is required" }, 400)
@@ -2328,7 +2254,7 @@ app.post("/api/tasks", async (c) => {
     const description = payload.description ?? ""
     const score = payload.score ?? 0
     const status = payload.status?.trim() || "backlog"
-    const defaultAssigneeType = readDashboardDefaultTaskAssigmentType(process.cwd())
+    const defaultAssigneeType = readDashboardDefaultTaskAssigmentType(contentRoot)
     const requestedAssigneeType = payload.assigneeType === undefined
       ? defaultAssigneeType
       : payload.assigneeType
@@ -2351,40 +2277,47 @@ app.post("/api/tasks", async (c) => {
     const assignedAt = assigneeType === null ? null : (payload.assignedAt ?? now)
     const assignedBy = assigneeType === null ? null : (payload.assignedBy ?? "dashboard:create")
 
-    db.prepare(`
-      INSERT INTO tasks (
-        id, title, description, status, parent_id, score, created_at, updated_at, completed_at,
-        assignee_type, assignee_id, assigned_at, assigned_by, metadata
+    const task = db.transaction(() => {
+      db.prepare(`
+        INSERT INTO tasks (
+          id, title, description, status, parent_id, score, created_at, updated_at, completed_at,
+          assignee_type, assignee_id, assigned_at, assigned_by, metadata
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        id,
+        title,
+        description,
+        status,
+        payload.parentId ?? null,
+        score,
+        now,
+        now,
+        status === "done" ? now : null,
+        assigneeType,
+        assigneeId,
+        assignedAt,
+        assignedBy,
+        JSON.stringify(metadata),
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      id,
-      title,
-      description,
-      status,
-      payload.parentId ?? null,
-      score,
-      now,
-      now,
-      null,
-      assigneeType,
-      assigneeId,
-      assignedAt,
-      assignedBy,
-      JSON.stringify(metadata),
-    )
 
-    if (assignedBy !== "dashboard:cycle-composer") {
-      maybeAddTaskToNextCycle(db, id, status)
-    }
+      for (const label of payload.labels ?? []) {
+        const labelId = label.labelId ?? upsertLabel(db,{name:label.name!,color:label.color}).id
+        db.prepare("INSERT OR IGNORE INTO task_label_assignments(task_id,label_id,created_at) VALUES(?,?,?)").run(id,labelId,now)
+      }
+      if (payload.cycleId) {
+        db.prepare("INSERT INTO cycle_tasks(cycle_id,task_id,added_at) VALUES(?,?,?)").run(payload.cycleId,id,now)
+      } else if (assignedBy !== "dashboard:cycle-composer") {
+        maybeAddTaskToCurrentCycle(db, id, status)
+      }
 
-    const task = getTaskWithDeps(db, id)
-    if (!task) {
-      return c.json({ error: "Failed to load created task" }, 500)
-    }
+      const created = getTaskWithDeps(db, id)
+      if (!created) throw new Error("Failed to load created task")
+      return created
+    })()
     return c.json(serializeTask(task), 201)
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -2394,11 +2327,18 @@ app.patch("/api/tasks/:id", async (c) => {
     const db = getDb()
     const id = c.req.param("id")
     const payload = await c.req.json<TaskUpdatePayload>()
+    const fieldError = validateTaskFields(payload)
+    if (fieldError) return c.json({error:fieldError},400)
 
     const existing = db.prepare("SELECT * FROM tasks WHERE id = ?").get(id) as TaskRowWithAssignment | undefined
     if (!existing) {
       return c.json({ error: "Task not found" }, 404)
     }
+
+    if (payload.title !== undefined && (typeof payload.title !== "string" || !payload.title.replace(/[\s\p{Cf}\0]/gu, ""))) {
+      return c.json({ error: "Title must contain visible text" }, 400)
+    }
+    const title = payload.title?.replace(/\0/g, "").replace(/^[\s\p{Cf}]+|[\s\p{Cf}]+$/gu, "")
 
     if (payload.status !== undefined && !isTaskStatus(payload.status)) {
       return c.json({
@@ -2493,7 +2433,7 @@ app.patch("/api/tasks/:id", async (c) => {
           metadata = ?
       WHERE id = ?
     `).run(
-      payload.title ?? existing.title,
+      title ?? existing.title,
       payload.description ?? existing.description,
       nextStatus,
       payload.parentId !== undefined ? payload.parentId : existing.parent_id,
@@ -2508,7 +2448,7 @@ app.patch("/api/tasks/:id", async (c) => {
       id,
     )
 
-    maybeAddTaskToNextCycle(db, id, nextStatus)
+    maybeAddTaskToCurrentCycle(db, id, nextStatus)
 
     const task = getTaskWithDeps(db, id)
     if (!task) {
@@ -2516,7 +2456,7 @@ app.patch("/api/tasks/:id", async (c) => {
     }
     return c.json(serializeTask(task))
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -2531,7 +2471,7 @@ const listLabelsHandler = (c: Context) => {
 
     return c.json({ labels: rows.map(toTaskLabel) })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 }
 
@@ -2543,14 +2483,11 @@ app.get("/api/task-labels", listLabelsHandler)
 const createLabelHandler = async (c: Context) => {
   try {
     const db = getDb()
-    const payload = await c.req.json<CreateLabelPayload>()
-    if (!payload.name || !payload.name.trim()) {
-      return c.json({ error: "Label name is required" }, 400)
-    }
+    const payload = decodeLabelPayload(newLabelSchema,await c.req.json<unknown>())
     const label = upsertLabel(db, { name: payload.name, color: payload.color })
     return c.json(label, 201)
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 }
 
@@ -2563,10 +2500,7 @@ const updateLabelHandler = async (c: Context) => {
   try {
     const db = getDb()
     const labelIdRaw = c.req.param("labelId")
-    const labelId = parseInt(labelIdRaw, 10)
-    if (isNaN(labelId)) {
-      return c.json({ error: `Invalid label ID: ${labelIdRaw}` }, 400)
-    }
+    const labelId = parsePositiveIntegerSelector(labelIdRaw,"label ID")
 
     const existing = db.prepare(`
       SELECT id, name, color, created_at, updated_at
@@ -2578,7 +2512,7 @@ const updateLabelHandler = async (c: Context) => {
       return c.json({ error: "Label not found" }, 404)
     }
 
-    const payload = await c.req.json<UpdateLabelPayload>()
+    const payload = decodeLabelPayload(labelMetadataSchema,await c.req.json<unknown>())
     const nextName = payload.name !== undefined ? normalizeLabelName(payload.name) : existing.name
     if (!nextName) {
       return c.json({ error: "Label name is required" }, 400)
@@ -2618,7 +2552,7 @@ const updateLabelHandler = async (c: Context) => {
 
     return c.json(toTaskLabel(updated))
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 }
 
@@ -2631,10 +2565,7 @@ const deleteLabelHandler = (c: Context) => {
   try {
     const db = getDb()
     const labelIdRaw = c.req.param("labelId")
-    const labelId = parseInt(labelIdRaw, 10)
-    if (isNaN(labelId)) {
-      return c.json({ error: `Invalid label ID: ${labelIdRaw}` }, 400)
-    }
+    const labelId = parsePositiveIntegerSelector(labelIdRaw,"label ID")
 
     const existing = db.prepare("SELECT 1 FROM task_labels WHERE id = ?").get(labelId)
     if (!existing) {
@@ -2644,7 +2575,7 @@ const deleteLabelHandler = (c: Context) => {
     db.prepare("DELETE FROM task_labels WHERE id = ?").run(labelId)
     return c.json({ success: true, id: labelId })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 }
 
@@ -2662,7 +2593,7 @@ const assignLabelHandler = async (c: Context) => {
       return c.json({ error: "Task not found" }, 404)
     }
 
-    const payload = await c.req.json<AssignLabelPayload>()
+    const payload = decodeLabelPayload(labelAssignmentSchema,await c.req.json<unknown>())
     let label: TaskLabel | null = null
 
     if (payload.labelId !== undefined) {
@@ -2692,7 +2623,7 @@ const assignLabelHandler = async (c: Context) => {
     }
     return c.json({ success: true, task: serializeTask(task), label })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 }
 
@@ -2706,10 +2637,7 @@ const unassignLabelHandler = (c: Context) => {
     const db = getDb()
     const taskId = c.req.param("id")
     const labelIdRaw = c.req.param("labelId")
-    const labelId = parseInt(labelIdRaw, 10)
-    if (isNaN(labelId)) {
-      return c.json({ error: `Invalid label ID: ${labelIdRaw}` }, 400)
-    }
+    const labelId = parsePositiveIntegerSelector(labelIdRaw,"label ID")
 
     const taskExists = db.prepare("SELECT 1 FROM tasks WHERE id = ?").get(taskId)
     if (!taskExists) {
@@ -2724,7 +2652,7 @@ const unassignLabelHandler = (c: Context) => {
     }
     return c.json({ success: true, task: serializeTask(task) })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 }
 
@@ -2746,7 +2674,7 @@ app.delete("/api/tasks/:id", (c) => {
     db.prepare("DELETE FROM tasks WHERE id = ?").run(id)
     return c.json({ success: true, id })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -2771,103 +2699,7 @@ app.get("/api/tasks/ready", (c) => {
 
     return c.json({ tasks: enriched.map(serializeTask) })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
-  }
-})
-
-// GET /api/ralph
-app.get("/api/ralph", (c) => {
-  try {
-    // Check if ralph is running
-    let running = false
-    let pid: number | null = null
-
-    if (existsSync(ralphPidPath)) {
-      const pidStr = readFileSync(ralphPidPath, "utf-8").trim()
-      pid = parseInt(pidStr, 10)
-      try {
-        process.kill(pid, 0) // Check if process exists
-        running = true
-      } catch {
-        running = false
-      }
-    }
-
-    // Parse ralph log for recent activity
-    const recentActivity: Array<{
-      timestamp: string
-      iteration: number
-      task: string
-      taskTitle: string
-      agent: string
-      status: "started" | "completed" | "failed"
-    }> = []
-
-    let currentIteration = 0
-    let currentTask: string | null = null
-
-    if (existsSync(ralphLogPath)) {
-      const log = readFileSync(ralphLogPath, "utf-8")
-      const lines = log.split("\n")
-
-      for (const line of lines) {
-        // Match iteration start
-        const iterMatch = line.match(/\[([^\]]+)\] --- Iteration (\d+) ---/)
-        if (iterMatch) {
-          currentIteration = parseInt(iterMatch[2]!, 10)
-        }
-
-        // Match task assignment
-        const taskMatch = line.match(/\[([^\]]+)\] Task: (tx-[a-z0-9]+) — (.+)/)
-        if (taskMatch) {
-          currentTask = taskMatch[2]!
-          recentActivity.push({
-            timestamp: taskMatch[1]!,
-            iteration: currentIteration,
-            task: taskMatch[2]!,
-            taskTitle: taskMatch[3]!,
-            agent: "",
-            status: "started",
-          })
-        }
-
-        // Match agent
-        const agentMatch = line.match(/\[([^\]]+)\] Agent: (.+)/)
-        if (agentMatch && recentActivity.length > 0) {
-          recentActivity[recentActivity.length - 1]!.agent = agentMatch[2]!
-        }
-
-        // Match completion
-        const completeMatch = line.match(/\[([^\]]+)\] Agent completed successfully/)
-        if (completeMatch && recentActivity.length > 0) {
-          recentActivity.push({
-            ...recentActivity[recentActivity.length - 1]!,
-            timestamp: completeMatch[1]!,
-            status: "completed",
-          })
-        }
-
-        // Match failure
-        const failMatch = line.match(/\[([^\]]+)\] Agent failed/)
-        if (failMatch && recentActivity.length > 0) {
-          recentActivity.push({
-            ...recentActivity[recentActivity.length - 1]!,
-            timestamp: failMatch[1]!,
-            status: "failed",
-          })
-        }
-      }
-    }
-
-    return c.json({
-      running,
-      pid,
-      currentIteration,
-      currentTask,
-      recentActivity: recentActivity.slice(-20).reverse(), // Last 20, newest first
-    })
-  } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -2888,34 +2720,13 @@ app.get("/api/stats", (c) => {
       )
     `).get() as { count: number }).count
 
-    // Learnings count (if table exists)
-    let learningsCount = 0
-    try {
-      learningsCount = (db.prepare("SELECT COUNT(*) as count FROM learnings").get() as { count: number }).count
-    } catch {
-      // Table doesn't exist yet
-    }
-
-    // Runs count (if table exists)
-    let runsRunning = 0
-    let runsTotal = 0
-    try {
-      runsRunning = (db.prepare("SELECT COUNT(*) as count FROM runs WHERE status = 'running'").get() as { count: number }).count
-      runsTotal = (db.prepare("SELECT COUNT(*) as count FROM runs").get() as { count: number }).count
-    } catch {
-      // Table doesn't exist yet
-    }
-
     return c.json({
       tasks: taskCount,
       done: doneCount,
       ready: readyCount,
-      learnings: learningsCount,
-      runsRunning,
-      runsTotal,
     })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -2951,7 +2762,7 @@ app.get("/api/docs", (c) => {
 
     return c.json({ docs: rows.map(serializeDoc) })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -2976,7 +2787,7 @@ app.get("/api/docs/graph", (c) => {
     const nodes: Array<{
       id: string
       label: string
-      kind: "overview" | "prd" | "design" | "requirement" | "system_design" | "runbook" | "decision" | "task"
+      kind: string
       status?: "changing" | "locked"
     }> = docs.map((doc) => ({
       id: `doc:${doc.id}`,
@@ -2987,7 +2798,6 @@ app.get("/api/docs/graph", (c) => {
 
     const edges: Array<{ source: string; target: string; type: string }> = []
 
-    const explicitDocTargets = new Map<number, number>()
     if (hasDocLinksSchema(db)) {
       const docLinks = db.prepare(`
         SELECT from_doc_id, to_doc_id, link_type
@@ -2995,7 +2805,6 @@ app.get("/api/docs/graph", (c) => {
         ORDER BY id ASC
       `).all() as DocLinkRow[]
       for (const link of docLinks) {
-        explicitDocTargets.set(link.to_doc_id, (explicitDocTargets.get(link.to_doc_id) ?? 0) + 1)
         edges.push({
           source: `doc:${link.from_doc_id}`,
           target: `doc:${link.to_doc_id}`,
@@ -3004,32 +2813,12 @@ app.get("/api/docs/graph", (c) => {
       }
     }
 
-    // Anchor unlinked docs under system-design overview (or first overview) for a single-root map.
-    const rootOverview = docs.find((doc) => doc.kind === "overview" && doc.name === "system-design")
-      ?? docs.find((doc) => doc.kind === "overview")
-    if (rootOverview) {
-      const existingPairs = new Set(edges.map((edge) => `${edge.source}->${edge.target}`))
-      for (const doc of docs) {
-        if (doc.id === rootOverview.id || doc.kind === "overview") continue
-        if ((explicitDocTargets.get(doc.id) ?? 0) > 0) continue
-        const source = `doc:${rootOverview.id}`
-        const target = `doc:${doc.id}`
-        const pair = `${source}->${target}`
-        if (existingPairs.has(pair)) continue
-        edges.push({
-          source,
-          target,
-          type: doc.kind === "prd" ? "overview_to_prd" : "overview_to_design",
-        })
-      }
-    }
-
     if (hasTaskDocLinksSchema(db)) {
       const taskLinks = db.prepare(`
-        SELECT task_id, doc_id, link_type
-        FROM task_doc_links
-        ORDER BY id ASC
-      `).all() as TaskDocLinkRow[]
+        SELECT l.task_id, l.doc_id, l.link_type, t.title
+        FROM task_doc_links l JOIN tasks t ON t.id = l.task_id
+        ORDER BY l.id ASC
+      `).all() as (TaskDocLinkRow & { title: string })[]
 
       const taskNodeIds = new Set<string>()
       for (const link of taskLinks) {
@@ -3038,7 +2827,7 @@ app.get("/api/docs/graph", (c) => {
           taskNodeIds.add(taskNodeId)
           nodes.push({
             id: taskNodeId,
-            label: link.task_id,
+            label: link.title,
             kind: "task",
           })
         }
@@ -3052,7 +2841,7 @@ app.get("/api/docs/graph", (c) => {
 
     return c.json({ nodes, edges })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -3193,7 +2982,7 @@ app.get("/api/docs/health", (c) => {
       issues,
     })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -3270,7 +3059,7 @@ app.post("/api/docs/render", async (c) => {
 
     return c.json({ rendered })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -3279,7 +3068,7 @@ app.get("/api/docs/by-id/:docId", (c) => {
   try {
     const db = getDb()
     if (!hasDocsSchema(db)) {
-      return c.json({ error: "Docs are not initialized. Run 'tx migrate' first." }, 404)
+      return c.json({ error: "Docs are not initialized. Run 'tx init' to apply schema migrations." }, 404)
     }
 
     const docId = c.req.param("docId")
@@ -3292,7 +3081,7 @@ app.get("/api/docs/by-id/:docId", (c) => {
 
     return c.json(serializeDoc(resolved.row))
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -3301,7 +3090,7 @@ app.get("/api/docs/by-id/:docId/source", (c) => {
   try {
     const db = getDb()
     if (!hasDocsSchema(db)) {
-      return c.json({ error: "Docs are not initialized. Run 'tx migrate' first." }, 404)
+      return c.json({ error: "Docs are not initialized. Run 'tx init' to apply schema migrations." }, 404)
     }
 
     const docId = c.req.param("docId")
@@ -3355,7 +3144,7 @@ app.get("/api/docs/by-id/:docId/source", (c) => {
       filePath: fp,
     })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -3364,7 +3153,7 @@ app.delete("/api/docs/by-id/:docId", (c) => {
   try {
     const db = getDb()
     if (!hasDocsSchema(db)) {
-      return c.json({ error: "Docs are not initialized. Run 'tx migrate' first." }, 404)
+      return c.json({ error: "Docs are not initialized. Run 'tx init' to apply schema migrations." }, 404)
     }
 
     const docId = c.req.param("docId")
@@ -3383,7 +3172,7 @@ app.delete("/api/docs/by-id/:docId", (c) => {
     db.prepare("DELETE FROM docs WHERE id = ?").run(row.id)
     return c.json({ success: true, docId: materializeDocId(row), name: row.name, version: row.version })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -3392,7 +3181,7 @@ app.get("/api/docs/:name", (c) => {
   try {
     const db = getDb()
     if (!hasDocsSchema(db)) {
-      return c.json({ error: "Docs are not initialized. Run 'tx migrate' first." }, 404)
+      return c.json({ error: "Docs are not initialized. Run 'tx init' to apply schema migrations." }, 404)
     }
 
     const name = c.req.param("name")
@@ -3404,7 +3193,7 @@ app.get("/api/docs/:name", (c) => {
     }
     return c.json(serializeDoc(resolved.row))
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -3413,7 +3202,7 @@ app.get("/api/docs/:name/source", (c) => {
   try {
     const db = getDb()
     if (!hasDocsSchema(db)) {
-      return c.json({ error: "Docs are not initialized. Run 'tx migrate' first." }, 404)
+      return c.json({ error: "Docs are not initialized. Run 'tx init' to apply schema migrations." }, 404)
     }
 
     const name = c.req.param("name")
@@ -3461,7 +3250,7 @@ app.get("/api/docs/:name/source", (c) => {
       filePath: fp,
     })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -3470,7 +3259,7 @@ app.delete("/api/docs/:name", (c) => {
   try {
     const db = getDb()
     if (!hasDocsSchema(db)) {
-      return c.json({ error: "Docs are not initialized. Run 'tx migrate' first." }, 404)
+      return c.json({ error: "Docs are not initialized. Run 'tx init' to apply schema migrations." }, 404)
     }
 
     const name = c.req.param("name")
@@ -3488,99 +3277,7 @@ app.delete("/api/docs/:name", (c) => {
     db.prepare("DELETE FROM docs WHERE id = ?").run(row.id)
     return c.json({ success: true, docId: materializeDocId(row), name: row.name, version: row.version })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
-  }
-})
-
-// GET /api/runs - List runs with cursor-based pagination
-app.get("/api/runs", (c) => {
-  try {
-    const db = getDb()
-    const cursor = c.req.query("cursor")
-    const limit = Math.min(parseInt(c.req.query("limit") ?? "20", 10) || 20, 100)
-    const agentFilter = c.req.query("agent")
-    const statusFilter = c.req.query("status")?.split(",").filter(Boolean)
-
-    // Build WHERE clauses
-    const conditions: string[] = []
-    const params: (string | number)[] = []
-
-    if (agentFilter) {
-      conditions.push("agent = ?")
-      params.push(agentFilter)
-    }
-
-    if (statusFilter?.length) {
-      conditions.push(`status IN (${statusFilter.map(() => "?").join(",")})`)
-      params.push(...statusFilter)
-    }
-
-    if (cursor) {
-      const { startedAt, id } = parseRunCursor(cursor)
-      conditions.push("(started_at < ? OR (started_at = ? AND id > ?))")
-      params.push(startedAt, startedAt, id)
-    }
-
-    const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""
-
-    let runs: Array<{
-      id: string
-      taskId: string | null
-      agent: string
-      startedAt: string
-      endedAt: string | null
-      status: string
-      exitCode: number | null
-      transcriptPath: string | null
-      summary: string | null
-      errorMessage: string | null
-    }> = []
-
-    try {
-      const sql = `
-        SELECT id, task_id AS taskId, agent,
-               started_at AS startedAt, ended_at AS endedAt,
-               status, exit_code AS exitCode,
-               transcript_path AS transcriptPath,
-               summary, error_message AS errorMessage
-        FROM runs
-        ${whereClause}
-        ORDER BY started_at DESC, id ASC
-        LIMIT ?
-      `
-      params.push(limit + 1)
-      runs = db.prepare(sql).all(...params) as typeof runs
-    } catch {
-      // Table doesn't exist yet
-      return c.json({ runs: [], nextCursor: null, hasMore: false })
-    }
-
-    const hasMore = runs.length > limit
-    const pagedRuns = hasMore ? runs.slice(0, limit) : runs
-
-    // Batch fetch task titles to avoid N+1 queries
-    const taskIds = [...new Set(pagedRuns.map(r => r.taskId).filter((id): id is string => id !== null))]
-    const taskTitleMap = new Map<string, string>()
-    if (taskIds.length > 0) {
-      const placeholders = taskIds.map(() => "?").join(",")
-      const rows = db.prepare(`SELECT id, title FROM tasks WHERE id IN (${placeholders})`).all(...taskIds) as Array<{ id: string; title: string }>
-      for (const row of rows) {
-        taskTitleMap.set(row.id, row.title)
-      }
-    }
-
-    const enriched = pagedRuns.map(run => ({
-      ...run,
-      taskTitle: run.taskId ? (taskTitleMap.get(run.taskId) ?? null) : null,
-    }))
-
-    return c.json({
-      runs: enriched,
-      nextCursor: hasMore && pagedRuns.length ? buildRunCursor(pagedRuns[pagedRuns.length - 1]!) : null,
-      hasMore,
-    })
-  } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
@@ -3622,699 +3319,27 @@ app.get("/api/tasks/:id", (c) => {
       childTasks: childTasks.map(serializeTask),
     })
   } catch (e) {
-    return c.json({ error: String(e) }, 500)
-  }
-})
-
-// GET /api/runs/:id - Get run details with transcript
-app.get("/api/runs/:id", (c) => {
-  try {
-    const db = getDb()
-    const id = c.req.param("id")
-
-    const run = db.prepare(`
-      SELECT id, task_id AS taskId, agent,
-             started_at AS startedAt, ended_at AS endedAt,
-             status, exit_code AS exitCode, pid,
-             transcript_path AS transcriptPath,
-             stdout_path AS stdoutPath,
-             stderr_path AS stderrPath,
-             context_injected AS contextInjected,
-             summary, error_message AS errorMessage,
-             metadata
-      FROM runs WHERE id = ?
-    `).get(id) as {
-      id: string
-      taskId: string | null
-      agent: string
-      startedAt: string
-      endedAt: string | null
-      status: string
-      exitCode: number | null
-      pid: number | null
-      transcriptPath: string | null
-      stdoutPath: string | null
-      stderrPath: string | null
-      contextInjected: string | null
-      summary: string | null
-      errorMessage: string | null
-      metadata: string
-    } | undefined
-
-    if (!run) {
-      return c.json({ error: "Run not found" }, 404)
-    }
-
-    const parseRunMessages = (raw: string): Array<{ role: string; content: unknown; type?: string; tool_name?: string; timestamp?: string }> => {
-      const parsed: Array<{ role: string; content: unknown; type?: string; tool_name?: string; timestamp?: string }> = []
-      const lines = raw.split("\n").filter(Boolean)
-
-      for (const line of lines) {
-        try {
-          const entry = JSON.parse(line)
-
-          // Claude stream-json format
-          if (entry.type === "user" || entry.type === "assistant") {
-            const msg = entry.message
-            if (!msg) continue
-            const content = msg.content
-
-            if (Array.isArray(content)) {
-              for (const block of content) {
-                if (block.type === "text") {
-                  parsed.push({ role: msg.role, content: block.text, type: "text", timestamp: entry.timestamp })
-                } else if (block.type === "tool_use") {
-                  parsed.push({
-                    role: msg.role,
-                    content: JSON.stringify(block.input),
-                    type: "tool_use",
-                    tool_name: block.name,
-                    timestamp: entry.timestamp,
-                  })
-                } else if (block.type === "tool_result") {
-                  const text = typeof block.content === "string"
-                    ? block.content
-                    : Array.isArray(block.content)
-                      ? block.content.map((c: { text?: string }) => c.text ?? "").join("\n")
-                      : JSON.stringify(block.content)
-                  parsed.push({
-                    role: msg.role,
-                    content: text,
-                    type: "tool_result",
-                    tool_name: block.tool_use_id,
-                    timestamp: entry.timestamp,
-                  })
-                }
-              }
-            } else if (typeof content === "string") {
-              parsed.push({ role: msg.role, content, type: "text", timestamp: entry.timestamp })
-            }
-            continue
-          }
-
-          // Generic role/content JSON lines
-          if (
-            (entry.role === "user" || entry.role === "assistant" || entry.role === "system")
-            && entry.content !== undefined
-          ) {
-            parsed.push({
-              role: entry.role,
-              content: typeof entry.content === "string" ? entry.content : JSON.stringify(entry.content),
-              type: "text",
-              timestamp: typeof entry.timestamp === "string" ? entry.timestamp : undefined,
-            })
-          }
-        } catch {
-          // Skip non-JSON lines here; plain text fallback handles them below.
-        }
-      }
-
-      if (parsed.length > 0) {
-        return parsed
-      }
-
-      // Fallback for plain text logs (Codex/custom runtimes stdout).
-      const rawLines = raw
-        .split("\n")
-        .map((line) => line.replace(/\r$/, ""))
-        .filter((line) => line.trim().length > 0)
-
-      const maxLines = 400
-      const tail = rawLines.slice(-maxLines)
-
-      return tail.map((line) => {
-        const lower = line.toLowerCase()
-        if (lower.startsWith("user:")) {
-          return { role: "user", content: line.slice(5).trim(), type: "text" as const }
-        }
-        if (lower.startsWith("assistant:")) {
-          return { role: "assistant", content: line.slice(10).trim(), type: "text" as const }
-        }
-        if (lower.startsWith("system:")) {
-          return { role: "system", content: line.slice(7).trim(), type: "text" as const }
-        }
-        return { role: "assistant", content: line, type: "text" as const }
-      })
-    }
-
-    // Try transcript_path first, then stdout_path fallback.
-    let messages: Array<{ role: string; content: unknown; type?: string; tool_name?: string; timestamp?: string }> = []
-    let resolvedTranscriptPath: string | null = null
-    const candidatePaths = [...new Set([run.transcriptPath, run.stdoutPath].filter((p): p is string => Boolean(p)))]
-
-    for (const candidatePath of candidatePaths) {
-      const validatedPath = validateTranscriptPath(candidatePath)
-      if (validatedPath && existsSync(validatedPath)) {
-        try {
-          const raw = readFileSync(validatedPath, "utf-8")
-          messages = parseRunMessages(raw)
-          resolvedTranscriptPath = candidatePath
-          if (messages.length > 0) break
-        } catch {
-          // Failed to read file
-        }
-      }
-    }
-
-    if (!run.transcriptPath && resolvedTranscriptPath) {
-      run.transcriptPath = resolvedTranscriptPath
-    }
-
-    const trimLog = (content: string): { value: string; truncated: boolean } => {
-      const maxChars = 200_000
-      if (content.length <= maxChars) {
-        return { value: content, truncated: false }
-      }
-      return { value: content.slice(-maxChars), truncated: true }
-    }
-
-    const readOptionalLog = (logPath: string | null): { content: string | null; truncated: boolean } => {
-      if (!logPath) return { content: null, truncated: false }
-      const validatedPath = validateTranscriptPath(logPath)
-      if (!validatedPath || !existsSync(validatedPath)) {
-        return { content: null, truncated: false }
-      }
-      try {
-        const raw = readFileSync(validatedPath, "utf-8")
-        const trimmed = trimLog(raw)
-        return { content: trimmed.value, truncated: trimmed.truncated }
-      } catch {
-        return { content: null, truncated: false }
-      }
-    }
-
-    const stdoutLog = readOptionalLog(run.stdoutPath)
-    const stderrLog = readOptionalLog(run.stderrPath)
-
-    return c.json({
-      run,
-      messages,
-      logs: {
-        stdout: stdoutLog.content,
-        stderr: stderrLog.content,
-        stdoutTruncated: stdoutLog.truncated,
-        stderrTruncated: stderrLog.truncated,
-      },
-    })
-  } catch (e) {
-    return c.json({ error: String(e) }, 500)
+    return routeError(c, e)
   }
 })
 
 // =============================================================================
-// SUPERVISION ROUTES — DD-039
-// All business logic delegates to core SupervisionService via Effect layer.
-// No direct SQL to supervision/domain_events tables (INV-SUP-010).
-// =============================================================================
+app.get("/api/spec/health", async (c) => {
+  try { return c.json(await dashboardSpecHealth(dbPath, contentRoot)) }
+  catch (error) { console.error("Spec health failed", error); return c.json({ error: "Could not load spec health" }, 500) }
+})
 
-// Lazy Effect layer for supervision services.
-let _supervisionLayer: ReturnType<typeof makeMinimalLayer> | null = null
-const getSupervisionLayer = () => {
-  if (!_supervisionLayer) {
-    _supervisionLayer = makeMinimalLayer(dbPath)
-  }
-  return _supervisionLayer
+return createServer((req, res) => { void app.handle(req, res) })
 }
 
-/**
- * Helper: run a SupervisionService method through the Effect layer.
- * The callback receives the resolved service and must return an Effect
- * with no remaining requirements (all deps provided by the layer).
- */
-const withSupervision = <A>(
-  fn: (svc: any) => Effect.Effect<A, any, never>
-): Promise<A> => {
-  const layer = getSupervisionLayer()
-  const program = SupervisionService.pipe(
-    Effect.flatMap(fn),
-    Effect.provide(layer)
-  )
-  return Effect.runPromise(program)
-}
-
-// GET /api/supervision/sessions — list all live worker sessions
-app.get("/api/supervision/sessions", async (c) => {
-  try {
-    const sessions = await withSupervision((svc) => svc.listSessions())
-    return c.json(sessions)
-  } catch (e) {
-    return c.json({ error: String(e) }, 500)
-  }
-})
-
-// GET /api/supervision/sessions/:id — get single session detail
-app.get("/api/supervision/sessions/:id", async (c) => {
-  try {
-    const id = c.req.param("id")
-    const session = await withSupervision((svc) => svc.getSession(id))
-    return c.json(session)
-  } catch (e) {
-    const msg = String(e)
-    if (msg.includes("not found") || msg.includes("NotFound")) {
-      return c.json({ error: "Session not found" }, 404)
-    }
-    return c.json({ error: msg }, 500)
-  }
-})
-
-// GET /api/supervision/sessions/:id/events — list session domain events
-app.get("/api/supervision/sessions/:id/events", async (c) => {
-  try {
-    const id = c.req.param("id")
-    const events = await withSupervision((svc) => svc.listSessionEvents(id))
-    return c.json(events)
-  } catch (e) {
-    return c.json({ error: String(e) }, 500)
-  }
-})
-
-// POST /api/supervision/sessions/:id/pause — pause a session
-app.post("/api/supervision/sessions/:id/pause", async (c) => {
-  try {
-    const id = c.req.param("id")
-    const body = await c.req.json<{ actorType?: string; actorId?: string }>()
-    const actor: ActorRef = {
-      type: (body.actorType as ActorRef["type"]) ?? "human",
-      id: body.actorId ?? "dashboard-user",
-    }
-    const session = await withSupervision((svc) => svc.pauseSession(id, actor))
-    return c.json(session)
-  } catch (e) {
-    const msg = String(e)
-    if (msg.includes("not found") || msg.includes("NotFound")) {
-      return c.json({ error: "Session not found" }, 404)
-    }
-    if (msg.includes("invalid") || msg.includes("transition") || msg.includes("only")) {
-      return c.json({ error: msg }, 409)
-    }
-    return c.json({ error: msg }, 500)
-  }
-})
-
-// POST /api/supervision/sessions/:id/resume — resume a paused session
-app.post("/api/supervision/sessions/:id/resume", async (c) => {
-  try {
-    const id = c.req.param("id")
-    const body = await c.req.json<{ actorType?: string; actorId?: string }>()
-    const actor: ActorRef = {
-      type: (body.actorType as ActorRef["type"]) ?? "human",
-      id: body.actorId ?? "dashboard-user",
-    }
-    const session = await withSupervision((svc) => svc.resumeSession(id, actor))
-    return c.json(session)
-  } catch (e) {
-    const msg = String(e)
-    if (msg.includes("not found") || msg.includes("NotFound")) {
-      return c.json({ error: "Session not found" }, 404)
-    }
-    if (msg.includes("invalid") || msg.includes("transition") || msg.includes("only")) {
-      return c.json({ error: msg }, 409)
-    }
-    return c.json({ error: msg }, 500)
-  }
-})
-
-// GET /api/supervision/terminal-token/:id — issue terminal token for session
-app.get("/api/supervision/terminal-token/:id", async (c) => {
-  try {
-    const sessionId = c.req.param("id")
-    const viewerId = c.req.query("viewerId") ?? `dashboard-${randomUUID().slice(0, 8)}`
-    const mode = (c.req.query("mode") ?? "observe") as "control" | "observe"
-    const token = await withSupervision((svc) =>
-      svc.createTerminalToken(sessionId, viewerId, mode)
-    )
-    return c.json(token)
-  } catch (e) {
-    const msg = String(e)
-    if (msg.includes("not found") || msg.includes("NotFound")) {
-      return c.json({ error: "Session not found" }, 404)
-    }
-    if (msg.includes("controller") || msg.includes("conflict")) {
-      return c.json({ error: msg }, 409)
-    }
-    return c.json({ error: msg }, 500)
-  }
-})
-
-// GET /api/supervision/terminal-wall — read-only terminal snapshots for all live sessions
-app.get("/api/supervision/terminal-wall", async (c) => {
-  try {
-    const sessions = await withSupervision((svc) => svc.listSessions())
-
-    // Check if tmux is available
-    let tmuxAvailable = false
-    try {
-      execSync("tmux -V", { stdio: "pipe" })
-      tmuxAvailable = true
-    } catch {
-      // tmux not installed or not available
-    }
-
-    const tiles = (sessions as readonly any[]).map((session: any) => {
-      let terminalOutput: string | null = null
-
-      if (tmuxAvailable && session.tmuxSessionName && session.endedAt === null) {
-        try {
-          terminalOutput = execSync(
-            `tmux capture-pane -t ${JSON.stringify(session.tmuxSessionName)} -p -S -50`,
-            { encoding: "utf-8", timeout: 2000 }
-          ).trimEnd()
-        } catch {
-          // Session may have ended or pane unavailable
-        }
-      }
-
-      return {
-        sessionId: session.id,
-        sessionLabel: session.workerName ?? session.id,
-        currentTaskLabel: session.currentTaskTitle ?? null,
-        heartbeatFreshness: session.lastHeartbeatAt,
-        controlMode: session.controlMode,
-        terminalAvailable: tmuxAvailable && session.tmuxSessionName != null,
-        terminalOutput,
-        readOnly: true,
-      }
-    })
-
-    return c.json(tiles)
-  } catch (e) {
-    return c.json({ error: String(e) }, 500)
-  }
-})
-
-// =============================================================================
-// WEBSOCKET TERMINAL BRIDGE — DD-039 Section 4
-// Focused terminal: websocket ↔ tmux PTY bridge.
-// =============================================================================
-
-// In-memory terminal token store (tokens are short-lived, validated by core).
-const activeTerminalTokens = new Map<string, {
-  sessionId: string
-  viewerId: string
-  mode: "control" | "observe"
-  tmuxSessionName: string
-  expiresAt: string
-}>()
-
-/**
- * Handle websocket upgrade for /api/supervision/terminal/ws.
- * Validates token, resolves tmux session, spawns PTY bridge.
- */
-const handleTerminalWsUpgrade = async (
-  req: IncomingMessage,
-  socket: import("node:net").Socket,
-  _head: Buffer
-) => {
-  const url = new URL(req.url ?? "/", "http://localhost")
-  if (url.pathname !== "/api/supervision/terminal/ws") {
-    socket.destroy()
-    return
-  }
-
-  const token = url.searchParams.get("token")
-  if (!token) {
-    socket.write("HTTP/1.1 400 Bad Request\r\n\r\n")
-    socket.destroy()
-    return
-  }
-
-  // Resolve token: first check in-memory cache, then fetch session from core
-  let sessionId: string | undefined
-  let viewerId: string | undefined
-  let mode: "control" | "observe" = "observe"
-  let tmuxSessionName: string | undefined
-
-  const cached = activeTerminalTokens.get(token)
-  if (cached) {
-    if (new Date(cached.expiresAt) < new Date()) {
-      activeTerminalTokens.delete(token)
-      socket.write("HTTP/1.1 401 Token Expired\r\n\r\n")
-      socket.destroy()
-      return
-    }
-    sessionId = cached.sessionId
-    viewerId = cached.viewerId
-    mode = cached.mode
-    tmuxSessionName = cached.tmuxSessionName
-  } else {
-    // Try to parse token as JSON (core-issued SupervisionTerminalToken)
-    try {
-      const parsed = JSON.parse(Buffer.from(token, "base64url").toString("utf-8"))
-      sessionId = parsed.sessionId
-      viewerId = parsed.viewerId
-      mode = parsed.mode ?? "observe"
-      // Fetch session to get tmux session name
-      const session = await withSupervision((svc) => svc.getSession(parsed.sessionId))
-      tmuxSessionName = (session as any).tmuxSessionName
-    } catch {
-      socket.write("HTTP/1.1 401 Invalid Token\r\n\r\n")
-      socket.destroy()
-      return
-    }
-  }
-
-  if (!tmuxSessionName) {
-    socket.write("HTTP/1.1 503 Terminal Unavailable\r\n\r\n")
-    socket.destroy()
-    return
-  }
-
-  // Check tmux availability
-  try {
-    execSync("tmux -V", { stdio: "pipe" })
-  } catch {
-    socket.write("HTTP/1.1 503 tmux Not Available\r\n\r\n")
-    socket.destroy()
-    return
-  }
-
-  // Mark attached in core if control mode
-  if (mode === "control" && sessionId && viewerId) {
-    try {
-      await withSupervision((svc) => svc.markAttached(sessionId!, viewerId!, true))
-    } catch {
-      socket.write("HTTP/1.1 409 Controller Conflict\r\n\r\n")
-      socket.destroy()
-      return
-    }
-  }
-
-  // Perform WebSocket handshake (RFC 6455)
-  const { createHash } = await import("node:crypto")
-  const key = req.headers["sec-websocket-key"]
-  if (!key) {
-    socket.write("HTTP/1.1 400 Missing WebSocket Key\r\n\r\n")
-    socket.destroy()
-    return
-  }
-  const accept = createHash("sha1")
-    .update(key + "258EAFA5-E914-47DA-95CA-5AB5DC11E65A")
-    .digest("base64")
-
-  socket.write(
-    "HTTP/1.1 101 Switching Protocols\r\n" +
-    "Upgrade: websocket\r\n" +
-    "Connection: Upgrade\r\n" +
-    `Sec-WebSocket-Accept: ${accept}\r\n` +
-    "\r\n"
-  )
-
-  // Spawn tmux attach process as PTY bridge
-  const tmuxArgs = mode === "control"
-    ? ["attach-session", "-t", tmuxSessionName]
-    : ["capture-pane", "-t", tmuxSessionName, "-p", "-e"]
-
-  let ptyProcess: ChildProcess | null = null
-
-  if (mode === "control") {
-    // Interactive: attach to tmux session
-    ptyProcess = spawn("tmux", tmuxArgs, {
-      stdio: ["pipe", "pipe", "pipe"],
-    })
-
-    // Forward tmux stdout → websocket frames
-    ptyProcess.stdout?.on("data", (data: Buffer) => {
-      try {
-        sendWsFrame(socket, data)
-      } catch {
-        // Socket closed
-      }
-    })
-
-    ptyProcess.stderr?.on("data", (data: Buffer) => {
-      try {
-        sendWsFrame(socket, data)
-      } catch {
-        // Socket closed
-      }
-    })
-
-    ptyProcess.on("exit", () => {
-      try {
-        sendWsCloseFrame(socket)
-        socket.destroy()
-      } catch {
-        // Already closed
-      }
-    })
-
-    // Forward websocket data → tmux stdin
-    let wsBuffer = Buffer.alloc(0)
-    socket.on("data", (chunk: Buffer) => {
-      wsBuffer = Buffer.concat([wsBuffer, chunk])
-      while (wsBuffer.length >= 2) {
-        const parsed = parseWsFrame(wsBuffer)
-        if (!parsed) break
-        wsBuffer = wsBuffer.subarray(parsed.totalLength)
-
-        if (parsed.opcode === 0x08) {
-          // Close frame
-          ptyProcess?.kill()
-          socket.destroy()
-          return
-        }
-        if (parsed.opcode === 0x01 || parsed.opcode === 0x02) {
-          // Text or binary data → tmux stdin
-          ptyProcess?.stdin?.write(parsed.payload)
-        }
-      }
-    })
-  } else {
-    // Read-only: periodic capture-pane polling
-    const captureInterval = setInterval(() => {
-      try {
-        const output = execSync(
-          `tmux capture-pane -t ${JSON.stringify(tmuxSessionName)} -p -e -S -50`,
-          { encoding: "utf-8", timeout: 2000 }
-        )
-        sendWsFrame(socket, Buffer.from(output, "utf-8"))
-      } catch {
-        // Pane may have ended
-        clearInterval(captureInterval)
-        try {
-          sendWsCloseFrame(socket)
-          socket.destroy()
-        } catch {
-          // Already closed
-        }
-      }
-    }, 1000)
-
-    socket.on("data", (chunk: Buffer) => {
-      const parsed = parseWsFrame(chunk)
-      if (parsed?.opcode === 0x08) {
-        clearInterval(captureInterval)
-        socket.destroy()
-      }
-    })
-
-    socket.on("close", () => {
-      clearInterval(captureInterval)
-    })
-  }
-
-  // Cleanup on socket close
-  const capturedSessionId = sessionId
-  const capturedViewerId = viewerId
-  socket.on("close", () => {
-    ptyProcess?.kill()
-    // Release terminal controller in core
-    if (capturedSessionId && capturedViewerId) {
-      withSupervision((svc) =>
-        svc.markDetached(capturedSessionId, capturedViewerId)
-      ).catch(() => {
-        // Best-effort cleanup
-      })
-    }
+if (import.meta.main) {
+  const port = Number(process.env.PORT ?? "3001")
+  const server = createDashboardServer()
+  server.on("error", (error) => {
+    console.error(`Failed to start dashboard API on port ${port}: ${error.message}`)
+    process.exitCode = 1
   })
-}
-
-/** Encode a WebSocket frame (unmasked, server→client). */
-function sendWsFrame(socket: import("node:net").Socket, data: Buffer): void {
-  const len = data.length
-  let header: Buffer
-  if (len < 126) {
-    header = Buffer.alloc(2)
-    header[0] = 0x82 // FIN + binary
-    header[1] = len
-  } else if (len < 65536) {
-    header = Buffer.alloc(4)
-    header[0] = 0x82
-    header[1] = 126
-    header.writeUInt16BE(len, 2)
-  } else {
-    header = Buffer.alloc(10)
-    header[0] = 0x82
-    header[1] = 127
-    header.writeBigUInt64BE(BigInt(len), 2)
-  }
-  socket.write(Buffer.concat([header, data]))
-}
-
-/** Send a WebSocket close frame. */
-function sendWsCloseFrame(socket: import("node:net").Socket): void {
-  const frame = Buffer.alloc(2)
-  frame[0] = 0x88 // FIN + close
-  frame[1] = 0x00
-  socket.write(frame)
-}
-
-/** Parse a WebSocket frame (masked, client→server). Returns null if incomplete. */
-function parseWsFrame(buf: Buffer): { opcode: number; payload: Buffer; totalLength: number } | null {
-  if (buf.length < 2) return null
-  const opcode = buf[0]! & 0x0f
-  const masked = (buf[1]! & 0x80) !== 0
-  let payloadLen = buf[1]! & 0x7f
-  let offset = 2
-
-  if (payloadLen === 126) {
-    if (buf.length < 4) return null
-    payloadLen = buf.readUInt16BE(2)
-    offset = 4
-  } else if (payloadLen === 127) {
-    if (buf.length < 10) return null
-    payloadLen = Number(buf.readBigUInt64BE(2))
-    offset = 10
-  }
-
-  const maskLen = masked ? 4 : 0
-  const totalLength = offset + maskLen + payloadLen
-  if (buf.length < totalLength) return null
-
-  let payload: Buffer
-  if (masked) {
-    const mask = buf.subarray(offset, offset + 4)
-    payload = Buffer.alloc(payloadLen)
-    for (let i = 0; i < payloadLen; i++) {
-      payload[i] = buf[offset + 4 + i]! ^ mask[i % 4]!
-    }
-  } else {
-    payload = buf.subarray(offset, offset + payloadLen)
-  }
-
-  return { opcode, payload, totalLength }
-}
-
-// =============================================================================
-// SERVER STARTUP
-// =============================================================================
-
-const port = Number(process.env.PORT ?? "3001")
-try {
-  const server = createServer((req, res) => {
-    void app.handle(req, res)
-  })
-
-  // Handle WebSocket upgrades for terminal bridge
-  server.on("upgrade", (req, socket, head) => {
-    void handleTerminalWsUpgrade(req, socket as import("node:net").Socket, head)
-  })
-
-  server.listen(port, () => {
+  server.listen(port, "127.0.0.1", () => {
     console.log(`Dashboard API running on http://localhost:${port}`)
   })
-} catch (error) {
-  const message = error instanceof Error ? error.message : String(error)
-  console.error(`Failed to start dashboard API on port ${port}: ${message}`)
-  process.exit(1)
 }

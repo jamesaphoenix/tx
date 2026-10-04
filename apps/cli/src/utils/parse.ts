@@ -91,7 +91,7 @@ export function parseFloatOpt(
 ): number | undefined {
   const val = opt(flags, ...names)
   if (val === undefined) return undefined
-  const parsed = parseFloat(val)
+  const parsed = val.trim() === "" ? Number.NaN : Number(val)
   if (!Number.isFinite(parsed)) {
     throw new CliUserError({
       code: "cli/invalid-flag-value",
@@ -110,7 +110,7 @@ export function parseFloatOpt(
 /**
  * Validate a task ID string matches the tx-[a-z0-9]{6,12} format.
  *
- * Throws CliExitError if the format is invalid, preventing confusing
+ * Throws CliUserError if the format is invalid, preventing confusing
  * "Task not found" errors from reaching the database layer.
  */
 export function parseTaskId(id: string): TaskId {

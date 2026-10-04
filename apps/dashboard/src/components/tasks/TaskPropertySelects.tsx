@@ -202,6 +202,7 @@ export interface TaskStatusSelectProps {
   onChange: (stage: HumanTaskStage) => void
   theme?: SelectTheme
   placeholder?: string
+  disabled?: boolean
 }
 
 export function TaskStatusSelect({
@@ -210,13 +211,16 @@ export function TaskStatusSelect({
   onChange,
   theme = "light",
   placeholder = "Select one...",
+  disabled = false,
 }: TaskStatusSelectProps) {
   const selectedOption =
     TASK_STATUS_OPTIONS_INTERNAL.find((option) => option.value === value) ?? TASK_STATUS_OPTIONS_INTERNAL[0]
 
   return (
     <Select<StageOption, false>
+      aria-label="Task status"
       instanceId={instanceId}
+      isDisabled={disabled}
       options={TASK_STATUS_OPTIONS_INTERNAL as StageOption[]}
       value={selectedOption}
       isClearable={false}
@@ -247,6 +251,7 @@ export interface TaskAssigneeTypeSelectProps {
   instanceId: string
   value: "human" | "agent"
   onChange: (assigneeType: "human" | "agent") => void
+  disabled?: boolean
   theme?: SelectTheme
 }
 
@@ -255,13 +260,16 @@ export function TaskAssigneeTypeSelect({
   value,
   onChange,
   theme = "light",
+  disabled = false,
 }: TaskAssigneeTypeSelectProps) {
   const selectedOption =
     ASSIGNEE_OPTIONS_INTERNAL.find((option) => option.value === value) ?? ASSIGNEE_OPTIONS_INTERNAL[0]
 
   return (
     <Select<AssigneeOption, false>
+      aria-label="Assignment type"
       instanceId={instanceId}
+      isDisabled={disabled}
       options={ASSIGNEE_OPTIONS_INTERNAL as AssigneeOption[]}
       value={selectedOption}
       isClearable={false}
@@ -360,6 +368,7 @@ export function TaskLabelsSelect({
   return (
     <div>
       <CreatableSelect<LabelOption, true>
+        aria-label="Task labels"
         instanceId={instanceId}
         isMulti
         closeMenuOnSelect={false}
@@ -394,7 +403,7 @@ export function TaskLabelsSelect({
         </p>
       )}
       {createLabelError && (
-        <p className={`mt-2 text-[11px] ${theme === "dark" ? "text-red-300" : "text-red-600"}`}>
+        <p role="alert" className={`mt-2 text-[11px] ${theme === "dark" ? "text-red-300" : "text-red-600"}`}>
           {createLabelError}
         </p>
       )}

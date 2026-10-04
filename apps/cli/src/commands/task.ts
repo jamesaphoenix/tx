@@ -3,7 +3,7 @@
  */
 
 import { Effect } from "effect"
-import { TaskService, ReadyService, AttemptService, VerifyService } from "@jamesaphoenix/tx"
+import { TaskService, ReadyService } from "@jamesaphoenix/tx"
 import { assertTaskStatus, TASK_STATUSES } from "@jamesaphoenix/tx/types"
 import { toJson, formatTaskWithDeps, formatTaskLine, formatReadyTaskLine } from "../output.js"
 import { type Flags, flag, opt, parseIntOpt, parseTaskId } from "../utils/parse.js"
@@ -16,7 +16,7 @@ export const add = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const title = pos[0]
     if (!title) {
-      console.error("Usage: tx add <title> [--parent/-p <id>] [--score/-s <n>] [--description/-d <text>] [--json]")
+      console.error("Usage: tx task add <title> [--parent/-p <id>] [--score/-s <n>] [--description/-d <text>] [--json]")
       throw new CliExitError(1)
     }
 
@@ -29,13 +29,6 @@ export const add = (pos: string[], flags: Flags) =>
       metadata: {}
     })
 
-    // Attach verify command if provided
-    const verifyCmd = opt(flags, "verify")
-    if (verifyCmd) {
-      const verifySvc = yield* VerifyService
-      yield* verifySvc.set(task.id, verifyCmd)
-    }
-
     if (flag(flags, "json")) {
       const full = yield* svc.getWithDeps(task.id)
       console.log(toJson(full))
@@ -44,7 +37,6 @@ export const add = (pos: string[], flags: Flags) =>
       console.log(`  Title: ${task.title}`)
       console.log(`  Score: ${task.score}`)
       if (task.parentId) console.log(`  Parent: ${task.parentId}`)
-      if (verifyCmd) console.log(`  Verify: ${verifyCmd}`)
     }
   })
 
@@ -103,24 +95,6 @@ export const ready = (_pos: string[], flags: Flags) =>
     const labels = labelStr ? labelStr.split(",").map(s => s.trim()).filter(s => s.length > 0) : undefined
     const excludeLabels = excludeLabelStr ? excludeLabelStr.split(",").map(s => s.trim()).filter(s => s.length > 0) : undefined
 
-    // Atomic ready+claim mode
-    const claimWorkerId = opt(flags, "claim")
-    if (claimWorkerId) {
-      const leaseMins = parseIntOpt(flags, "lease") ?? 30
-      const result = yield* svc.readyAndClaim(claimWorkerId, leaseMins, {
-        labels: labels?.length ? labels : undefined,
-        excludeLabels: excludeLabels?.length ? excludeLabels : undefined,
-      })
-      if (flag(flags, "json")) {
-        console.log(toJson(result))
-      } else if (result) {
-        console.log(`Claimed ${result.task.id} for ${claimWorkerId} (expires ${result.claim.leaseExpiresAt})`)
-      } else {
-        console.log("No ready tasks available to claim")
-      }
-      return
-    }
-
     const tasks = yield* svc.getReady(limit, {
       labels: labels?.length ? labels : undefined,
       excludeLabels: excludeLabels?.length ? excludeLabels : undefined,
@@ -134,8 +108,7 @@ export const ready = (_pos: string[], flags: Flags) =>
       } else {
         console.log(`${tasks.length} ready task(s):`)
         for (const t of tasks) {
-          const failedWarning = t.failedAttempts >= 2 ? ` \u26A0 ${t.failedAttempts} failed attempts` : ""
-          console.log(formatReadyTaskLine(t) + failedWarning)
+          console.log(formatReadyTaskLine(t))
         }
       }
     }
@@ -145,36 +118,18 @@ export const show = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const raw = pos[0]
     if (!raw) {
-      console.error("Usage: tx show <id> [--json]")
+      console.error("Usage: tx task show <id> [--json]")
       throw new CliExitError(1)
     }
     const id = parseTaskId(raw)
 
     const svc = yield* TaskService
-    const attemptSvc = yield* AttemptService
     const task = yield* svc.getWithDeps(id)
 
-    // Get up to 10 most recent attempts
-    const allAttempts = yield* attemptSvc.listForTask(id)
-    const attempts = allAttempts.slice(0, 10)
-
     if (flag(flags, "json")) {
-      console.log(toJson({ ...task, attempts }))
+      console.log(toJson(task))
     } else {
       console.log(formatTaskWithDeps(task))
-      // Show attempt history if there are any
-      if (attempts.length > 0) {
-        console.log("")
-        console.log("Previous Attempts:")
-        for (const a of attempts) {
-          const outcomeSymbol = a.outcome === "succeeded" ? "\u2713" : "\u2717"
-          console.log(`  ${outcomeSymbol} ${a.approach}`)
-          if (a.reason) {
-            console.log(`      Reason: ${a.reason}`)
-          }
-          console.log(`      ${a.createdAt.toISOString()}`)
-        }
-      }
     }
   })
 
@@ -182,18 +137,18 @@ export const update = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const raw = pos[0]
     if (!raw) {
-      console.error("Usage: tx update <id> [--status <s>] [--title <t>] [--score <n>] [--description <d>] [--parent <p>] [--human] [--json]")
+      console.error("Usage: tx task update <id> [--status <s>] [--title <t>] [--score <n>] [--description <d>] [--parent <p>] [--human] [--json]")
       throw new CliExitError(1)
     }
     const id = parseTaskId(raw)
 
     const svc = yield* TaskService
     const input: Record<string, unknown> = {}
-    if (opt(flags, "status")) input.status = opt(flags, "status")
-    if (opt(flags, "title")) input.title = opt(flags, "title")
+    if (opt(flags, "status") !== undefined) input.status = opt(flags, "status")
+    if (opt(flags, "title") !== undefined) input.title = opt(flags, "title")
     const scoreVal = parseIntOpt(flags, "score", "score")
     if (scoreVal !== undefined) input.score = scoreVal
-    if (opt(flags, "description", "d")) input.description = opt(flags, "description", "d")
+    if (opt(flags, "description", "d") !== undefined) input.description = opt(flags, "description", "d")
     if (opt(flags, "parent", "p")) input.parentId = opt(flags, "parent", "p")
 
     yield* svc.update(id, input, { actor: actorFromFlags(flags) })
@@ -212,7 +167,7 @@ export const done = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const raw = pos[0]
     if (!raw) {
-      console.error("Usage: tx done <id> [--human] [--json]")
+      console.error("Usage: tx task done <id> [--human] [--json]")
       throw new CliExitError(1)
     }
     const id = parseTaskId(raw)
@@ -248,7 +203,7 @@ export const deleteTask = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const raw = pos[0]
     if (!raw) {
-      console.error("Usage: tx delete <id> [--cascade] [--json]")
+      console.error("Usage: tx task delete <id> [--cascade] [--json]")
       throw new CliExitError(1)
     }
     const id = parseTaskId(raw)
@@ -269,7 +224,7 @@ export const reset = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const raw = pos[0]
     if (!raw) {
-      console.error("Usage: tx reset <id> [--json]")
+      console.error("Usage: tx task reset <id> [--json]")
       throw new CliExitError(1)
     }
     const id = parseTaskId(raw)

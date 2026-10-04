@@ -1,3 +1,4 @@
+const normaliseTaskCommand = (args: string[]): string[] => /^(add|list|ready|show|update|done|reset|delete|bulk|label|dep|block|unblock|children|tree)$/.test(args[0] ?? "") ? ["task", ...(/^(block|unblock|children|tree)$/.test(args[0]) ? ["dep"] : []), ...args] : args
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest"
 import { spawnSync, spawn, type ChildProcessByStdio } from "node:child_process"
 import { mkdtempSync, rmSync, existsSync } from "node:fs"
@@ -64,6 +65,8 @@ function getFreePort(): Promise<number> {
 }
 
 function runTx(args: string[], dbPath: string, cwd: string): ExecResult {
+  args = normaliseTaskCommand(args)
+
   const result = spawnSync("bun", [CLI_SRC, ...args, "--db", dbPath], {
     cwd,
     encoding: "utf-8",
@@ -217,11 +220,11 @@ describe("API linked-doc responses", () => {
   })
 
   it("GET /api/tasks/:id returns linkedDocs", async () => {
-    const addTask = runTx(["add", "API linked docs show", "--json"], dbPath, tmpProjectDir)
+    const addTask = runTx(["task", "add", "API linked docs show", "--json"], dbPath, tmpProjectDir)
     expect(addTask.status).toBe(0)
     const taskId = (JSON.parse(addTask.stdout) as { id: string }).id
 
-    expect(runTx(["update", taskId, "--status", "ready"], dbPath, tmpProjectDir).status).toBe(0)
+    expect(runTx(["task", "update", taskId, "--status", "ready"], dbPath, tmpProjectDir).status).toBe(0)
     const expected = insertLinkedDoc(db, taskId, {
       docId: "doc-999999999999",
       name: "api-show-prd",
@@ -243,11 +246,11 @@ describe("API linked-doc responses", () => {
   })
 
   it("GET /api/tasks/ready returns linkedDocs", async () => {
-    const addTask = runTx(["add", "API linked docs ready", "--json"], dbPath, tmpProjectDir)
+    const addTask = runTx(["task", "add", "API linked docs ready", "--json"], dbPath, tmpProjectDir)
     expect(addTask.status).toBe(0)
     const taskId = (JSON.parse(addTask.stdout) as { id: string }).id
 
-    expect(runTx(["update", taskId, "--status", "ready"], dbPath, tmpProjectDir).status).toBe(0)
+    expect(runTx(["task", "update", taskId, "--status", "ready"], dbPath, tmpProjectDir).status).toBe(0)
     const expected = insertLinkedDoc(db, taskId, {
       docId: "doc-aaaaaaaaaaaa",
       name: "api-ready-design",

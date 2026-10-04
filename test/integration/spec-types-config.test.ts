@@ -104,6 +104,19 @@ afterEach(() => {
 })
 
 describe("configurable spec types", () => {
+  it("resolves configured kinds through scoped references and includes them in health", () => {
+    appendConfig('[spec.types.adr]\nsubdir = "architecture"\nsections = []')
+    const created = runTx(["doc","add","adr","checkout","--title","Checkout notes","--json"],projectDir)
+    expect(created.status,created.stderr).toBe(0)
+    const doc = JSON.parse(created.stdout)
+    const shown = runTx(["doc","show","adr/checkout","--json"],projectDir)
+    expect(shown.status,shown.stdout + shown.stderr).toBe(0)
+    expect(JSON.parse(shown.stdout)).toMatchObject({docId:doc.docId,kind:"adr",filePath:"architecture/checkout.md"})
+    const health = runTx(["spec","health","--json"],projectDir)
+    expect(health.status,health.stdout + health.stderr).toBe(0)
+    expect(JSON.parse(health.stdout).docs).toContainEqual(expect.objectContaining({docId:doc.docId,name:"adr/checkout"}))
+  })
+
   it("1. [INV-SPECCFG-001] default config: a scaffolded PRD lints clean", () => {
     expect(runTx(["doc", "add", "prd", "auth-prd", "--title", "Auth"], projectDir).status).toBe(0)
 
@@ -397,7 +410,7 @@ describe("configurable spec types", () => {
 
     const parsed = JSON.parse(res.stdout)
     const names = parsed.types.map((type: { name: string }) => type.name)
-    expect(names).toEqual(expect.arrayContaining(["prd", "design", "overview", "runbook", "decision"]))
+    expect(names).toEqual(expect.arrayContaining(["overview", "prd", "design", "plan"]))
 
     const prd = parsed.types.find((type: { name: string }) => type.name === "prd")
     expect(prd.builtin).toBe(true)
@@ -413,11 +426,12 @@ describe("configurable spec types", () => {
     const raw = readFileSync(configPath(), "utf-8")
 
     expect(raw).toContain("[spec.types.prd]")
-    expect(raw).toContain("[spec.types.prd.section.acceptance-criteria]")
-    expect(raw).toContain("[spec.types.design.section.invariants]")
-    expect(raw).toContain('heading = "Acceptance Criteria"')
-    expect(raw).toContain("# [spec.types.rfc]")
-    expect(raw).toContain("# [spec.lint.messages]")
-    expect(raw).toContain("NOT configurable")
+    expect(raw).toContain("[spec.types.design]")
+    expect(raw).toContain("[spec.types.overview]")
+    expect(raw).toContain("[spec.types.plan]")
+    expect(raw.split("\n").length).toBeLessThan(90)
+    const types = JSON.parse(runTx(["spec", "types", "--json"], projectDir).stdout).types
+    expect(types.find((type: { name: string }) => type.name === "design").sections)
+      .toEqual(expect.arrayContaining([expect.objectContaining({ heading: "Invariants" })]))
   })
 })

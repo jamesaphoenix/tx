@@ -3,6 +3,7 @@
  * Returns defaults if file doesn't exist.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { DEFAULT_SPEC_TEST_PATTERNS } from "./spec-patterns.js"
 import { dirname, resolve } from "node:path"
 
 export type DashboardDefaultTaskAssigmentType = "human" | "agent"
@@ -19,10 +20,8 @@ export type DashboardCyclesConfig = {
   cycleLengthDays: number
   cycleStartDay: DashboardCycleStartDay
   carryStatuses: string[]
+  autoAddStatuses: string[]
 }
-export type GuardMode = "advisory" | "enforce"
-export type ReviewRuntimeType = "pi" | "custom"
-export type ReviewTransportType = "rpc" | "sdk"
 export type SpecDesignDocMissingTaskLinksMode = "always" | "locked_only" | "never"
 export type SpecSectionSeverity = "error" | "warn" | "off"
 
@@ -47,16 +46,6 @@ export type SpecTypeConfig = {
   template: string | null
 }
 
-export type ReviewDesignDocsConfig = {
-  enabled: boolean
-  runtime: ReviewRuntimeType
-  transport: ReviewTransportType
-  template: string
-  blocking: boolean
-  createFollowupTasks: boolean
-  retriggerOnTaskReopen: boolean
-}
-
 export type TxConfig = {
   docs: { path: string }
   spec: {
@@ -67,18 +56,11 @@ export type TxConfig = {
     /** Global lint message templates keyed by rule id. */
     lintMessages: Record<string, string>
   }
-  memory: { defaultDir: string }
-  cycles: { scanPrompt: string | null; agents: number; model: string }
   dashboard: {
     defaultTaskAssigmentType: DashboardDefaultTaskAssigmentType
     defaultTaskView: DashboardDefaultTaskView
     cycles: DashboardCyclesConfig
   }
-  pins: { targetFiles: string[]; blockAgentDoneWhenTaskIdPresent: boolean }
-  guard: { mode: GuardMode; maxPending: number | null; maxChildren: number | null; maxDepth: number | null }
-  verify: { timeout: number; defaultSchema: string | null }
-  reflect: { provider: string; model: string | null; defaultSessions: number; includeTranscripts: boolean }
-  reviews: { designDocs: ReviewDesignDocsConfig }
 };
 
 export const DASHBOARD_DEFAULT_TASK_ASSIGMENT_KEY = "default_task_assigment_type"
@@ -90,22 +72,6 @@ export const DASHBOARD_CYCLE_START_DAY_KEY = "cycle_start_day"
 export const DASHBOARD_CARRY_STATUSES_KEY = "carry_statuses"
 const DOCS_SECTION = "docs"
 const SPEC_SECTION = "spec"
-const CYCLES_SECTION = "cycles"
-const PINS_SECTION = "pins"
-const MEMORY_SECTION = "memory"
-const GUARD_SECTION = "guard"
-const VERIFY_SECTION = "verify"
-const REFLECT_SECTION = "reflect"
-const REVIEWS_DESIGN_DOCS_SECTION = "reviews.design_docs"
-
-const isGuardMode = (v: string | null): v is GuardMode =>
-  v === "advisory" || v === "enforce"
-
-const isReviewRuntime = (v: string | null): v is ReviewRuntimeType =>
-  v === "pi" || v === "custom"
-
-const isReviewTransport = (v: string | null): v is ReviewTransportType =>
-  v === "rpc" || v === "sdk"
 
 const isSpecDesignDocMissingTaskLinksMode = (
   v: string | null
@@ -134,6 +100,7 @@ const DEFAULT_LINT_MESSAGES: Record<string, string> = {
  * into generated skills and `tx doc template` output.
  */
 const DEFAULT_SECTION_SPECS: Record<string, ReadonlyArray<readonly [string, string, string, string | null]>> = {
+  plan: [],
   prd: [
     ["summary", "Summary", "One paragraph stating what this feature is and why it matters.", null],
     ["problem", "Problem", "The user or system problem being solved, with evidence or a motivating scenario.", "{name}: PRD is missing '# Problem'. State the problem before listing requirements. {description}"],
@@ -155,20 +122,6 @@ const DEFAULT_SECTION_SPECS: Record<string, ReadonlyArray<readonly [string, stri
     ["architecture", "Architecture", "The high-level architectural shape and its boundaries.", null],
     ["components", "Components", "Each major component and the responsibility it owns.", null],
     ["data-flows", "Data Flows", "How data moves between components, including entry and exit points.", null],
-  ],
-  runbook: [
-    ["summary", "Summary", "One paragraph describing the operational scenario this runbook covers.", null],
-    ["symptoms", "Symptoms", "Observable signals that indicate this runbook applies.", null],
-    ["diagnosis", "Diagnosis", "Steps and queries that confirm the root cause.", null],
-    ["mitigation", "Mitigation", "Concrete actions that restore service, in order.", null],
-    ["escalation", "Escalation", "Who to page, when to escalate, and what context to hand over.", null],
-  ],
-  decision: [
-    ["summary", "Summary", "One paragraph stating the decision made.", null],
-    ["context", "Context", "The forces, constraints, and background driving this decision.", null],
-    ["alternatives", "Alternatives", "Options considered and why each was or was not chosen.", null],
-    ["decision", "Decision", "The option chosen, stated unambiguously.", null],
-    ["consequences", "Consequences", "What becomes easier or harder as a result, including follow-on work.", null],
   ],
 }
 
@@ -195,23 +148,9 @@ const DEFAULT_CONFIG: TxConfig = {
   spec: {
     types: buildDefaultSpecTypes(),
     lintMessages: { ...DEFAULT_LINT_MESSAGES },
-    testPatterns: [
-      "test/**/*.test.{ts,js,tsx,jsx}",
-      "tests/**/*.py",
-      "**/*_test.go",
-      "**/*_test.rs",
-      "**/test_*.py",
-      "**/*.spec.{ts,js,tsx,jsx}",
-      "**/Test*.java",
-      "**/*Test.java",
-      "**/*_spec.rb",
-      "**/*.test.{c,cpp,cc}",
-      "**/*_test.{c,cpp,cc}",
-    ],
+    testPatterns: [...DEFAULT_SPEC_TEST_PATTERNS],
     designDocMissingTaskLinks: "always",
   },
-  memory: { defaultDir: "specs" },
-  cycles: { scanPrompt: null, agents: 3, model: "claude-opus-4-6" },
   dashboard: {
     defaultTaskAssigmentType: "human",
     defaultTaskView: "list",
@@ -219,21 +158,7 @@ const DEFAULT_CONFIG: TxConfig = {
       cycleLengthDays: 7,
       cycleStartDay: "monday",
       carryStatuses: ["planning", "active", "blocked", "review", "needs_review"],
-    },
-  },
-  pins: { targetFiles: ["CLAUDE.md", "AGENTS.md"], blockAgentDoneWhenTaskIdPresent: true },
-  guard: { mode: "advisory", maxPending: null, maxChildren: null, maxDepth: null },
-  verify: { timeout: 300, defaultSchema: null },
-  reflect: { provider: "auto", model: null, defaultSessions: 10, includeTranscripts: false },
-  reviews: {
-    designDocs: {
-      enabled: false,
-      runtime: "pi",
-      transport: "rpc",
-      template: "double-check",
-      blocking: false,
-      createFollowupTasks: true,
-      retriggerOnTaskReopen: true,
+      autoAddStatuses: ["backlog", "ready"],
     },
   },
 }
@@ -289,12 +214,6 @@ const parseDashboardCycleStartDayOrDefault = (value: string | null): DashboardCy
 const parseDashboardCarryStatusesOrDefault = (values: string[]): string[] => {
   const normalized = values.map((value) => value.trim()).filter((value) => value.length > 0)
   return normalized.length > 0 ? normalized : DEFAULT_CONFIG.dashboard.cycles.carryStatuses
-}
-
-const parseBooleanOrDefault = (value: string | null, fallback: boolean): boolean => {
-  if (value === "true") return true
-  if (value === "false") return false
-  return fallback
 }
 
 const SPEC_TYPE_NAME_PATTERN = /^[a-z][a-z0-9_-]*$/
@@ -520,9 +439,6 @@ export const readTxConfig = (cwd: string = process.cwd()): TxConfig => {
       SPEC_SECTION,
       "design_doc_missing_task_links"
     )
-    const cyclesScanPrompt = extractTomlValue(raw, CYCLES_SECTION, "scan_prompt")
-    const cyclesAgents = extractTomlValue(raw, CYCLES_SECTION, "agents")
-    const cyclesModel = extractTomlValue(raw, CYCLES_SECTION, "model")
     const defaultTaskAssigmentType = extractTomlValue(
       raw,
       DASHBOARD_SECTION,
@@ -548,34 +464,6 @@ export const readTxConfig = (cwd: string = process.cwd()): TxConfig => {
       DASHBOARD_CYCLES_SECTION,
       DASHBOARD_CARRY_STATUSES_KEY
     )
-    const memoryDefaultDir = extractTomlValue(raw, MEMORY_SECTION, "default_dir")
-    const pinsTargetFiles = extractTomlValue(raw, PINS_SECTION, "target_files")
-    const pinsBlockAgentDone = extractTomlValue(raw, PINS_SECTION, "block_agent_done_when_task_id_present")
-
-    // Guard section
-    const guardMode = extractTomlValue(raw, GUARD_SECTION, "mode")
-    const guardMaxPending = extractTomlValue(raw, GUARD_SECTION, "max_pending")
-    const guardMaxChildren = extractTomlValue(raw, GUARD_SECTION, "max_children")
-    const guardMaxDepth = extractTomlValue(raw, GUARD_SECTION, "max_depth")
-
-    // Verify section
-    const verifyTimeout = extractTomlValue(raw, VERIFY_SECTION, "timeout")
-    const verifyDefaultSchema = extractTomlValue(raw, VERIFY_SECTION, "default_schema")
-
-    // Reflect section
-    const reflectProvider = extractTomlValue(raw, REFLECT_SECTION, "provider")
-    const reflectModel = extractTomlValue(raw, REFLECT_SECTION, "model")
-    const reflectDefaultSessions = extractTomlValue(raw, REFLECT_SECTION, "default_sessions")
-    const reflectIncludeTranscripts = extractTomlValue(raw, REFLECT_SECTION, "include_transcripts")
-
-    // Reviews section
-    const reviewsEnabled = extractTomlValue(raw, REVIEWS_DESIGN_DOCS_SECTION, "enabled")
-    const reviewsRuntime = extractTomlValue(raw, REVIEWS_DESIGN_DOCS_SECTION, "runtime")
-    const reviewsTransport = extractTomlValue(raw, REVIEWS_DESIGN_DOCS_SECTION, "transport")
-    const reviewsTemplate = extractTomlValue(raw, REVIEWS_DESIGN_DOCS_SECTION, "template")
-    const reviewsBlocking = extractTomlValue(raw, REVIEWS_DESIGN_DOCS_SECTION, "blocking")
-    const reviewsCreateFollowup = extractTomlValue(raw, REVIEWS_DESIGN_DOCS_SECTION, "create_followup_tasks")
-    const reviewsRetrigger = extractTomlValue(raw, REVIEWS_DESIGN_DOCS_SECTION, "retrigger_on_task_reopen")
 
     return {
       docs: {
@@ -589,16 +477,6 @@ export const readTxConfig = (cwd: string = process.cwd()): TxConfig => {
         types: parseSpecTypes(raw),
         lintMessages: parseSpecLintMessages(raw),
       },
-      memory: {
-        defaultDir: memoryDefaultDir ?? DEFAULT_CONFIG.memory.defaultDir,
-      },
-      cycles: {
-        scanPrompt: cyclesScanPrompt ?? DEFAULT_CONFIG.cycles.scanPrompt,
-        agents: cyclesAgents
-          ? parseInt(cyclesAgents, 10)
-          : DEFAULT_CONFIG.cycles.agents,
-        model: cyclesModel ?? DEFAULT_CONFIG.cycles.model,
-      },
       dashboard: {
         defaultTaskAssigmentType: parseTaskAssigmentTypeOrDefault(defaultTaskAssigmentType),
         defaultTaskView: parseDashboardDefaultTaskViewOrDefault(defaultTaskView),
@@ -606,42 +484,7 @@ export const readTxConfig = (cwd: string = process.cwd()): TxConfig => {
           cycleLengthDays: parseDashboardCycleLengthOrDefault(dashboardCycleLengthDays),
           cycleStartDay: parseDashboardCycleStartDayOrDefault(dashboardCycleStartDay),
           carryStatuses: parseDashboardCarryStatusesOrDefault(dashboardCarryStatuses),
-        },
-      },
-      pins: {
-        targetFiles: pinsTargetFiles
-          ? pinsTargetFiles.split(",").map(f => f.trim()).filter(Boolean)
-          : DEFAULT_CONFIG.pins.targetFiles,
-        blockAgentDoneWhenTaskIdPresent: parseBooleanOrDefault(
-          pinsBlockAgentDone,
-          DEFAULT_CONFIG.pins.blockAgentDoneWhenTaskIdPresent
-        )
-      },
-      guard: {
-        mode: isGuardMode(guardMode) ? guardMode : DEFAULT_CONFIG.guard.mode,
-        maxPending: guardMaxPending ? parseInt(guardMaxPending, 10) : DEFAULT_CONFIG.guard.maxPending,
-        maxChildren: guardMaxChildren ? parseInt(guardMaxChildren, 10) : DEFAULT_CONFIG.guard.maxChildren,
-        maxDepth: guardMaxDepth ? parseInt(guardMaxDepth, 10) : DEFAULT_CONFIG.guard.maxDepth,
-      },
-      verify: {
-        timeout: verifyTimeout ? parseInt(verifyTimeout, 10) : DEFAULT_CONFIG.verify.timeout,
-        defaultSchema: verifyDefaultSchema ?? DEFAULT_CONFIG.verify.defaultSchema,
-      },
-      reflect: {
-        provider: reflectProvider ?? DEFAULT_CONFIG.reflect.provider,
-        model: reflectModel ?? DEFAULT_CONFIG.reflect.model,
-        defaultSessions: reflectDefaultSessions ? parseInt(reflectDefaultSessions, 10) : DEFAULT_CONFIG.reflect.defaultSessions,
-        includeTranscripts: reflectIncludeTranscripts === "true" ? true : DEFAULT_CONFIG.reflect.includeTranscripts,
-      },
-      reviews: {
-        designDocs: {
-          enabled: parseBooleanOrDefault(reviewsEnabled, DEFAULT_CONFIG.reviews.designDocs.enabled),
-          runtime: isReviewRuntime(reviewsRuntime) ? reviewsRuntime : DEFAULT_CONFIG.reviews.designDocs.runtime,
-          transport: isReviewTransport(reviewsTransport) ? reviewsTransport : DEFAULT_CONFIG.reviews.designDocs.transport,
-          template: reviewsTemplate ?? DEFAULT_CONFIG.reviews.designDocs.template,
-          blocking: parseBooleanOrDefault(reviewsBlocking, DEFAULT_CONFIG.reviews.designDocs.blocking),
-          createFollowupTasks: parseBooleanOrDefault(reviewsCreateFollowup, DEFAULT_CONFIG.reviews.designDocs.createFollowupTasks),
-          retriggerOnTaskReopen: parseBooleanOrDefault(reviewsRetrigger, DEFAULT_CONFIG.reviews.designDocs.retriggerOnTaskReopen),
+          autoAddStatuses: collectTomlTables(raw, DASHBOARD_CYCLES_SECTION).get(DASHBOARD_CYCLES_SECTION)?.arrays.get("auto_add_statuses") ?? [...DEFAULT_CONFIG.dashboard.cycles.autoAddStatuses],
         },
       },
     }
@@ -823,6 +666,17 @@ export const writeDashboardCarryStatuses = (
   return nextConfig
 }
 
+/** Persist cycle auto-add selection, including an empty list that disables auto-add. */
+export const writeDashboardAutoAddStatuses = (value: readonly string[], cwd: string = process.cwd()): TxConfig => {
+  const configPath = resolve(cwd, ".tx", "config.toml")
+  const existingRaw = existsSync(configPath) ? readFileSync(configPath, "utf8") : ""
+  const statuses = [...new Set(value.map(status => status.trim()).filter(Boolean))]
+  const nextRaw = patchTomlKey(existingRaw, DASHBOARD_CYCLES_SECTION, "auto_add_statuses", JSON.stringify(statuses))
+  mkdirSync(dirname(configPath), {recursive:true})
+  writeFileSync(configPath, ensureTrailingNewline(nextRaw), "utf8")
+  return readTxConfig(cwd)
+}
+
 function ensureTrailingNewline(value: string): string {
   return value.endsWith("\n") ? value : `${value}\n`
 }
@@ -978,275 +832,56 @@ const renderDefaultSpecTypesToml = (): string => {
   const lines: string[] = []
   for (const [typeName, def] of Object.entries(DEFAULT_CONFIG.spec.types)) {
     lines.push("", `[${SPEC_SECTION}.types.${typeName}]`, `severity = "${def.severity}"`)
-    for (const section of def.sections) {
-      lines.push("", `[${SPEC_SECTION}.types.${typeName}.section.${section.slug}]`)
-      lines.push(`heading = "${section.heading}"`)
-      lines.push(`description = "${section.description}"`)
-      if (section.message !== null) {
-        lines.push(`message = "${section.message}"`)
-      }
-    }
+
   }
   return lines.join("\n")
 }
 
 /** Header comment for the [spec.types.*] block, shared by scaffold and upgrade. */
-const SPEC_TYPES_TOML_HEADER = `# ─── Spec Types ────────────────────────────────────────────────────
-# Required markdown sections per spec type, checked by \`tx spec lint\`.
-# These are LINT-ONLY: a missing section never blocks tx doc add/update/sync.
-#
-#   severity     "error" (fails tx spec lint) | "warn" | "off"
-#   heading      the markdown heading text matched in the doc (case-insensitive)
-#   description  what belongs under the heading. Bundled into generated skills
-#                and used as placeholder text by \`tx doc template\`.
-#   message      the lint prompt shown when the section is missing. Falls back to
-#                [spec.lint.messages].missing_section, then a built-in default.
-#                Placeholders: {name} {spec_type} {section} {description} {file}
-#
-# Edit, reorder, or delete any section below. Define a new spec type by adding
-# a [spec.types.<name>] table. It is scaffolded, linted, and exposed to agents
-# via \`tx spec types --json\` exactly like the built-ins.
-#
-# NOT configurable (tx functionality depends on them): the frontmatter contract
-# and the embedded yaml block schemas (ears_requirements with REQ-* ids,
-# invariants with INV-* ids, verification, interfaces, failure_modes,
-# acceptance_criteria). Those blocks are found anywhere in the body, so renaming
-# a heading never breaks \`tx spec discover\` or FCI scoring.
+const SPEC_TYPES_TOML_HEADER = `# Four built-in document kinds; defaults include their standard sections.
+# Inspect with \`tx spec types\` or \`tx doc template <kind>\`.
+# Override only the settings you need under [spec.types.<kind>].
 `
-
-/** Commented examples that follow the generated [spec.types.*] tables. */
-const SPEC_TYPES_TOML_FOOTER = `
-# Custom spec type example. Uncomment to enable \`tx doc add rfc <name>\`:
-# [spec.types.rfc]
-# severity = "warn"
-# subdir = "rfc"                     # defaults to the type name
-# template = ".tx/templates/rfc.md"  # optional; {name} {title} {date} {spec_type} substituted
-# sections = ["Summary", "Motivation", "Proposal", "Drawbacks", "Alternatives"]
-#
-# ...or use per-section tables to attach descriptions and lint prompts:
-# [spec.types.rfc.section.motivation]
-# heading = "Motivation"
-# description = "Why this change is worth making now."
-# message = "{name}: every RFC needs '# Motivation'. {description}"
-
-# Global lint prompt overrides, used when a section has no \`message\` of its own.
-# [spec.lint.messages]
-# missing_section = "{name}: missing required section '{section}' for spec_type '{spec_type}'. {description}"
-# unknown_spec_type = "{name}: spec_type '{spec_type}' is not defined in .tx/config.toml."
-`
+const SPEC_TYPES_TOML_FOOTER = ""
 
 /**
  * The default config.toml content with comments and doc links.
  * Written by `tx init` if config.toml does not exist.
  */
 const DEFAULT_CONFIG_TOML = `# tx configuration
-# Full documentation: https://txdocs.dev/docs
-#
-# This file is created by \`tx init\` and lives at .tx/config.toml.
-# Edit any value below to override the default. Commented-out lines
-# show optional settings — uncomment them to enable.
+# Docs: https://txdocs.dev/docs
+# Existing files are preserved by tx init.
 
-# ─── Docs ───────────────────────────────────────────────────────────
-# Structured documentation primitives for PRDs, design docs, and specs.
-# Commands: tx doc add, tx doc show, tx doc list, tx doc validate
-# Docs: https://txdocs.dev/docs/primitives/docs
+# Markdown designs, plans, optional PRDs and system overviews.
+# https://txdocs.dev/docs/primitives/docs
 [docs]
-
-# Where tx stores YAML doc files on disk.
-# Relative to the project root.
 path = "specs"
 
-# EARS (Easy Approach to Requirements Syntax) is mandatory for all PRDs.
-# PRDs with legacy 'requirements' must also define 'ears_requirements'.
-
-# ─── Spec Traceability ─────────────────────────────────────────────
-# Invariant-to-test mapping discovery and completion scoring.
-# Commands: tx spec discover, tx spec fci, tx spec matrix
+# EARS (Easy Approach to Requirements Syntax) is mandatory for PRDs.
+# Invariant mappings: tx spec discover. Evidence: tx spec batch.
 [spec]
-
-# Test file patterns scanned by tx spec discover.
-# Add/remove patterns to match your project's languages and conventions.
 test_patterns = [
-  "test/**/*.test.{ts,js,tsx,jsx}",
-  "tests/**/*.py",
-  "**/*_test.go",
-  "**/*_test.rs",
-  "**/test_*.py",
-  "**/*.spec.{ts,js,tsx,jsx}",
-  "**/Test*.java",
-  "**/*Test.java",
-  "**/*_spec.rb",
-  "**/*.test.{c,cpp,cc}",
-  "**/*_test.{c,cpp,cc}",
+${DEFAULT_SPEC_TEST_PATTERNS.map(pattern => `  ${JSON.stringify(pattern)},`).join("\n")}
 ]
-
-# Controls tx spec lint warnings for design docs that have no linked tasks.
-# "always" = current/default behavior.
-# "locked_only" = warn only after the design doc has been locked.
-# "never" = suppress this warning entirely.
+# Warn for designs without linked tasks: always | locked_only | never.
 design_doc_missing_task_links = "always"
 
 ${SPEC_TYPES_TOML_HEADER}${renderDefaultSpecTypesToml()}
-${SPEC_TYPES_TOML_FOOTER}
-# ─── Memory ─────────────────────────────────────────────────────────
-# Filesystem-backed markdown search over your project's documentation.
-# Index directories with \`tx memory source add <dir>\`, then search
-# with \`tx memory search <query>\` (BM25) or \`--semantic\` (vector).
-# Docs: https://txdocs.dev/docs/primitives/memory
-[memory]
 
-# Default directory used by \`tx memory add\` when no source is registered.
-# If this directory isn't already a registered source, tx auto-registers
-# it so new documents survive future \`tx memory index\` runs.
-# Relative to the project root.
-default_dir = "specs"
-
-# ─── Cycles ─────────────────────────────────────────────────────────
-# Sub-agent swarm for automated issue discovery.
-# Run \`tx cycle\` to dispatch parallel scan agents that find issues,
-# then review results in the dashboard or via \`tx list\`.
-# Docs: https://txdocs.dev/docs/headful/docs-runs-cycles
-[cycles]
-
-# Optional prompt appended to each scan agent's system prompt.
-# Use this to focus scans on specific areas (e.g. security, performance).
-# scan_prompt = "Focus on security issues"
-
-# Number of parallel scan agents to dispatch per cycle run.
-# Higher values = faster scans but more API usage.
-agents = 3
-
-# LLM model used by cycle scan agents.
-# Must be a valid Anthropic model ID.
-model = "claude-opus-4-6"
-
-# ─── Dashboard ──────────────────────────────────────────────────────
-# Settings for the tx dashboard web UI (\`tx diag dashboard\`).
-# The dashboard provides a visual interface for task management,
-# doc browsing, run inspection, and cycle results.
-# Docs: https://txdocs.dev/docs/headful/filters-and-settings
+# Task display and optional weekly planning. tx diag dashboard.
+# https://txdocs.dev/docs/getting-started
 [dashboard]
-
-# Default assignee type when creating new tasks from the dashboard.
-# "human" = tasks are assigned to humans by default.
-# "agent" = tasks are assigned to agents by default.
-# Can be toggled per-task with Cmd+K in the dashboard.
+# human | agent. The historical spelling is retained for compatibility.
 default_task_assigment_type = "human"
-
-# Default task view when opening the Tasks tab in the dashboard.
-# "list" = table/list layout.
-# "kanban" = status-column board layout.
+# list | kanban
 default_task_view = "list"
 
-# Weekly cycle planning settings used by dashboard cycle APIs.
 [dashboard.cycles]
-
-# Cycle duration in days.
 cycle_length_days = 7
-
-# Day of week that anchors cycle windows.
 cycle_start_day = "monday"
-
-# Non-done statuses carried into the next cycle when a cycle is completed.
 carry_statuses = ["planning", "active", "blocked", "review", "needs_review"]
-
-# ─── Pins ───────────────────────────────────────────────────────────
-# Context pins — persistent named content blocks that are injected
-# into agent context files as <tx-pin id="...">...</tx-pin> XML sections.
-# This enables programmatic CRUD of agent memory across sessions.
-# Commands: tx pin set, tx pin get, tx pin rm, tx pin list, tx pin sync
-# Docs: https://txdocs.dev/docs/primitives/pin
-[pins]
-
-# Comma-separated list of files that \`tx pin sync\` writes pins into.
-# Paths are relative to the project root.
-# Both Claude Code (CLAUDE.md) and Codex (AGENTS.md) are synced by default
-# so all agents share the same persistent context.
-target_files = "CLAUDE.md, AGENTS.md"
-
-# When true, agent-driven task completion is blocked for any task linked
-# from a gate pin via \`taskId\`. Humans can still complete the task.
-block_agent_done_when_task_id_present = true
-
-# ─── Guard ─────────────────────────────────────────────────────────
-# Task creation guards — lightweight limits checked at \`tx add\` time.
-# Prevents unbounded task proliferation in agent loops.
-# Commands: tx auto guard set, tx auto guard show, tx auto guard clear
-[guard]
-
-# Guard mode: "advisory" (default) or "enforce"
-# Advisory: tasks are created with warning metadata, stderr warning printed
-# Enforce: tx add fails with GuardExceededError when limits are hit
-mode = "advisory"
-
-# Default limits (can be overridden per-scope via tx auto guard set)
-# max_pending = 50
-# max_children = 10
-# max_depth = 4
-
-# ─── Verify ────────────────────────────────────────────────────────
-# Machine-checkable done criteria attached to tasks.
-# Attach a shell command to a task; \`tx auto verify run <id>\` executes it.
-# Exit 0 = pass, non-zero = fail.
-# Commands: tx auto verify set, tx auto verify show, tx auto verify run, tx auto verify clear
-[verify]
-
-# Default timeout in seconds for verification commands.
-timeout = 300
-
-# Default JSON schema for structured verification output.
-# Leave commented for exit-code-only mode (default).
-# default_schema = "verify-schema.json"
-
-# ─── Reflect ───────────────────────────────────────────────────────
-# Macro-level session retrospective — look at recent sessions,
-# assess what is working, and surface machine-readable signals.
-# Commands: tx auto reflect
-[reflect]
-
-# LLM provider for \`tx auto reflect --analyze\`
-# "auto" = auto-detect from available env vars (default)
-# "claude" = uses ANTHROPIC_API_KEY
-# "codex" = uses OPENAI_API_KEY
-provider = "auto"
-
-# Model for analysis tier
-# model = "claude-opus-4-6"
-
-# Default number of sessions to analyze
-default_sessions = 10
-
-# Whether to include transcript parsing by default
-include_transcripts = false
-
-# ─── Reviews ──────────────────────────────────────────────────────
-# Config-gated design-doc review triggers.
-# When all linked tasks for a design doc are completed, Ralph can
-# trigger an automated review via a configured runtime (e.g. Pi).
-# See DD-039 for specification.
-[reviews.design_docs]
-
-# Whether design-doc reviews are enabled.
-enabled = false
-
-# Review runtime: "pi" or "custom".
-runtime = "pi"
-
-# Transport for review execution: "rpc" (preferred) or "sdk".
-transport = "rpc"
-
-# Prompt template name for the review (e.g. "double-check").
-template = "double-check"
-
-# Whether a failing review blocks the design doc from being verified.
-blocking = false
-
-# Whether to create follow-up tasks when a review fails.
-create_followup_tasks = true
-
-# Whether to re-trigger a review when linked tasks are reopened
-# after a previous review passed.
-retrigger_on_task_reopen = true
+# Auto-add matching dashboard tasks to new cycles; [] disables auto-add.
+auto_add_statuses = ["backlog", "ready"]
 `
 
 /**

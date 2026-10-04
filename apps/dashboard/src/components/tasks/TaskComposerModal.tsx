@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
+import { useModalFocus } from "../../hooks/useModalFocus"
 import type { TaskAssigneeType, TaskLabel } from "../../api/client"
 import { Button } from "../ui"
 import { useOverlayCommands, useShortcutScope, type Command } from "../command-palette/CommandContext"
@@ -74,6 +75,11 @@ export function TaskComposerModal({
   const createMoreRef = useRef(false)
   const isSubmittingRef = useRef(false)
   const pendingCommandLabelCreateRef = useRef<Promise<void> | null>(null)
+  const headingId = useId()
+  const requestClose = useCallback(() => {
+    if (!isSubmittingRef.current && !pendingCommandLabelCreateRef.current) onClose()
+  }, [onClose])
+  const modalFocus = useModalFocus(open, requestClose, titleRef)
 
   const mergedAvailableLabels = useMemo(() => {
     const byId = new Map<number, TaskLabel>()
@@ -124,7 +130,6 @@ export function TaskComposerModal({
   useEffect(() => {
     if (!open) return
     resetFields(false)
-    setTimeout(() => titleRef.current?.focus(), 0)
   }, [open, resetFields])
 
   useEffect(() => {
@@ -238,6 +243,7 @@ export function TaskComposerModal({
     if (!open) return
 
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return
       const target = event.target
       const isTextField = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement
 
@@ -269,12 +275,12 @@ export function TaskComposerModal({
       if (event.key !== "Escape") return
       event.preventDefault()
       event.stopPropagation()
-      onClose()
+      requestClose()
     }
 
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
-  }, [open, onClose, submitComposer])
+  }, [open, requestClose, submitComposer])
 
   const overlayCommands = useMemo((): Command[] => {
     if (!open) return []
@@ -292,7 +298,7 @@ export function TaskComposerModal({
         label: "Close composer",
         group: "Composer",
         icon: "nav",
-        action: onClose,
+        action: requestClose,
       },
       {
         id: "composer:focus-title",
@@ -433,7 +439,7 @@ export function TaskComposerModal({
     open,
     submitLabel,
     submitComposer,
-    onClose,
+    requestClose,
     createMore,
     selectedAssigneeType,
     selectedLabelIds,
@@ -452,12 +458,19 @@ export function TaskComposerModal({
     <div className="fixed inset-0 z-40 flex items-center justify-center p-4">
       <button
         className={`absolute inset-0 animate-fade-in ${isDarkTheme ? "bg-black/60" : "bg-black/35"}`}
-        onClick={onClose}
+        onClick={requestClose}
+        tabIndex={-1}
         aria-label="Close task composer"
       />
       <div
+        ref={modalFocus.dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-busy={isSubmitting}
+        aria-labelledby={headingId}
+        onKeyDown={modalFocus.onKeyDown}
         data-theme={modalTheme}
-        className={`relative w-full max-w-3xl rounded-xl border shadow-2xl animate-slide-in-up ${
+        className={`relative max-h-[calc(100dvh-2rem)] overflow-y-auto w-full max-w-3xl rounded-xl border shadow-2xl animate-slide-in-up ${
           isDarkTheme
             ? "border-gray-700 bg-gray-900 text-gray-100"
             : "border-0 bg-white text-black"
@@ -474,14 +487,15 @@ export function TaskComposerModal({
             }`}>
               TX
             </span>
-            <span className={`text-xs font-medium ${isDarkTheme ? "text-gray-400" : "text-zinc-600"}`}>
+            <span id={headingId} className={`text-xs font-medium ${isDarkTheme ? "text-gray-400" : "text-zinc-600"}`}>
               {heading}
             </span>
           </div>
           <Button
             size="xs"
             variant="secondary"
-            onClick={onClose}
+            onClick={requestClose}
+            disabled={isSubmitting || isCreatingCommandLabel}
             aria-label="Close"
           >
             Esc
@@ -498,9 +512,11 @@ export function TaskComposerModal({
           <div className="space-y-1.5">
             <input
               ref={titleRef}
+              disabled={isSubmitting}
               value={title}
               onChange={(event) => setTitle(event.target.value)}
               placeholder="Task title"
+              aria-label="Task title"
               className={`w-full border-none bg-transparent px-1 py-2 text-3xl font-semibold outline-none ${
                 isDarkTheme ? "text-gray-100 placeholder:text-gray-500" : "text-black placeholder:text-zinc-400"
               }`}
@@ -510,12 +526,14 @@ export function TaskComposerModal({
           <div className="space-y-1.5">
             <textarea
               ref={descriptionRef}
+              disabled={isSubmitting}
               value={description}
               onChange={(event) => {
                 setDescription(event.target.value)
                 autosizeDescription()
               }}
               placeholder="Describe the task (optional)..."
+              aria-label="Task description"
               rows={1}
               className={`w-full resize-none overflow-hidden border-none bg-transparent px-1 text-base outline-none ${
                 isDarkTheme ? "text-gray-300 placeholder:text-gray-500" : "text-black placeholder:text-zinc-500"
@@ -533,6 +551,7 @@ export function TaskComposerModal({
                 Status
               </p>
               <TaskStatusSelect
+                disabled={isSubmitting}
                 instanceId="task-composer-status"
                 value={selectedStage}
                 onChange={handleStageChange}
@@ -547,6 +566,7 @@ export function TaskComposerModal({
                 Assignment Type
               </p>
               <TaskAssigneeTypeSelect
+                disabled={isSubmitting}
                 instanceId="task-composer-assignee-type"
                 value={selectedAssigneeType}
                 onChange={handleAssigneeTypeChange}
@@ -561,12 +581,14 @@ export function TaskComposerModal({
                 Assignee ID
               </p>
               <input
+                disabled={isSubmitting}
                 value={assigneeId}
                 onChange={(event) => {
                   assigneeIdRef.current = event.target.value
                   setAssigneeId(event.target.value)
                 }}
                 placeholder="Optional assignee ID"
+                aria-label="Assignee ID"
                 className={`w-full rounded-md border px-2.5 py-2 text-sm outline-none transition ${
                   isDarkTheme
                     ? "border-gray-600 bg-gray-800 text-gray-200 placeholder:text-gray-500 focus:border-indigo-400"
@@ -582,6 +604,7 @@ export function TaskComposerModal({
                 Labels
               </p>
               <TaskLabelsSelect
+                disabled={isSubmitting}
                 instanceId="task-composer-labels"
                 labels={mergedAvailableLabels}
                 selectedLabelIds={selectedLabelIds}
@@ -594,7 +617,7 @@ export function TaskComposerModal({
           </div>
 
           {errorMessage && (
-            <div className="rounded-md border border-red-300 bg-red-50 px-2.5 py-1.5 text-xs text-red-700">
+            <div role="alert" className="rounded-md border border-red-300 bg-red-50 px-2.5 py-1.5 text-xs text-red-700">
               {errorMessage}
             </div>
           )}
@@ -605,6 +628,7 @@ export function TaskComposerModal({
             }`}>
               <input
                 type="checkbox"
+                disabled={isSubmitting}
                 checked={createMore}
                 onChange={(event) => setCreateMore(event.target.checked)}
                 className={`rounded text-indigo-600 focus:ring-indigo-500 ${

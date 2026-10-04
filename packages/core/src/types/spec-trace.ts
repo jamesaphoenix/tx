@@ -129,6 +129,7 @@ export const TraceabilityMatrixEntrySchema = Schema.Struct({
   rule: Schema.String,
   subsystem: Schema.NullOr(Schema.String),
   tests: Schema.Array(TraceabilityMatrixTestSchema),
+  sourceRefs: Schema.optional(Schema.Array(Schema.String)),
 })
 export type TraceabilityMatrixEntry = typeof TraceabilityMatrixEntrySchema.Type
 

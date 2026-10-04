@@ -9,38 +9,6 @@ export class TaskNotFoundError extends Data.TaggedError("TaskNotFoundError")<{
   }
 }
 
-export class LearningNotFoundError extends Data.TaggedError("LearningNotFoundError")<{
-  readonly id: number
-}> {
-  get message() {
-    return `Learning not found: ${this.id}`
-  }
-}
-
-export class FileLearningNotFoundError extends Data.TaggedError("FileLearningNotFoundError")<{
-  readonly id: number
-}> {
-  get message() {
-    return `File learning not found: ${this.id}`
-  }
-}
-
-export class AttemptNotFoundError extends Data.TaggedError("AttemptNotFoundError")<{
-  readonly id: number
-}> {
-  get message() {
-    return `Attempt not found: ${this.id}`
-  }
-}
-
-export class RunNotFoundError extends Data.TaggedError("RunNotFoundError")<{
-  readonly id: string
-}> {
-  get message() {
-    return `Run not found: ${this.id}`
-  }
-}
-
 export class ValidationError extends Data.TaggedError("ValidationError")<{
   readonly reason: string
 }> {
@@ -66,199 +34,12 @@ export class DatabaseError extends Data.TaggedError("DatabaseError")<{
   }
 }
 
-export class EmbeddingUnavailableError extends Data.TaggedError("EmbeddingUnavailableError")<{
-  readonly reason: string
-}> {
-  get message() {
-    return `Embedding unavailable: ${this.reason}`
-  }
-}
-
-export class EmbeddingDimensionMismatchError extends Data.TaggedError("EmbeddingDimensionMismatchError")<{
-  readonly queryDimensions: number
-  readonly documentDimensions: number
-}> {
-  get message() {
-    return `Embedding dimension mismatch: query has ${this.queryDimensions} dims, document has ${this.documentDimensions} dims. Ensure consistent embedding provider.`
-  }
-}
-
-export class RerankerUnavailableError extends Data.TaggedError("RerankerUnavailableError")<{
-  readonly reason: string
-}> {
-  get message() {
-    return `Reranker unavailable: ${this.reason}`
-  }
-}
-
 export class DependencyNotFoundError extends Data.TaggedError("DependencyNotFoundError")<{
   readonly blockerId: string
   readonly blockedId: string
 }> {
   get message() {
     return `Dependency not found: ${this.blockerId} -> ${this.blockedId}`
-  }
-}
-
-export class EdgeNotFoundError extends Data.TaggedError("EdgeNotFoundError")<{
-  readonly id: number
-}> {
-  get message() {
-    return `Edge not found: ${this.id}`
-  }
-}
-
-export class AnchorNotFoundError extends Data.TaggedError("AnchorNotFoundError")<{
-  readonly id: number
-}> {
-  get message() {
-    return `Anchor not found: ${this.id}`
-  }
-}
-
-export class CandidateNotFoundError extends Data.TaggedError("CandidateNotFoundError")<{
-  readonly id: number
-}> {
-  get message() {
-    return `Candidate not found: ${this.id}`
-  }
-}
-
-export class ExtractionUnavailableError extends Data.TaggedError("ExtractionUnavailableError")<{
-  readonly reason: string
-}> {
-  get message() {
-    return `Extraction unavailable: ${this.reason}`
-  }
-}
-
-export class RetrievalError extends Data.TaggedError("RetrievalError")<{
-  readonly reason: string
-}> {
-  get message() {
-    return `Retrieval error: ${this.reason}`
-  }
-}
-
-export class AstGrepError extends Data.TaggedError("AstGrepError")<{
-  readonly reason: string
-  readonly cause?: unknown
-}> {
-  get message() {
-    return `AST grep error: ${this.reason}`
-  }
-}
-
-export class DaemonError extends Data.TaggedError("DaemonError")<{
-  readonly code: string
-  readonly reason: string
-  readonly pid: number | null
-}> {
-  get message() {
-    return `Daemon error [${this.code}]: ${this.reason}`
-  }
-}
-
-export class FileWatcherError extends Data.TaggedError("FileWatcherError")<{
-  readonly reason: string
-  readonly cause?: unknown
-}> {
-  get message() {
-    return `File watcher error: ${this.reason}`
-  }
-}
-
-export class WatcherAlreadyRunningError extends Data.TaggedError("WatcherAlreadyRunningError")<{
-  readonly path: string
-}> {
-  get message() {
-    return `Watcher already running for path: ${this.path}`
-  }
-}
-
-export class WatcherNotRunningError extends Data.TaggedError("WatcherNotRunningError")<{
-  readonly path: string
-}> {
-  get message() {
-    return `Watcher not running for path: ${this.path}`
-  }
-}
-
-// Orchestration error types (PRD-018)
-
-export class RegistrationError extends Data.TaggedError("RegistrationError")<{
-  readonly reason: string
-  readonly workerId?: string
-}> {
-  get message() {
-    return this.workerId
-      ? `Registration failed: worker ${this.workerId}, ${this.reason}`
-      : `Registration failed: ${this.reason}`
-  }
-}
-
-export class WorkerNotFoundError extends Data.TaggedError("WorkerNotFoundError")<{
-  readonly workerId: string
-}> {
-  get message() {
-    return `Worker not found: ${this.workerId}`
-  }
-}
-
-export class AlreadyClaimedError extends Data.TaggedError("AlreadyClaimedError")<{
-  readonly taskId: string
-  readonly claimedByWorkerId: string
-}> {
-  get message() {
-    return `Already claimed: task ${this.taskId} by worker ${this.claimedByWorkerId}`
-  }
-}
-
-export class ClaimNotFoundError extends Data.TaggedError("ClaimNotFoundError")<{
-  readonly taskId: string
-  readonly workerId?: string
-}> {
-  get message() {
-    return this.workerId
-      ? `Claim not found: task ${this.taskId} by worker ${this.workerId}`
-      : `Claim not found: task ${this.taskId}`
-  }
-}
-
-export class LeaseExpiredError extends Data.TaggedError("LeaseExpiredError")<{
-  readonly taskId: string
-  readonly expiredAt: string
-}> {
-  get message() {
-    return `Lease expired: task ${this.taskId} at ${this.expiredAt}`
-  }
-}
-
-export class MaxRenewalsExceededError extends Data.TaggedError("MaxRenewalsExceededError")<{
-  readonly taskId: string
-  readonly renewalCount: number
-  readonly maxRenewals: number
-}> {
-  get message() {
-    return `Max renewals exceeded: task ${this.taskId} (${this.renewalCount}/${this.maxRenewals})`
-  }
-}
-
-export class ClaimIdNotFoundError extends Data.TaggedError("ClaimIdNotFoundError")<{
-  readonly claimId: number
-}> {
-  get message() {
-    return `Claim not found: ${this.claimId}`
-  }
-}
-
-export class OrchestratorError extends Data.TaggedError("OrchestratorError")<{
-  readonly code: string
-  readonly reason: string
-  readonly cause?: unknown
-}> {
-  get message() {
-    return `Orchestrator error [${this.code}]: ${this.reason}`
   }
 }
 
@@ -387,62 +168,6 @@ export class InvariantNotFoundError extends Data.TaggedError("InvariantNotFoundE
   }
 }
 
-// Memory error types
-
-export class ZeroMagnitudeVectorError extends Data.TaggedError("ZeroMagnitudeVectorError")<{
-  readonly dimensions: number
-}> {
-  get message() {
-    return `Zero-magnitude vector (${this.dimensions} dims): embedding may be corrupted or all-zeros`
-  }
-}
-
-export class MemoryDocumentNotFoundError extends Data.TaggedError("MemoryDocumentNotFoundError")<{
-  readonly id: string
-}> {
-  get message() {
-    return `Memory document not found: ${this.id}`
-  }
-}
-
-export class MemorySourceNotFoundError extends Data.TaggedError("MemorySourceNotFoundError")<{
-  readonly rootDir: string
-}> {
-  get message() {
-    return `Memory source not found: ${this.rootDir}`
-  }
-}
-
-// Agent/Cycle error types (PRD-023 cycle scan)
-
-export class LlmUnavailableError extends Data.TaggedError("LlmUnavailableError")<{
-  readonly reason: string
-}> {
-  get message() {
-    return `LLM unavailable: ${this.reason}`
-  }
-}
-
-export class AgentError extends Data.TaggedError("AgentError")<{
-  readonly agent: string
-  readonly reason: string
-  readonly cause?: unknown
-}> {
-  get message() {
-    return `Agent error [${this.agent}]: ${this.reason}`
-  }
-}
-
-export class CycleScanError extends Data.TaggedError("CycleScanError")<{
-  readonly phase: string
-  readonly reason: string
-  readonly cause?: unknown
-}> {
-  get message() {
-    return `Cycle scan error [${this.phase}]: ${this.reason}`
-  }
-}
-
 // Label error types
 
 export class LabelNotFoundError extends Data.TaggedError("LabelNotFoundError")<{
@@ -450,47 +175,6 @@ export class LabelNotFoundError extends Data.TaggedError("LabelNotFoundError")<{
 }> {
   get message() {
     return `Label not found: ${this.name}`
-  }
-}
-
-// Guard error types (bounded autonomy)
-
-export class GuardExceededError extends Data.TaggedError("GuardExceededError")<{
-  readonly scope: string
-  readonly metric: string
-  readonly current: number
-  readonly limit: number
-}> {
-  get message() {
-    return `Guard exceeded: ${this.metric} ${this.current}/${this.limit} (scope: ${this.scope})`
-  }
-}
-
-export class VerifyError extends Data.TaggedError("VerifyError")<{
-  readonly taskId: string
-  readonly reason: string
-  readonly cause?: unknown
-}> {
-  get message() {
-    return `Verify error for task ${this.taskId}: ${this.reason}`
-  }
-}
-
-// Message error types (PRD-024 agent outbox)
-
-export class MessageNotFoundError extends Data.TaggedError("MessageNotFoundError")<{
-  readonly id: number
-}> {
-  get message() {
-    return `Message not found: ${this.id}`
-  }
-}
-
-export class MessageAlreadyAckedError extends Data.TaggedError("MessageAlreadyAckedError")<{
-  readonly id: number
-}> {
-  get message() {
-    return `Message already acked: ${this.id}`
   }
 }
 
@@ -504,70 +188,19 @@ export class StaleDataError extends Data.TaggedError("StaleDataError")<{
   }
 }
 
-// Decision error types (spec-driven development triangle)
-
-export class DecisionNotFoundError extends Data.TaggedError("DecisionNotFoundError")<{
-  readonly id: string
-}> {
-  get message() {
-    return `Decision not found: ${this.id}`
-  }
-}
-
-export class DecisionAlreadyReviewedError extends Data.TaggedError("DecisionAlreadyReviewedError")<{
-  readonly id: string
-  readonly status: string
-}> {
-  get message() {
-    return `Decision already reviewed: ${this.id} (status: ${this.status})`
-  }
-}
-
-export type TaskError =
-  | TaskNotFoundError
+export type TaskError = TaskNotFoundError
   | ValidationError
-  | DocNotFoundError
-  | DocLockedError
-  | InvalidDocYamlError
-  | InvariantNotFoundError
   | CircularDependencyError
   | DatabaseError
   | DependencyNotFoundError
-  | EmbeddingUnavailableError
-  | EmbeddingDimensionMismatchError
-  | RerankerUnavailableError
-  | ExtractionUnavailableError
-  | RetrievalError
-  | AstGrepError
-  | DaemonError
-  | FileWatcherError
-  | WatcherAlreadyRunningError
-  | WatcherNotRunningError
-  | CandidateNotFoundError
-  | RegistrationError
-  | WorkerNotFoundError
-  | AlreadyClaimedError
-  | ClaimNotFoundError
-  | ClaimIdNotFoundError
-  | LeaseExpiredError
-  | MaxRenewalsExceededError
-  | OrchestratorError
-  | RunNotFoundError
   | InvalidStatusError
   | InvalidDateError
   | UnexpectedRowCountError
   | EntityFetchError
-  | StaleDataError
   | HasChildrenError
-  | MessageNotFoundError
-  | MessageAlreadyAckedError
-  | LlmUnavailableError
-  | AgentError
-  | CycleScanError
-  | MemoryDocumentNotFoundError
-  | MemorySourceNotFoundError
-  | GuardExceededError
-  | VerifyError
+  | DocNotFoundError
+  | DocLockedError
+  | InvalidDocYamlError
+  | InvariantNotFoundError
   | LabelNotFoundError
-  | DecisionNotFoundError
-  | DecisionAlreadyReviewedError
+  | StaleDataError

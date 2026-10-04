@@ -13,9 +13,10 @@
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest"
 import { Effect } from "effect"
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync, readFileSync, symlinkSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { tmpdir } from "node:os"
+import { spawnSync } from "node:child_process"
 import { getSharedTestLayer, type SharedTestLayerResult } from "@jamesaphoenix/tx/testing"
 import {
   DocService,
@@ -154,6 +155,135 @@ describe("SpecTraceService Integration", () => {
     if (existsSync(tempDir)) {
       rmSync(tempDir, { recursive: true, force: true })
     }
+  })
+
+  it("scopes canonical document references and shares sign-off across lineage aliases",async () => {
+    const result = await run(Effect.gen(function* () {
+      yield* createDocWithInvariants("scope-alias-doc",[{id:"INV-SCOPE-ALIAS",rule:"lineage scopes remain exact"}])
+      const docs = yield* DocService
+      const doc = yield* docs.get("prd/scope-alias-doc")
+      const spec = yield* SpecTraceService
+      yield* spec.link("INV-SCOPE-ALIAS","test/alias.test.ts","lineage")
+      yield* spec.recordRun("test/alias.test.ts::lineage",true)
+      const before = yield* spec.fci({doc:"prd/scope-alias-doc"})
+      const signoff = yield* spec.complete({doc:"prd/scope-alias-doc"},"Reviewer")
+      const aliases = []
+      for (const ref of [doc.docId,"scope-alias-doc","prd/scope-alias-doc"]) aliases.push(yield* spec.status({doc:ref}))
+      yield* docs.create({kind:asDocKind("design"),name:"scope-alias-doc",title:"scope-alias-doc",
+        content:readFileSync(join(tempDir,"specs/prd/scope-alias-doc.md"),"utf8")
+          .replace(/^doc_id:.*\n/m,"").replace("spec_type: prd","spec_type: design").replaceAll("INV-SCOPE-ALIAS","INV-SCOPE-DESIGN")})
+      yield* docs.syncInvariants("design/scope-alias-doc")
+      return {before,signoff,aliases,design:yield* spec.fci({doc:"design/scope-alias-doc"}),
+        prd:yield* spec.fci({doc:"prd/scope-alias-doc"})}
+    }))
+    expect(result.before).toMatchObject({total:1,passing:1,phase:"HARDEN"})
+    expect(result.aliases.every(status => status.phase === "COMPLETE")).toBe(true)
+    expect(result.design).toMatchObject({total:1,phase:"BUILD"})
+    expect(result.prd).toMatchObject({total:1,phase:"COMPLETE"})
+  })
+
+  it("imports large supported batches without exceeding SQLite bind limits", async () => {
+    await run(createDocWithInvariants("large-report-doc", [{id:"INV-LARGE-001",rule:"large reports remain importable"}]))
+    const result = await run(Effect.gen(function* () {
+      const spec = yield* SpecTraceService
+      yield* spec.link("INV-LARGE-001","test/large.test.ts","mapped")
+      const records: BatchRunInput[] = Array.from({length:33_000},(_,index) => ({testId:`test/large.test.ts::unmapped-${index}`,passed:true}))
+      records.push({testId:"test/large.test.ts::mapped",passed:true})
+      return yield* spec.recordBatchRun(records)
+    }))
+    expect(result).toMatchObject({received:33_001,recorded:1})
+    expect(result.unmatched).toHaveLength(33_000)
+  })
+
+  it("imports real parameterised cases by mapped file and keeps failures and skips non-passing", async () => {
+    await run(createDocWithInvariants("each-report-doc", [
+      {id:"INV-EACH-001",rule:"every retry case succeeds"},
+      {id:"INV-EACH-002",rule:"object cases succeed"},
+      {id:"INV-EACH-003",rule:"skipped cases do not prove completion"},
+      {id:"INV-EACH-004",rule:"literal titles do not become templates"},
+    ]))
+    symlinkSync(join(originalCwd,"node_modules"),join(tempDir,"node_modules"),"dir")
+    writeRelative(tempDir,"vitest.config.mjs",'export default {test:{include:["test/**/*.test.ts"],pool:"forks"}}')
+    writeRelative(tempDir,"test/retry.test.ts",[
+      'import {it,expect} from "vitest"',
+      'it.each(["success", "failure"])("retry %s [INV-EACH-001]", value => { expect(value).toBe("success") })',
+      'it.for([{name:"alpha"},{name:"beta"}])("object $name [INV-EACH-002]", () => {})',
+      'it.each(["executed"])("case %s [INV-EACH-003]", () => {})',
+      'it.skip.each(["skipped"])("case %s [INV-EACH-003]", () => {})',
+      'it("literal %s [INV-EACH-004]", () => {})',
+    ].join("\n"))
+    writeRelative(tempDir,"test/unmapped.test.ts",'import {it} from "vitest"; it("object foreign", () => {})')
+    const reportPath = join(tempDir,"report.json")
+    const native = spawnSync("node",[join(originalCwd,"node_modules/vitest/vitest.mjs"),"run","--root",tempDir,
+      "--config",join(tempDir,"vitest.config.mjs"),"--reporter=json","--outputFile",reportPath],{encoding:"utf8",timeout:8000})
+    expect(native.status, native.stderr).toBe(1)
+    const records = parseBatchRunInput(readFileSync(reportPath,"utf8"),"vitest")
+    const result = await run(Effect.gen(function* () {
+      const spec = yield* SpecTraceService
+      yield* spec.discover({rootDir:tempDir,patterns:["test/**/*.test.ts"],doc:"each-report-doc"})
+      const retry = yield* spec.testsForInvariant("INV-EACH-001")
+      const literal = yield* spec.testsForInvariant("INV-EACH-004")
+      const imported = yield* spec.recordBatchRun(records)
+      const unmatched = yield* spec.recordBatchRun([
+        {testId:"test/unmapped.test.ts::object foreign [INV-EACH-002]",passed:true},
+        {testId:"test/retry.test.ts::literal expanded [INV-EACH-004]",passed:true},
+      ])
+      return {retry,literal,imported,unmatched,fci:yield* spec.fci({doc:"each-report-doc"})}
+    }))
+    expect(result.retry).toHaveLength(1)
+    expect(result.retry[0]).toMatchObject({testName:"retry %s [INV-EACH-001]",framework:"vitest-each"})
+    expect(result.literal[0]?.framework).toBe("vitest")
+    expect(result.imported).toMatchObject({recorded:4})
+    expect(result.unmatched.recorded).toBe(0)
+    expect(result.unmatched.unmatched).toHaveLength(2)
+    expect(result.fci).toMatchObject({total:4,passing:2,failing:2,untested:0,phase:"BUILD"})
+    writeRelative(tempDir,"test/retry.test.ts",readFileSync(join(tempDir,"test/retry.test.ts"),"utf8")
+      .replace('expect(value).toBe("success")','expect(["success","failure"]).toContain(value)').replace("it.skip.each","it.each"))
+    const recovered = spawnSync("node",[join(originalCwd,"node_modules/vitest/vitest.mjs"),"run","--root",tempDir,
+      "--config",join(tempDir,"vitest.config.mjs"),"--reporter=json","--outputFile",reportPath],{encoding:"utf8",timeout:8000})
+    expect(recovered.status,recovered.stderr).toBe(0)
+    const recovery = await run(Effect.gen(function* () {
+      const spec = yield* SpecTraceService
+      yield* spec.recordBatchRun(parseBatchRunInput(readFileSync(reportPath,"utf8"),"vitest"))
+      return yield* spec.fci({doc:"each-report-doc"})
+    }))
+    expect(recovery).toMatchObject({passing:4,failing:0,untested:0,phase:"HARDEN"})
+  })
+
+  it("keeps source enforcement references separate from executable evidence", async () => {
+    const result = await run(Effect.gen(function* () {
+      yield* createDocWithInvariants("source-trace-doc",[
+        {id:"INV-SRC-ONLY",rule:"ownership is enforced"},
+        {id:"INV-SRC-TESTED",rule:"retries preserve identity"},
+      ])
+      writeRelative(tempDir,"src/owner.ts","// @spec INV-SRC-ONLY\nexport const enforceOwner = () => true\n")
+      writeRelative(tempDir,"src/retry.ts","// @spec INV-SRC-TESTED\nexport const preserveIdentity = () => true\n")
+      writeRelative(tempDir,"test/retry.test.ts",'it("retry identity [INV-SRC-TESTED]", () => {})')
+      const spec = yield* SpecTraceService
+      yield* spec.discover({rootDir:tempDir,patterns:["test/**/*.test.ts"],doc:"source-trace-doc"})
+      yield* spec.link("INV-SRC-ONLY","src/owner.ts","spec@line-7")
+      const db = yield* SqliteClient
+      db.prepare("UPDATE spec_tests SET discovery = 'comment', test_name = NULL WHERE invariant_id = ? AND test_id = ?")
+        .run("INV-SRC-ONLY","src/owner.ts::spec@line-7")
+      yield* spec.discover({rootDir:tempDir,patterns:["test/**/*.test.ts"],doc:"source-trace-doc"})
+      const onlySource = yield* spec.testsForInvariant("INV-SRC-ONLY")
+      const tested = yield* spec.testsForInvariant("INV-SRC-TESTED")
+      yield* spec.recordRun(tested[0]!.testId,true)
+      const sourceRun = yield* Effect.either(spec.recordRun("src/owner.ts::spec@line-1",true))
+      const batch = yield* spec.recordBatchRun([{testId:"src/owner.ts::spec@line-1",passed:true}])
+      return {onlySource,tested,sourceRun,batch,
+        fci:yield* spec.fci({doc:"source-trace-doc"}),
+        gaps:yield* spec.uncoveredInvariants({doc:"source-trace-doc"}),
+        matrix:yield* spec.matrix({doc:"source-trace-doc"})}
+    }))
+    expect(result.onlySource).toEqual([])
+    expect(result.tested).toHaveLength(1)
+    expect(result.fci).toMatchObject({total:2,covered:1,uncovered:1,passing:1,untested:0,fci:50})
+    expect(result.gaps.map(gap => gap.id)).toEqual(["INV-SRC-ONLY"])
+    expect(result.sourceRun._tag).toBe("Left")
+    expect(result.batch).toMatchObject({recorded:0,unmatched:["src/owner.ts::spec@line-1"]})
+    expect(result.matrix.find(row => row.invariantId === "INV-SRC-ONLY")).toMatchObject({tests:[],sourceRefs:["src/owner.ts:1","src/owner.ts:7"]})
+    expect(result.matrix.find(row => row.invariantId === "INV-SRC-TESTED")).toMatchObject({sourceRefs:["src/retry.ts:1"]})
   })
 
   it("discovers mappings from tags/comments/manifest and closes gaps", async () => {
@@ -476,7 +606,8 @@ describe("SpecTraceService Integration", () => {
     expect(result.hardenStatus.signedOff).toBe(false)
 
     expect(result.signoff.scopeType).toBe("doc")
-    expect(result.signoff.scopeValue).toBe("spec-phase-doc")
+    const phaseDoc = await run(Effect.gen(function* () {return yield* (yield* DocService).get("spec-phase-doc")}))
+    expect(result.signoff.scopeValue).toBe(phaseDoc.docId)
     expect(result.signoff.signedOffBy).toBe("qa@example.com")
 
     expect(result.complete.phase).toBe("COMPLETE")
@@ -517,6 +648,57 @@ describe("SpecTraceService Integration", () => {
     expect(result.error.message).toContain("No spec test mapping found")
     expect(result.status.phase).toBe("BUILD")
     expect(result.status.blockers).toEqual(["2 untested invariant(s)"])
+  })
+
+  it("cannot credit a different test file merely because its assertion title matches", async () => {
+    const result = await run(Effect.gen(function* () {
+      yield* createDocWithInvariants("spec-wrong-file-doc", [{id:"INV-SPEC-WRONG-FILE",rule:"evidence belongs to the mapped assertion"}])
+      const spec = yield* SpecTraceService
+      yield* spec.link("INV-SPEC-WRONG-FILE","test/ownership.test.ts","requires an owner","vitest")
+      const wrongId = "test/unrelated.test.ts::requires an owner"
+      const single = yield* spec.recordRun(wrongId,true).pipe(Effect.either)
+      const batch = yield* spec.recordBatchRun([{testId:wrongId,passed:true}])
+      const before = yield* spec.fci({doc:"spec-wrong-file-doc"})
+      const exact = yield* spec.recordRun("test/ownership.test.ts::requires an owner",true)
+      const after = yield* spec.fci({doc:"spec-wrong-file-doc"})
+      return {single,batch,before,exact,after}
+    }))
+    expect(result.single._tag).toBe("Left")
+    expect(result.batch).toEqual({received:1,recorded:0,unmatched:["test/unrelated.test.ts::requires an owner"]})
+    expect(result.before).toMatchObject({fci:0,untested:1})
+    expect(result.exact.recorded).toBe(1)
+    expect(result.after).toMatchObject({fci:100,passing:1})
+  })
+
+  it("resolves report paths against the content checkout rather than guessing from directory names", async () => {
+    const result = await run(Effect.gen(function* () {
+      yield* createDocWithInvariants("spec-report-path-doc",[{id:"INV-SPEC-REPORT-PATH",rule:"reports identify the actual checkout test"}])
+      const spec = yield* SpecTraceService
+      writeRelative(process.cwd(),"feature_checks/ownership.test.ts",'it("requires an owner", () => {})')
+      yield* spec.link("INV-SPEC-REPORT-PATH","feature_checks/ownership.test.ts","requires an owner","vitest")
+      const rows = parseBatchRunInput(JSON.stringify({testResults:[{name:join(process.cwd(),"feature_checks/ownership.test.ts"),
+        assertionResults:[{title:"requires an owner",status:"passed"}]}]}),"vitest")
+      const batch = yield* spec.recordBatchRun(rows)
+      const fci = yield* spec.fci({doc:"spec-report-path-doc"})
+      return {batch,fci}
+    }))
+    expect(result.batch.recorded).toBe(1)
+    expect(result.batch.unmatched).toEqual([])
+    expect(result.fci).toMatchObject({fci:100,passing:1})
+  })
+
+  it.each([[false,true],[true,false]])("keeps a failure when a batch repeats the same mapped assertion (%j)", async (first, second) => {
+    const result = await run(Effect.gen(function* () {
+      yield* createDocWithInvariants("spec-duplicate-result-doc",[{id:"INV-SPEC-DUPLICATE",rule:"one failing case cannot be hidden by another pass"}])
+      const spec = yield* SpecTraceService
+      const mapping = yield* spec.link("INV-SPEC-DUPLICATE","test/repeated.test.ts","same assertion","vitest")
+      const batch = yield* spec.recordBatchRun([{testId:mapping.testId,passed:first,details:first ? undefined : "Failure in first case"},
+        {testId:mapping.testId,passed:second,details:second ? undefined : "Failure in second case"}])
+      const fci = yield* spec.fci({doc:"spec-duplicate-result-doc"})
+      return {batch,fci}
+    }))
+    expect(result.batch).toMatchObject({received:2,recorded:1,unmatched:[]})
+    expect(result.fci).toMatchObject({fci:0,failing:1,passing:0})
   })
 
   it("records framework-adapter batch imports and tracks unmatched IDs", async () => {

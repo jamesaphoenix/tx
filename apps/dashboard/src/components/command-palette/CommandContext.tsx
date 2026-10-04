@@ -37,6 +37,7 @@ interface CommandContextValue {
   pushShortcutScope: (scope: ManagedShortcutScope) => () => void
   isOpen: boolean
   setOpen: (open: boolean) => void
+  executeCommand: (command: Command) => Promise<void>
 }
 
 const CommandContext = createContext<CommandContextValue | null>(null)
@@ -51,34 +52,40 @@ export function useCommandContext() {
  * Hook for pages to register their commands. Commands are
  * automatically unregistered when the component unmounts.
  */
-export function useCommands(commands: Command[]) {
-  const { setPageCommands } = useCommandContext()
-  const prevKeyRef = useRef("")
+function useRegisteredCommands(commands: Command[], register: (commands: Command[]) => void) {
+  const latestActions = useRef(new Map<string, Command["action"]>())
+  const previousKey = useRef<string | null>(null)
 
+  // The registration stays stable when only closures change. Actions always
+  // read the latest committed render, including nested palette commands.
   useLayoutEffect(() => {
-    const key = commands
-      .map((c) => `${c.id}|${c.label}|${c.sublabel ?? ""}|${c.shortcut ?? ""}|${c.group ?? ""}|${String(c.allowInInput)}`)
-      .join("\n")
+    const actions = new Map<string, Command["action"]>()
+    const bind = (items: Command[]): Command[] => items.map(command => {
+      actions.set(command.id, command.action)
+      return {...command,
+        action: () => latestActions.current.get(command.id)?.(),
+        children: command.children ? bind(command.children) : undefined,
+      }
+    })
+    const bound = bind(commands)
+    latestActions.current = actions
+    const key = JSON.stringify(bound)
+    if (key === previousKey.current) return
+    previousKey.current = key
+    register(bound)
+  }, [commands, register])
 
-    if (key === prevKeyRef.current) return
-    prevKeyRef.current = key
-    setPageCommands(commands)
-  }, [commands, setPageCommands])
+  useLayoutEffect(() => () => register([]), [register])
+}
+
+export function useCommands(commands: Command[]) {
+  const {setPageCommands} = useCommandContext()
+  useRegisteredCommands(commands, setPageCommands)
 }
 
 export function useOverlayCommands(commands: Command[]) {
-  const { setOverlayCommands } = useCommandContext()
-  const prevKeyRef = useRef("")
-
-  useLayoutEffect(() => {
-    const key = commands
-      .map((c) => `${c.id}|${c.label}|${c.sublabel ?? ""}|${c.shortcut ?? ""}|${c.group ?? ""}|${String(c.allowInInput)}`)
-      .join("\n")
-
-    if (key === prevKeyRef.current) return
-    prevKeyRef.current = key
-    setOverlayCommands(commands)
-  }, [commands, setOverlayCommands])
+  const {setOverlayCommands} = useCommandContext()
+  useRegisteredCommands(commands, setOverlayCommands)
 }
 
 export function useShortcutScope(scope: ManagedShortcutScope, enabled: boolean) {
@@ -134,6 +141,7 @@ export function CommandProvider({ children }: { children: ReactNode }) {
   const [overlayCommands, setOverlayCommands] = useState<Command[]>([])
   const [shortcutScopes, setShortcutScopes] = useState<Array<{ id: number; scope: ManagedShortcutScope }>>([])
   const [isOpen, setOpen] = useState(false)
+  const [commandError, setCommandError] = useState<string | null>(null)
   const nextShortcutScopeIdRef = useRef(0)
 
   // Deduplicate: page/overlay commands with the same shortcut supersede app commands
@@ -156,6 +164,15 @@ export function CommandProvider({ children }: { children: ReactNode }) {
 
     return () => {
       setShortcutScopes((prev) => prev.filter((entry) => entry.id !== nextId))
+    }
+  }, [])
+
+  const executeCommand = useCallback(async (command: Command) => {
+    setCommandError(null)
+    try {
+      await command.action()
+    } catch (error) {
+      setCommandError(`${command.label}: ${error instanceof Error ? error.message : "Command failed"}`)
     }
   }, [])
 
@@ -223,7 +240,7 @@ export function CommandProvider({ children }: { children: ReactNode }) {
           )
           if (command) {
             e.preventDefault()
-            void command.action()
+            void executeCommand(command)
             return
           }
         }
@@ -242,7 +259,7 @@ export function CommandProvider({ children }: { children: ReactNode }) {
         )
         if (command) {
           e.preventDefault()
-          void command.action()
+          void executeCommand(command)
           return
         }
       }
@@ -255,7 +272,7 @@ export function CommandProvider({ children }: { children: ReactNode }) {
 
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [appCommands, pageCommands, overlayCommands, isOpen, activeShortcutScope])
+  }, [appCommands, pageCommands, overlayCommands, isOpen, activeShortcutScope, executeCommand])
 
   const stableSetPageCommands = useCallback((cmds: Command[]) => {
     setPageCommands(cmds)
@@ -280,9 +297,14 @@ export function CommandProvider({ children }: { children: ReactNode }) {
         pushShortcutScope,
         isOpen,
         setOpen,
+        executeCommand,
       }}
     >
       {children}
+      {commandError && <div role="alert" className="fixed bottom-4 left-4 right-4 z-[100] flex items-center justify-between gap-3 rounded-lg border border-red-400/50 bg-gray-900 p-4 text-sm text-red-200 shadow-lg md:left-auto md:max-w-lg">
+        <span>{commandError}</span>
+        <button type="button" aria-label="Dismiss command error" onClick={() => setCommandError(null)} className="shrink-0 rounded px-2 py-1 text-white hover:bg-gray-700 focus-visible:outline focus-visible:outline-2">Dismiss</button>
+      </div>}
     </CommandContext.Provider>
   )
 }

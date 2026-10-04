@@ -66,12 +66,13 @@ const serializeInvariantCheck = (check: InvariantCheck): SerializedInvariantChec
 // Tool Handlers
 // -----------------------------------------------------------------------------
 
-const handleInvariantList = async (args: { subsystem?: string; enforcement?: string }): Promise<McpToolResult> => {
+const handleInvariantList = async (args: { doc?: string; subsystem?: string; enforcement?: string }): Promise<McpToolResult> => {
   try {
     const invariants = await runEffect(
       Effect.gen(function* () {
         const docService = yield* DocService
         return yield* docService.listInvariants({
+          doc: args.doc,
           subsystem: args.subsystem,
           enforcement: args.enforcement,
         })
@@ -147,8 +148,9 @@ const handleInvariantRecord = async (args: { invariantId: string; passed: boolea
 export const registerInvariantTools = (server: McpServer): void => {
   registerEffectTool(server,
     "tx_invariant_list",
-    "List project invariants (rules that must hold). Can filter by subsystem or enforcement type.",
+    "List project invariants (rules that must hold). Can filter by document reference, subsystem or enforcement type.",
     {
+      doc: z.string().min(1).optional().describe("Document stable ID, kind/name or unambiguous name"),
       subsystem: z.string().optional().describe("Filter by subsystem (e.g., 'database', 'api')"),
       enforcement: z.enum(INVARIANT_ENFORCEMENT_TYPES).optional().describe(`Filter by enforcement type: ${INVARIANT_ENFORCEMENT_TYPES.join(", ")}`)
     },

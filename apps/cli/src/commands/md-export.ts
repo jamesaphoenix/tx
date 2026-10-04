@@ -7,8 +7,8 @@ import { Effect, Duration } from "effect"
 import { writeFileSync, mkdirSync, existsSync, renameSync } from "node:fs"
 import { resolve, dirname } from "node:path"
 import { createHash } from "node:crypto"
-import { TaskService, ReadyService, LearningService } from "@jamesaphoenix/tx"
-import type { TaskWithDeps, ContextResult, TaskStatus } from "@jamesaphoenix/tx/types"
+import { TaskService, ReadyService } from "@jamesaphoenix/tx"
+import type { TaskWithDeps, TaskStatus } from "@jamesaphoenix/tx/types"
 import { isValidTaskStatus, TASK_STATUSES } from "@jamesaphoenix/tx/types"
 import { toJson, formatTasksMarkdown } from "../output.js"
 import type { TasksMarkdownCounts } from "../output.js"
@@ -18,7 +18,6 @@ export const mdExport = (_pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const outputPath = opt(flags, "path", "p") ?? resolve(process.cwd(), ".tx", "tasks.md")
     const filter = opt(flags, "filter", "f") ?? "ready"
-    const includeContext = flag(flags, "include-context")
     const includeDone = parseIntOpt(flags, "include-done", "include-done") ?? 5
     const watch = flag(flags, "watch", "w")
     const interval = parseIntOpt(flags, "interval", "interval") ?? 5
@@ -46,7 +45,7 @@ export const mdExport = (_pos: string[], flags: Flags) =>
         ? "Open Tasks"
       : filter === "all"
         ? "All Tasks"
-        : `Tasks — ${filter}`
+        : `Tasks: ${filter}`
 
     const emptyStateMessage = filter === "ready"
       ? "_No ready tasks._"
@@ -107,22 +106,6 @@ export const mdExport = (_pos: string[], flags: Flags) =>
         return tasks
       })
 
-    // Get context for tasks if requested
-    const getContextMap = (tasks: readonly TaskWithDeps[]) =>
-      Effect.gen(function* () {
-        if (!includeContext || tasks.length === 0) return undefined
-        const learningSvc = yield* LearningService
-        const contextMap = new Map<string, ContextResult>()
-        for (const t of tasks) {
-          const ctx = yield* Effect.catchAll(
-            learningSvc.getContextForTask(t.id),
-            () => Effect.succeed(null)
-          )
-          if (ctx) contextMap.set(t.id, ctx)
-        }
-        return contextMap
-      })
-
     // Atomic write: write to temp file then rename (prevents corruption on SIGINT)
     const writeMarkdown = (markdown: string) =>
       Effect.try({
@@ -144,10 +127,8 @@ export const mdExport = (_pos: string[], flags: Flags) =>
         const filteredTasks = yield* getFilteredTasks(100)
         const completedTasks = yield* getCompletedTasks(includeDone)
         const counts = yield* getCounts(filteredTasks.length)
-        const contextMap = yield* getContextMap(filteredTasks)
 
         const markdown = formatTasksMarkdown(filteredTasks, completedTasks, counts, {
-          includeContext: contextMap,
           sectionTitle,
           emptyStateMessage,
         })
@@ -193,10 +174,8 @@ export const mdExport = (_pos: string[], flags: Flags) =>
 
           if (currentHash !== previousHash) {
             previousHash = currentHash
-            const contextMap = yield* getContextMap(filteredTasks)
 
             const markdown = formatTasksMarkdown(filteredTasks, completedTasks, counts, {
-              includeContext: contextMap,
               sectionTitle,
               emptyStateMessage,
             })

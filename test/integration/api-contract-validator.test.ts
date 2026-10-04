@@ -1,3 +1,5 @@
+import { makeMinimalLayerFromInfra } from "@jamesaphoenix/tx"
+const normaliseTaskCommand = (args: string[]): string[] => /^(add|list|ready|show|update|done|reset|delete|bulk|label|dep|block|unblock|children|tree)$/.test(args[0] ?? "") ? ["task", ...(/^(block|unblock|children|tree)$/.test(args[0]) ? ["dep"] : []), ...args] : args
 /**
  * API Contract Validator Tests
  *
@@ -25,30 +27,9 @@ import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx/testing
 import { seedFixtures, FIXTURES } from "../fixtures.js"
 import {
   SqliteClient,
-  TaskRepositoryLive,
-  DependencyRepositoryLive,
-  LearningRepositoryLive,
-  FileLearningRepositoryLive,
-  TaskServiceLive,
   TaskService,
-  DependencyServiceLive,
   DependencyService,
-  ReadyServiceLive,
   ReadyService,
-  HierarchyServiceLive,
-  LearningServiceLive,
-  FileLearningServiceLive,
-  EmbeddingServiceNoop,
-  AutoSyncServiceNoop,
-  QueryExpansionServiceNoop,
-  RerankerServiceNoop,
-  RetrieverServiceLive,
-  GuardRepositoryLive,
-  PinRepositoryLive,
-  DocRepositoryLive,
-  ClaimRepositoryLive,
-  ClaimServiceLive,
-  OrchestratorStateRepositoryLive
 } from "@jamesaphoenix/tx"
 import type { TaskId, TaskWithDeps } from "@jamesaphoenix/tx/types"
 import { serializeTask } from "@jamesaphoenix/tx/types"
@@ -90,13 +71,6 @@ interface SerializedTask {
   readonly blocks: readonly string[]
   readonly children: readonly string[]
   readonly isReady: boolean
-  readonly groupContext: string | null
-  readonly effectiveGroupContext: string | null
-  readonly effectiveGroupContextSourceTaskId: string | null
-  readonly orchestrationStatus: string | null
-  readonly claimedBy: string | null
-  readonly claimExpiresAt: string | null
-  readonly failedAttempts: number
   readonly linkedDocs: ReadonlyArray<{
     readonly docId: string
     readonly name: string
@@ -184,39 +158,9 @@ function validateTaskContract(task: unknown, label: string): string[] {
     errors.push(`${label}: isReady MUST be a boolean (got ${typeof t.isReady}) - DOCTRINE VIOLATION`)
   }
 
-  // Group-context fields
-  if (t.groupContext !== null && typeof t.groupContext !== "string") {
-    errors.push(`${label}: groupContext must be string or null (got ${typeof t.groupContext})`)
-  }
-  if (t.effectiveGroupContext !== null && typeof t.effectiveGroupContext !== "string") {
-    errors.push(`${label}: effectiveGroupContext must be string or null (got ${typeof t.effectiveGroupContext})`)
-  }
-  if (t.effectiveGroupContextSourceTaskId !== null && typeof t.effectiveGroupContextSourceTaskId !== "string") {
-    errors.push(
-      `${label}: effectiveGroupContextSourceTaskId must be string or null (got ${typeof t.effectiveGroupContextSourceTaskId})`
-    )
-  }
-
   // metadata should be an object
   if (typeof t.metadata !== "object" || t.metadata === null || Array.isArray(t.metadata)) {
     errors.push(`${label}: metadata must be an object (got ${typeof t.metadata})`)
-  }
-
-  // Orchestration status fields
-  const validOrchStatuses = ["unclaimed", "claimed", "running", "lease_expired", "released"]
-  if (t.orchestrationStatus !== null && (typeof t.orchestrationStatus !== "string" || !validOrchStatuses.includes(t.orchestrationStatus))) {
-    errors.push(`${label}: orchestrationStatus must be a valid status string or null (got ${JSON.stringify(t.orchestrationStatus)})`)
-  }
-  if (t.claimedBy !== null && typeof t.claimedBy !== "string") {
-    errors.push(`${label}: claimedBy must be string or null (got ${typeof t.claimedBy})`)
-  }
-  if (t.claimExpiresAt !== null && typeof t.claimExpiresAt !== "string") {
-    errors.push(`${label}: claimExpiresAt must be string or null (got ${typeof t.claimExpiresAt})`)
-  } else if (typeof t.claimExpiresAt === "string" && isNaN(Date.parse(t.claimExpiresAt))) {
-    errors.push(`${label}: claimExpiresAt is not a valid ISO date string`)
-  }
-  if (typeof t.failedAttempts !== "number" || !Number.isInteger(t.failedAttempts)) {
-    errors.push(`${label}: failedAttempts must be an integer (got ${typeof t.failedAttempts})`)
   }
   if (!Array.isArray(t.linkedDocs)) {
     errors.push(`${label}: linkedDocs must be an array (got ${typeof t.linkedDocs})`)
@@ -297,6 +241,8 @@ function insertLinkedDoc(
 }
 
 function runCli(args: string[], dbPath: string): CliResult {
+  args = normaliseTaskCommand(args)
+
   try {
     const result = spawnSync("bun", [CLI_SRC, ...args, "--db", dbPath], {
       encoding: "utf-8",
@@ -324,42 +270,7 @@ function runCli(args: string[], dbPath: string): CliResult {
 
 type McpServices = TaskService | ReadyService | DependencyService
 
-function createMcpRuntime(db: TestDatabase): ManagedRuntime.ManagedRuntime<McpServices, unknown> {
-  const infra = Layer.succeed(SqliteClient, db.db as Database)
-
-  const repos = Layer.mergeAll(
-    TaskRepositoryLive,
-    DependencyRepositoryLive,
-    GuardRepositoryLive,
-    PinRepositoryLive,
-    DocRepositoryLive,
-    LearningRepositoryLive,
-    FileLearningRepositoryLive,
-    ClaimRepositoryLive,
-    OrchestratorStateRepositoryLive
-  ).pipe(
-    Layer.provide(infra)
-  )
-
-  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
-
-  const retrieverLayer = RetrieverServiceLive.pipe(
-    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop))
-  )
-
-  const services = Layer.mergeAll(
-    TaskServiceLive,
-    DependencyServiceLive,
-    ReadyServiceLive,
-    HierarchyServiceLive,
-    LearningServiceLive,
-    FileLearningServiceLive
-  ).pipe(
-    Layer.provide(Layer.mergeAll(repos, EmbeddingServiceNoop, QueryExpansionServiceNoop, RerankerServiceNoop, retrieverLayer, AutoSyncServiceNoop, claimService))
-  )
-
-  return ManagedRuntime.make(services)
-}
+function createMcpRuntime(db: TestDatabase): ManagedRuntime.ManagedRuntime<McpServices, unknown> { return ManagedRuntime.make(makeMinimalLayerFromInfra(Layer.succeed(SqliteClient, db.db as Database))) }
 
 // =============================================================================
 // MCP Operations (using shared serialization)
@@ -408,31 +319,6 @@ async function mcpListTasks(
   )
 }
 
-async function mcpSetGroupContext(
-  runtime: ManagedRuntime.ManagedRuntime<McpServices, unknown>,
-  id: string,
-  context: string
-): Promise<void> {
-  await runtime.runPromise(
-    Effect.gen(function* () {
-      const taskService = yield* TaskService
-      yield* taskService.setGroupContext(id as TaskId, context)
-    })
-  )
-}
-
-async function mcpClearGroupContext(
-  runtime: ManagedRuntime.ManagedRuntime<McpServices, unknown>,
-  id: string
-): Promise<void> {
-  await runtime.runPromise(
-    Effect.gen(function* () {
-      const taskService = yield* TaskService
-      yield* taskService.clearGroupContext(id as TaskId)
-    })
-  )
-}
-
 // =============================================================================
 // Normalization for Comparison
 // =============================================================================
@@ -458,7 +344,6 @@ function normalizeForComparison(task: SerializedTask): SerializedTask {
     updatedAt: task.updatedAt.slice(0, 19),
     completedAt: task.completedAt ? task.completedAt.slice(0, 19) : null,
     assignedAt: task.assignedAt ? task.assignedAt.slice(0, 19) : null,
-    claimExpiresAt: task.claimExpiresAt ? task.claimExpiresAt.slice(0, 19) : null,
   }
 }
 
@@ -482,13 +367,6 @@ const CONTRACT_FIELDS: (keyof SerializedTask)[] = [
   "blocks",
   "children",
   "isReady",
-  "groupContext",
-  "effectiveGroupContext",
-  "effectiveGroupContextSourceTaskId",
-  "orchestrationStatus",
-  "claimedBy",
-  "claimExpiresAt",
-  "failedAttempts",
   "linkedDocs",
 ]
 
@@ -605,7 +483,7 @@ describe("API Contract Validator", () => {
 
   describe("Contract Validation (Doctrine Rule 1)", () => {
     it("CLI show --json conforms to SerializedTask contract", () => {
-      const result = runCli(["show", FIXTURES.TASK_AUTH, "--json"], dbPath)
+      const result = runCli(["task", "show", FIXTURES.TASK_AUTH, "--json"], dbPath)
       expect(result.status, `CLI failed: ${result.stderr}`).toBe(0)
 
       const task = JSON.parse(result.stdout)
@@ -615,7 +493,7 @@ describe("API Contract Validator", () => {
     })
 
     it("CLI ready --json conforms to SerializedTask contract", () => {
-      const result = runCli(["ready", "--json", "--limit", "10"], dbPath)
+      const result = runCli(["task", "ready", "--json", "--limit", "10"], dbPath)
       expect(result.status, `CLI failed: ${result.stderr}`).toBe(0)
 
       const tasks = JSON.parse(result.stdout) as unknown[]
@@ -626,7 +504,7 @@ describe("API Contract Validator", () => {
     })
 
     it("CLI list --json conforms to SerializedTask contract", () => {
-      const result = runCli(["list", "--json", "--limit", "10"], dbPath)
+      const result = runCli(["task", "list", "--json", "--limit", "10"], dbPath)
       expect(result.status, `CLI failed: ${result.stderr}`).toBe(0)
 
       const tasks = JSON.parse(result.stdout) as unknown[]
@@ -669,12 +547,12 @@ describe("API Contract Validator", () => {
   // Cross-Interface Parity: show / getTask / tasks.get
   // ===========================================================================
 
-  describe("show / getTask / tasks.get parity", () => {
+  describe("task show/ getTask / tasks.get parity", () => {
     it("all interfaces return identical results for task without dependencies", async () => {
       const taskId = FIXTURES.TASK_JWT
 
       // CLI
-      const cliResult = runCli(["show", taskId, "--json"], dbPath)
+      const cliResult = runCli(["task", "show", taskId, "--json"], dbPath)
       expect(cliResult.status, `CLI failed: ${cliResult.stderr}`).toBe(0)
       const cliTask = JSON.parse(cliResult.stdout) as SerializedTask
 
@@ -704,7 +582,7 @@ describe("API Contract Validator", () => {
       const taskId = FIXTURES.TASK_BLOCKED
 
       // CLI
-      const cliResult = runCli(["show", taskId, "--json"], dbPath)
+      const cliResult = runCli(["task", "show", taskId, "--json"], dbPath)
       expect(cliResult.status, `CLI failed: ${cliResult.stderr}`).toBe(0)
       const cliTask = JSON.parse(cliResult.stdout) as SerializedTask
 
@@ -728,7 +606,7 @@ describe("API Contract Validator", () => {
       const taskId = FIXTURES.TASK_JWT // Blocks TASK_BLOCKED
 
       // CLI
-      const cliResult = runCli(["show", taskId, "--json"], dbPath)
+      const cliResult = runCli(["task", "show", taskId, "--json"], dbPath)
       expect(cliResult.status).toBe(0)
       const cliTask = JSON.parse(cliResult.stdout) as SerializedTask
 
@@ -752,7 +630,7 @@ describe("API Contract Validator", () => {
       const taskId = FIXTURES.TASK_AUTH
 
       // CLI
-      const cliResult = runCli(["show", taskId, "--json"], dbPath)
+      const cliResult = runCli(["task", "show", taskId, "--json"], dbPath)
       expect(cliResult.status).toBe(0)
       const cliTask = JSON.parse(cliResult.stdout) as SerializedTask
 
@@ -786,7 +664,7 @@ describe("API Contract Validator", () => {
       cliDb.exec("PRAGMA wal_checkpoint(TRUNCATE)")
       cliDb.close()
 
-      const cliResult = runCli(["show", taskId, "--json"], dbPath)
+      const cliResult = runCli(["task", "show", taskId, "--json"], dbPath)
       expect(cliResult.status, `CLI failed: ${cliResult.stderr}`).toBe(0)
       const cliTask = JSON.parse(cliResult.stdout) as SerializedTask
 
@@ -801,102 +679,16 @@ describe("API Contract Validator", () => {
       assertTasksIdentical("MCP vs SDK", mcpTask, sdkTask)
       assertTasksIdentical("CLI vs SDK", cliTask, sdkTask)
     })
-
-    it("all interfaces resolve inherited group context identically", async () => {
-      const sourceTaskId = FIXTURES.TASK_AUTH
-      const targetTaskId = FIXTURES.TASK_LOGIN
-      const contextText = "Shared auth rollout context"
-
-      const cliSet = runCli(["group-context", "set", sourceTaskId, contextText, "--json"], dbPath)
-      expect(cliSet.status, `CLI group-context set failed: ${cliSet.stderr}`).toBe(0)
-
-      await mcpSetGroupContext(mcpRuntime, sourceTaskId, contextText)
-
-      const cliResult = runCli(["show", targetTaskId, "--json"], dbPath)
-      expect(cliResult.status, `CLI show failed: ${cliResult.stderr}`).toBe(0)
-      const cliTask = JSON.parse(cliResult.stdout) as SerializedTask
-
-      const mcpTask = await mcpGetTask(mcpRuntime, targetTaskId)
-      const sdkTask = await sdkClient.tasks.get(targetTaskId)
-
-      expect(cliTask.groupContext).toBeNull()
-      expect(mcpTask.groupContext).toBeNull()
-      expect(sdkTask.groupContext).toBeNull()
-
-      expect(cliTask.effectiveGroupContext).toBe(contextText)
-      expect(mcpTask.effectiveGroupContext).toBe(contextText)
-      expect(sdkTask.effectiveGroupContext).toBe(contextText)
-
-      expect(cliTask.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
-      expect(mcpTask.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
-      expect(sdkTask.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
-
-      assertTasksIdentical("CLI vs MCP", cliTask, mcpTask)
-      assertTasksIdentical("MCP vs SDK", mcpTask, sdkTask)
-      assertTasksIdentical("CLI vs SDK", cliTask, sdkTask)
-    })
-
-    it("SDK set/clear group context stays in parity with CLI and MCP", async () => {
-      const sourceTaskId = FIXTURES.TASK_AUTH
-      const targetTaskId = FIXTURES.TASK_LOGIN
-      const contextText = "SDK mutation parity context"
-
-      const sdkSet = await sdkClient.tasks.setGroupContext(sourceTaskId, contextText)
-      expect(sdkSet.groupContext).toBe(contextText)
-      expect(sdkSet.effectiveGroupContext).toBe(contextText)
-      expect(sdkSet.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
-
-      await mcpSetGroupContext(mcpRuntime, sourceTaskId, contextText)
-
-      const cliAfterSet = runCli(["show", targetTaskId, "--json"], dbPath)
-      expect(cliAfterSet.status).toBe(0)
-      const cliTaskAfterSet = JSON.parse(cliAfterSet.stdout) as SerializedTask
-      const mcpTaskAfterSet = await mcpGetTask(mcpRuntime, targetTaskId)
-      const sdkTaskAfterSet = await sdkClient.tasks.get(targetTaskId)
-
-      expect(cliTaskAfterSet.effectiveGroupContext).toBe(contextText)
-      expect(mcpTaskAfterSet.effectiveGroupContext).toBe(contextText)
-      expect(sdkTaskAfterSet.effectiveGroupContext).toBe(contextText)
-      expect(cliTaskAfterSet.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
-      expect(mcpTaskAfterSet.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
-      expect(sdkTaskAfterSet.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
-
-      assertTasksIdentical("after set CLI vs MCP", cliTaskAfterSet, mcpTaskAfterSet)
-      assertTasksIdentical("after set MCP vs SDK", mcpTaskAfterSet, sdkTaskAfterSet)
-
-      const sdkCleared = await sdkClient.tasks.clearGroupContext(sourceTaskId)
-      expect(sdkCleared.groupContext).toBeNull()
-      expect(sdkCleared.effectiveGroupContext).toBeNull()
-      expect(sdkCleared.effectiveGroupContextSourceTaskId).toBeNull()
-
-      await mcpClearGroupContext(mcpRuntime, sourceTaskId)
-
-      const cliAfterClear = runCli(["show", targetTaskId, "--json"], dbPath)
-      expect(cliAfterClear.status).toBe(0)
-      const cliTaskAfterClear = JSON.parse(cliAfterClear.stdout) as SerializedTask
-      const mcpTaskAfterClear = await mcpGetTask(mcpRuntime, targetTaskId)
-      const sdkTaskAfterClear = await sdkClient.tasks.get(targetTaskId)
-
-      expect(cliTaskAfterClear.effectiveGroupContext).toBeNull()
-      expect(mcpTaskAfterClear.effectiveGroupContext).toBeNull()
-      expect(sdkTaskAfterClear.effectiveGroupContext).toBeNull()
-      expect(cliTaskAfterClear.effectiveGroupContextSourceTaskId).toBeNull()
-      expect(mcpTaskAfterClear.effectiveGroupContextSourceTaskId).toBeNull()
-      expect(sdkTaskAfterClear.effectiveGroupContextSourceTaskId).toBeNull()
-
-      assertTasksIdentical("after clear CLI vs MCP", cliTaskAfterClear, mcpTaskAfterClear)
-      assertTasksIdentical("after clear MCP vs SDK", mcpTaskAfterClear, sdkTaskAfterClear)
-    })
   })
 
   // ===========================================================================
   // Cross-Interface Parity: ready / getReady / tasks.ready
   // ===========================================================================
 
-  describe("ready / getReady / tasks.ready parity", () => {
-    it("all interfaces return identical ready task lists", async () => {
+  describe("task ready/ getReady / tasks.ready parity", () => {
+    it("all interfaces return identical ready task list s", async () => {
       // CLI
-      const cliResult = runCli(["ready", "--json", "--limit", "100"], dbPath)
+      const cliResult = runCli(["task", "ready", "--json", "--limit", "100"], dbPath)
       expect(cliResult.status).toBe(0)
       const cliTasks = JSON.parse(cliResult.stdout) as SerializedTask[]
 
@@ -936,7 +728,7 @@ describe("API Contract Validator", () => {
       const limit = 2
 
       // CLI
-      const cliResult = runCli(["ready", "--json", "--limit", String(limit)], dbPath)
+      const cliResult = runCli(["task", "ready", "--json", "--limit", String(limit)], dbPath)
       expect(cliResult.status).toBe(0)
       const cliTasks = JSON.parse(cliResult.stdout) as SerializedTask[]
 
@@ -951,52 +743,16 @@ describe("API Contract Validator", () => {
       expect(mcpTasks.length).toBeLessThanOrEqual(limit)
       expect(sdkTasks.length).toBeLessThanOrEqual(limit)
     })
-
-    it("all interfaces include inherited group context fields in ready results", async () => {
-      const sourceTaskId = FIXTURES.TASK_AUTH
-      const readyTargetId = FIXTURES.TASK_LOGIN
-      const contextText = "Ready parity inherited context"
-
-      await sdkClient.tasks.setGroupContext(sourceTaskId, contextText)
-      await mcpSetGroupContext(mcpRuntime, sourceTaskId, contextText)
-
-      const cliResult = runCli(["ready", "--json", "--limit", "100"], dbPath)
-      expect(cliResult.status).toBe(0)
-      const cliTasks = JSON.parse(cliResult.stdout) as SerializedTask[]
-      const mcpTasks = await mcpGetReady(mcpRuntime, 100)
-      const sdkTasks = await sdkClient.tasks.ready({ limit: 100 })
-
-      const cliTask = cliTasks.find(task => task.id === readyTargetId)
-      const mcpTask = mcpTasks.find(task => task.id === readyTargetId)
-      const sdkTask = sdkTasks.find(task => task.id === readyTargetId)
-
-      expect(cliTask).toBeDefined()
-      expect(mcpTask).toBeDefined()
-      expect(sdkTask).toBeDefined()
-
-      expect(cliTask?.groupContext).toBeNull()
-      expect(mcpTask?.groupContext).toBeNull()
-      expect(sdkTask?.groupContext).toBeNull()
-      expect(cliTask?.effectiveGroupContext).toBe(contextText)
-      expect(mcpTask?.effectiveGroupContext).toBe(contextText)
-      expect(sdkTask?.effectiveGroupContext).toBe(contextText)
-      expect(cliTask?.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
-      expect(mcpTask?.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
-      expect(sdkTask?.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
-
-      assertTasksIdentical("ready inherited CLI vs MCP", cliTask!, mcpTask!)
-      assertTasksIdentical("ready inherited MCP vs SDK", mcpTask!, sdkTask!)
-    })
   })
 
   // ===========================================================================
   // Cross-Interface Parity: list / listTasks / tasks.list
   // ===========================================================================
 
-  describe("list / listTasks / tasks.list parity", () => {
-    it("all interfaces return identical task lists", async () => {
+  describe("task list/ listTasks / tasks.list parity", () => {
+    it("all interfaces return identical task list s", async () => {
       // CLI
-      const cliResult = runCli(["list", "--json", "--limit", "100"], dbPath)
+      const cliResult = runCli(["task", "list", "--json", "--limit", "100"], dbPath)
       expect(cliResult.status).toBe(0)
       const cliTasks = JSON.parse(cliResult.stdout) as SerializedTask[]
 
@@ -1026,7 +782,7 @@ describe("API Contract Validator", () => {
       const status = "ready"
 
       // CLI
-      const cliResult = runCli(["list", "--json", "--status", status], dbPath)
+      const cliResult = runCli(["task", "list", "--json", "--status", status], dbPath)
       expect(cliResult.status).toBe(0)
       const cliTasks = JSON.parse(cliResult.stdout) as SerializedTask[]
 
@@ -1052,39 +808,6 @@ describe("API Contract Validator", () => {
       expect(cliTasks.length).toBe(mcpTasks.length)
       expect(mcpTasks.length).toBe(sdkTasks.length)
     })
-
-    it("all interfaces include inherited group context fields in list results", async () => {
-      const sourceTaskId = FIXTURES.TASK_AUTH
-      const targetTaskId = FIXTURES.TASK_LOGIN
-      const contextText = "List parity inherited context"
-
-      await sdkClient.tasks.setGroupContext(sourceTaskId, contextText)
-      await mcpSetGroupContext(mcpRuntime, sourceTaskId, contextText)
-
-      const cliResult = runCli(["list", "--json", "--limit", "100"], dbPath)
-      expect(cliResult.status).toBe(0)
-      const cliTasks = JSON.parse(cliResult.stdout) as SerializedTask[]
-      const mcpTasks = await mcpListTasks(mcpRuntime, { limit: 100 })
-      const sdkTasks = (await sdkClient.tasks.list({ limit: 100 })).items
-
-      const cliTask = cliTasks.find(task => task.id === targetTaskId)
-      const mcpTask = mcpTasks.find(task => task.id === targetTaskId)
-      const sdkTask = sdkTasks.find(task => task.id === targetTaskId)
-
-      expect(cliTask).toBeDefined()
-      expect(mcpTask).toBeDefined()
-      expect(sdkTask).toBeDefined()
-
-      expect(cliTask?.effectiveGroupContext).toBe(contextText)
-      expect(mcpTask?.effectiveGroupContext).toBe(contextText)
-      expect(sdkTask?.effectiveGroupContext).toBe(contextText)
-      expect(cliTask?.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
-      expect(mcpTask?.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
-      expect(sdkTask?.effectiveGroupContextSourceTaskId).toBe(sourceTaskId)
-
-      assertTasksIdentical("list inherited CLI vs MCP", cliTask!, mcpTask!)
-      assertTasksIdentical("list inherited MCP vs SDK", mcpTask!, sdkTask!)
-    })
   })
 
   // ===========================================================================
@@ -1095,7 +818,7 @@ describe("API Contract Validator", () => {
     it("blockedBy is populated correctly for blocked tasks", async () => {
       const taskId = FIXTURES.TASK_BLOCKED
 
-      const cliResult = runCli(["show", taskId, "--json"], dbPath)
+      const cliResult = runCli(["task", "show", taskId, "--json"], dbPath)
       const cliTask = JSON.parse(cliResult.stdout) as SerializedTask
       const mcpTask = await mcpGetTask(mcpRuntime, taskId)
       const sdkTask = await sdkClient.tasks.get(taskId)
@@ -1113,7 +836,7 @@ describe("API Contract Validator", () => {
     it("blocks is populated correctly for blocking tasks", async () => {
       const taskId = FIXTURES.TASK_JWT // Blocks TASK_BLOCKED
 
-      const cliResult = runCli(["show", taskId, "--json"], dbPath)
+      const cliResult = runCli(["task", "show", taskId, "--json"], dbPath)
       const cliTask = JSON.parse(cliResult.stdout) as SerializedTask
       const mcpTask = await mcpGetTask(mcpRuntime, taskId)
       const sdkTask = await sdkClient.tasks.get(taskId)
@@ -1127,10 +850,10 @@ describe("API Contract Validator", () => {
       expect(cliTask.blocks).toContain(FIXTURES.TASK_BLOCKED)
     })
 
-    it("children is populated correctly for parent tasks", async () => {
+    it("task dep children is populated correctly for parent tasks", async () => {
       const taskId = FIXTURES.TASK_AUTH // Parent of LOGIN, JWT, BLOCKED, DONE
 
-      const cliResult = runCli(["show", taskId, "--json"], dbPath)
+      const cliResult = runCli(["task", "show", taskId, "--json"], dbPath)
       const cliTask = JSON.parse(cliResult.stdout) as SerializedTask
       const mcpTask = await mcpGetTask(mcpRuntime, taskId)
       const sdkTask = await sdkClient.tasks.get(taskId)

@@ -1,3 +1,4 @@
+const normaliseTaskCommand = (args: string[]): string[] => /^(add|list|ready|show|update|done|reset|delete|bulk|label|dep|block|unblock|children|tree)$/.test(args[0] ?? "") ? ["task", ...(/^(block|unblock|children|tree)$/.test(args[0]) ? ["dep"] : []), ...args] : args
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { spawnSync } from "node:child_process"
 import { existsSync, mkdtempSync, rmSync } from "node:fs"
@@ -15,6 +16,8 @@ type ExecResult = {
 }
 
 function runTx(args: string[], cwd: string, dbPath: string): ExecResult {
+  args = normaliseTaskCommand(args)
+
   const result = spawnSync(BUN_BIN, [CLI_SRC, ...args, "--db", dbPath], {
     cwd,
     encoding: "utf-8",
@@ -61,14 +64,14 @@ describe("CLI help and schema discovery", () => {
     const keys = parsed.help.commands.map((entry) => entry.key)
 
     expect(parsed.kind).toBe("catalog")
-    expect(keys).toContain("ready")
+    expect(keys).toContain("task")
     expect(keys).toContain("schema")
     expect(keys).not.toContain("block")
     expect(keys).not.toContain("claim:release")
   })
 
   it("returns structured command help for help --json lookups", () => {
-    const result = runTx(["help", "dep", "block", "--json"], tmpDir, dbPath)
+    const result = runTx(["help", "task", "dep", "block", "--json"], tmpDir, dbPath)
 
     expect(result.status).toBe(0)
     expect(result.stderr).toBe("")
@@ -84,14 +87,14 @@ describe("CLI help and schema discovery", () => {
     }
 
     expect(parsed.kind).toBe("command")
-    expect(parsed.help.key).toBe("dep block")
-    expect(parsed.help.commandLabel).toBe("tx dep block")
-    expect(parsed.help.usage).toContain("tx dep block <task-id> <blocker-id> [options]")
+    expect(parsed.help.key).toBe("task dep block")
+    expect(parsed.help.commandLabel).toBe("tx task dep block")
+    expect(parsed.help.usage).toContain("tx task dep block <task-id> <blocker-id> [options]")
     expect(parsed.help.examples.length).toBeGreaterThan(0)
   })
 
   it("supports command-local help via --help --json", () => {
-    const result = runTx(["ready", "--help", "--json"], tmpDir, dbPath)
+    const result = runTx(["task", "ready", "--help", "--json"], tmpDir, dbPath)
 
     expect(result.status).toBe(0)
     expect(result.stderr).toBe("")
@@ -102,12 +105,12 @@ describe("CLI help and schema discovery", () => {
     }
 
     expect(parsed.kind).toBe("command")
-    expect(parsed.help.key).toBe("ready")
-    expect(parsed.help.usage).toContain("tx ready [options]")
+    expect(parsed.help.key).toBe("task ready")
+    expect(parsed.help.usage).toContain("tx task ready [options]")
   })
 
   it("returns machine-readable schema output", () => {
-    const result = runTx(["schema", "dep", "block"], tmpDir, dbPath)
+    const result = runTx(["schema", "task", "dep", "block"], tmpDir, dbPath)
 
     expect(result.status).toBe(0)
     expect(result.stderr).toBe("")
@@ -122,7 +125,7 @@ describe("CLI help and schema discovery", () => {
     }
 
     expect(parsed.kind).toBe("command")
-    expect(parsed.schema.key).toBe("dep block")
+    expect(parsed.schema.key).toBe("task dep block")
     expect(parsed.schema.arguments.map((argument) => argument.name)).toEqual(["<task-id>", "<blocker-id>"])
     expect(parsed.schema.options.some((option) => option.flags.includes("--json"))).toBe(true)
   })
@@ -140,6 +143,6 @@ describe("CLI help and schema discovery", () => {
 
     expect(parsed.ok).toBe(false)
     expect(parsed.error.code).toBe("cli/unknown-command")
-    expect(parsed.error.details?.suggestions).toContain("ready")
+    expect(parsed.error.details?.suggestions).toContain("task")
   })
 })

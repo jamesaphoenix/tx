@@ -364,7 +364,7 @@ describe("Migration system", () => {
         "outbox_messages",
         // Migration 022 — docs as primitives
         "docs", "doc_links", "task_doc_links", "invariants", "invariant_checks",
-        // Migration 023 — task labels
+        // Migration 023 — task label s
         "task_labels", "task_label_assignments",
         // Migration 025 — run heartbeat state
         "run_heartbeat_state",

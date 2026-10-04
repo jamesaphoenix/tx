@@ -60,7 +60,7 @@ export type SpecTraceRepositoryService = {
   readonly findSpecTestsByInvariantIds: (invariantIds: readonly string[]) => Effect.Effect<readonly SpecTest[], DatabaseError>
   readonly findSpecTestsByTestId: (testId: string) => Effect.Effect<readonly SpecTest[], DatabaseError>
   readonly findSpecTestsByTestIds: (testIds: readonly string[]) => Effect.Effect<ReadonlyMap<string, readonly SpecTest[]>, DatabaseError>
-  readonly findSpecTestsByTestName: (testName: string) => Effect.Effect<readonly SpecTest[], DatabaseError>
+  readonly findParameterizedSpecTestsByFiles: (testFiles: readonly string[]) => Effect.Effect<readonly SpecTest[], DatabaseError>
   readonly syncDiscoveredSpecTests: (params: {
     rows: readonly SyncDiscoveredSpecTestInput[]
     invariantIds: readonly string[]

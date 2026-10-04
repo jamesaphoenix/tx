@@ -38,7 +38,11 @@ record source comments as passed.
 Run `tx spec discover --doc <doc-ref>`, inspect the mappings with
 `tx spec tests <invariant-id>`, then run the relevant repository checks. Record
 actual executable results using `tx spec batch --from vitest` or the supported
-runner format. With pipelines use `set -o pipefail`; retain failure output.
+runner format. For Vitest 5, write `--reporter=json --outputFile=.tx/spec-results.json`,
+then import with `tx spec batch --from vitest < .tx/spec-results.json`. Import
+failures too, and preserve the test runner's exit code in automated checks.
+Evidence must match the mapped file and assertion, not just a shared test title.
+With pipelines use `set -o pipefail`; retain failure output.
 Record manual structural evidence only after performing that review and label it
 as manual evidence in the report.
 

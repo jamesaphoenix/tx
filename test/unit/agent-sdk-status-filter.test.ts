@@ -1,42 +1,15 @@
+import { makeMinimalLayerFromInfra } from "@jamesaphoenix/tx"
 import { describe, it, expect, beforeEach } from "vitest"
 import { Effect, Layer } from "effect"
 import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx/testing"
 import { seedFixtures } from "../fixtures.js"
 import {
   SqliteClient,
-  TaskRepositoryLive,
-  DependencyRepositoryLive,
-  TaskServiceLive,
   TaskService,
-  DependencyServiceLive,
-  ReadyServiceLive,
-  HierarchyServiceLive,
-  ScoreServiceLive,
-  AutoSyncServiceNoop,
-  GuardRepositoryLive,
-  PinRepositoryLive,
-  ClaimRepositoryLive,
-  ClaimServiceLive,
-  OrchestratorStateRepositoryLive
 } from "@jamesaphoenix/tx"
 import type { TaskStatus } from "@jamesaphoenix/tx/types"
 
-function makeTestLayer(db: TestDatabase) {
-  const infra = Layer.succeed(SqliteClient, db.db as any)
-  const repos = Layer.mergeAll(TaskRepositoryLive, DependencyRepositoryLive, GuardRepositoryLive,
-  PinRepositoryLive, ClaimRepositoryLive, OrchestratorStateRepositoryLive).pipe(
-    Layer.provide(infra)
-  )
-  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
-  const baseServices = Layer.mergeAll(TaskServiceLive, DependencyServiceLive, ReadyServiceLive, HierarchyServiceLive).pipe(
-    Layer.provide(Layer.mergeAll(repos, AutoSyncServiceNoop, claimService))
-  )
-  const scoreService = ScoreServiceLive.pipe(
-    Layer.provide(baseServices),
-    Layer.provide(repos)
-  )
-  return Layer.mergeAll(baseServices, scoreService)
-}
+function makeTestLayer(db: TestDatabase) { return makeMinimalLayerFromInfra(Layer.succeed(SqliteClient, db.db as any)) }
 
 /**
  * Tests for agent-sdk DirectTransport.listTasks status filtering

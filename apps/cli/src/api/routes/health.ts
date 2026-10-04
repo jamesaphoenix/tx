@@ -6,7 +6,7 @@
 
 import { HttpApiBuilder, HttpServerRequest } from "@effect/platform"
 import { Effect } from "effect"
-import { TaskService, LearningService, RunRepository } from "@jamesaphoenix/tx"
+import { TaskService } from "@jamesaphoenix/tx"
 import { TxApi, mapCoreError } from "../api.js"
 import { extractApiKey, timingSafeEqual } from "../middleware/auth.js"
 
@@ -59,12 +59,8 @@ export const HealthLive = HttpApiBuilder.group(TxApi, "health", (handlers) =>
     .handle("stats", () =>
       Effect.gen(function* () {
         const taskService = yield* TaskService
-        const learningService = yield* LearningService
-        const runRepo = yield* RunRepository
 
         const allTasks = yield* taskService.listWithDeps({})
-        const learningsCount = yield* learningService.count()
-        const runCounts = yield* runRepo.countByStatus()
 
         let done = 0
         let ready = 0
@@ -73,58 +69,11 @@ export const HealthLive = HttpApiBuilder.group(TxApi, "health", (handlers) =>
           if (task.isReady) ready++
         }
 
-        const runsTotal = Object.values(runCounts).reduce((a, b) => a + b, 0)
 
         return {
           tasks: allTasks.length,
           done,
           ready,
-          learnings: learningsCount,
-          runsRunning: runCounts.running ?? 0,
-          runsTotal,
-        }
-      }).pipe(Effect.mapError(mapCoreError))
-    )
-
-    .handle("ralph", () =>
-      Effect.gen(function* () {
-        const fs = yield* Effect.promise(() => import("node:fs"))
-        const path = yield* Effect.promise(() => import("node:path"))
-
-        const stateFile = path.join(process.cwd(), ".tx", "ralph-state")
-        let running = false
-        let pid: number | null = null
-        let currentIteration = 0
-        let currentTask: string | null = null
-
-        try {
-          if (fs.existsSync(stateFile)) {
-            const state = JSON.parse(fs.readFileSync(stateFile, "utf-8"))
-            running = state.running ?? false
-            pid = state.pid ?? null
-            currentIteration = state.iteration ?? 0
-            currentTask = state.currentTask ?? null
-          }
-        } catch (error) {
-          console.warn(
-            `[health] Failed to parse RALPH state file at ${stateFile}:`,
-            error instanceof Error ? error.message : String(error)
-          )
-        }
-
-        return {
-          running,
-          pid,
-          currentIteration,
-          currentTask,
-          recentActivity: [] as Array<{
-            timestamp: string
-            iteration: number
-            task: string
-            taskTitle: string
-            agent: string
-            status: "started" | "completed" | "failed"
-          }>,
         }
       }).pipe(Effect.mapError(mapCoreError))
     )

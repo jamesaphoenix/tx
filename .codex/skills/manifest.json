@@ -1,16 +1,24 @@
 {
   "generator": "tx skills generate",
-  "version": "0.19.0",
+  "version": "0.20.0",
   "target": "codex",
   "installRoot": ".codex/skills",
-  "skillCount": 3,
+  "skillCount": 4,
   "commandCount": 0,
   "skills": [
+    {
+      "id": "tx-plan",
+      "title": "Copy an implementation plan",
+      "installPath": ".codex/skills/tx-plan",
+      "checksum": "ef280e4e95793bef5d692df810a724f175f890410dacebc6e8aa3b11c53fd60f",
+      "commandKeys": [],
+      "source": "bundled"
+    },
     {
       "id": "tx-tasks",
       "title": "Create tx tasks",
       "installPath": ".codex/skills/tx-tasks",
-      "checksum": "8c5dd900614393cdaf6efcfaed3872e0f81a41d0303144c9a97616e6f62e165f",
+      "checksum": "a2e653049eb59f3eb51cc21d2e60bd3dbb7044579afe3b11e752c6386248fd7b",
       "commandKeys": [],
       "source": "bundled"
     },
@@ -18,7 +26,7 @@
       "id": "tx-docs",
       "title": "Create tx documents",
       "installPath": ".codex/skills/tx-docs",
-      "checksum": "9bf1fd3c901b5ee2dab82df962d30e71350d94f8a3c015dfcfdaf8f951649bd3",
+      "checksum": "c0683992894b4458a67079dd1ad4903a9c45ce504613afecda37a187154046f9",
       "commandKeys": [],
       "source": "bundled"
     },
@@ -26,7 +34,7 @@
       "id": "verify-invariants",
       "title": "Map and verify invariants",
       "installPath": ".codex/skills/verify-invariants",
-      "checksum": "0e0cd020a7c2d1108b7ed5b765ecd37bea9425bacfceff2a9ab405bbc4df2fde",
+      "checksum": "723dfab10c1c83f6500a7a115ea6c8853be675575bb7a77b3d478a6e1d27f344",
       "commandKeys": [],
       "source": "bundled"
     }

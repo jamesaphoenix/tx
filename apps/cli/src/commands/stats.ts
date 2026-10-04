@@ -22,10 +22,7 @@ interface QueueStats {
     readonly last7d: number
     readonly avgPerDay: number | null
   }
-  readonly claims: {
-    readonly active: number
-    readonly expired: number
-  }
+
 }
 
 export const stats = (_pos: string[], flags: Flags) =>
@@ -81,10 +78,10 @@ export const stats = (_pos: string[], flags: Flags) =>
 
     // 4. Activity: completed tasks in time windows
     const last24hRow = db.prepare<{ count: number }>(
-      "SELECT COUNT(*) as count FROM tasks WHERE status = 'done' AND completed_at > datetime('now', '-1 day')"
+      "SELECT COUNT(*) as count FROM tasks WHERE status = 'done' AND julianday(completed_at) > julianday('now', '-1 day')"
     ).get()
     const last7dRow = db.prepare<{ count: number }>(
-      "SELECT COUNT(*) as count FROM tasks WHERE status = 'done' AND completed_at > datetime('now', '-7 days')"
+      "SELECT COUNT(*) as count FROM tasks WHERE status = 'done' AND julianday(completed_at) > julianday('now', '-7 days')"
     ).get()
     const last24h = last24hRow?.count ?? 0
     const last7d = last7dRow?.count ?? 0
@@ -104,25 +101,13 @@ export const stats = (_pos: string[], flags: Flags) =>
       }
     }
 
-    // 5. Claim stats
-    const nowIso = new Date().toISOString()
-    const activeClaimsRow = db.prepare<{ count: number }>(
-      "SELECT COUNT(*) as count FROM task_claims WHERE status = 'active' AND lease_expires_at >= ?"
-    ).get(nowIso)
-    const expiredClaimsRow = db.prepare<{ count: number }>(
-      "SELECT COUNT(*) as count FROM task_claims WHERE status = 'active' AND lease_expires_at < ?"
-    ).get(nowIso)
-
     const result: QueueStats = {
       total,
       byStatus,
       readyCount,
       byPriority: { critical, high, medium, low },
       activity: { last24h, last7d, avgPerDay },
-      claims: {
-        active: activeClaimsRow?.count ?? 0,
-        expired: expiredClaimsRow?.count ?? 0,
-      },
+
     }
 
     if (flag(flags, "json")) {
@@ -164,12 +149,6 @@ function formatStats(s: QueueStats): string {
   if (s.activity.avgPerDay !== null) {
     lines.push(`  Avg completion: ${s.activity.avgPerDay} tasks/day`)
   }
-
-  // Claims
-  lines.push("")
-  lines.push("Claims:")
-  lines.push(`  Active:  ${s.claims.active}`)
-  lines.push(`  Expired: ${s.claims.expired}`)
 
   return lines.join("\n")
 }

@@ -3,7 +3,9 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "lib": ["ES2022"],
+    "lib": [
+      "ES2022"
+    ],
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -13,6 +15,10 @@
     "sourceMap": true,
     "exactOptionalPropertyTypes": false,
     "composite": true,
-    "incremental": true
+    "incremental": true,
+    "types": [
+      "node",
+      "bun"
+    ]
   }
 }

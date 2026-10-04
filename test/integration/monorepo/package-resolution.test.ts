@@ -24,7 +24,6 @@ import {
   ReadyService,
   DependencyService,
   HierarchyService,
-  LearningService,
   SyncService,
   TaskNotFoundError,
   ValidationError,
@@ -39,10 +38,7 @@ import {
   TaskRepository,
   TaskRepositoryLive,
   DependencyRepository,
-  LearningRepository,
   rowToTask,
-  rowToLearning,
-  rowToAttempt,
   isValidStatus,
   makeAppLayer
 } from "@jamesaphoenix/tx"
@@ -64,23 +60,6 @@ describe("Package Resolution: @tx/types", () => {
     expect(types.VALID_TRANSITIONS.backlog).toContain("ready")
     // done can transition back to backlog for reactivation
     expect(types.VALID_TRANSITIONS.done).toContain("backlog")
-  })
-
-  it("exports Learning-related types", async () => {
-    const types = await import("@jamesaphoenix/tx/types")
-
-    expect(types.LEARNING_SOURCE_TYPES).toBeDefined()
-    expect(types.LEARNING_SOURCE_TYPES).toContain("manual")
-    expect(types.LEARNING_SOURCE_TYPES).toContain("compaction")
-  })
-
-  it("exports Attempt and Run types", async () => {
-    const types = await import("@jamesaphoenix/tx/types")
-
-    expect(types.ATTEMPT_OUTCOMES).toBeDefined()
-    expect(types.RUN_STATUSES).toBeDefined()
-    expect(types.ATTEMPT_OUTCOMES).toContain("succeeded")
-    expect(types.RUN_STATUSES).toContain("running")
   })
 })
 
@@ -109,7 +88,6 @@ describe("Package Resolution: @tx/core", () => {
     expect(ReadyService).toBeDefined()
     expect(DependencyService).toBeDefined()
     expect(HierarchyService).toBeDefined()
-    expect(LearningService).toBeDefined()
     expect(SyncService).toBeDefined()
   })
 
@@ -142,13 +120,10 @@ describe("Package Resolution: @tx/core", () => {
     expect(TaskRepository).toBeDefined()
     expect(TaskRepositoryLive).toBeDefined()
     expect(DependencyRepository).toBeDefined()
-    expect(LearningRepository).toBeDefined()
   })
 
   it("exports mappers for data transformation", () => {
     expect(rowToTask).toBeDefined()
-    expect(rowToLearning).toBeDefined()
-    expect(rowToAttempt).toBeDefined()
     expect(isValidStatus).toBeDefined()
   })
 
@@ -226,7 +201,6 @@ describe("Package Resolution: @jamesaphoenix/tx-cli/mcp", () => {
     const mcp = await import("@jamesaphoenix/tx-cli/mcp")
 
     expect(mcp.registerTaskTools).toBeDefined()
-    expect(mcp.registerLearningTools).toBeDefined()
     expect(mcp.registerSyncTools).toBeDefined()
   })
 
@@ -276,8 +250,6 @@ describe("Package Resolution: @jamesaphoenix/tx-cli/api", () => {
 
     expect(api.HealthGroup).toBeDefined()
     expect(api.TasksGroup).toBeDefined()
-    expect(api.LearningsGroup).toBeDefined()
-    expect(api.RunsGroup).toBeDefined()
     expect(api.SyncGroup).toBeDefined()
   })
 
@@ -286,8 +258,6 @@ describe("Package Resolution: @jamesaphoenix/tx-cli/api", () => {
 
     expect(api.TasksLive).toBeDefined()
     expect(api.HealthLive).toBeDefined()
-    expect(api.LearningsLive).toBeDefined()
-    expect(api.RunsLive).toBeDefined()
     expect(api.SyncLive).toBeDefined()
   })
 
@@ -349,9 +319,6 @@ describe("Package Resolution: @jamesaphoenix/tx-agent-sdk", () => {
 
     expect(sdk.TASK_STATUSES).toBeDefined()
     expect(sdk.VALID_TRANSITIONS).toBeDefined()
-    expect(sdk.LEARNING_SOURCE_TYPES).toBeDefined()
-    expect(sdk.ATTEMPT_OUTCOMES).toBeDefined()
-    expect(sdk.RUN_STATUSES).toBeDefined()
   })
 
   it("imports @tx/types correctly", async () => {
@@ -384,12 +351,5 @@ describe("Cross-Package Type Consistency", () => {
     const sdk = await import("@jamesaphoenix/tx-agent-sdk")
 
     expect(types.VALID_TRANSITIONS).toEqual(sdk.VALID_TRANSITIONS)
-  })
-
-  it("LEARNING_SOURCE_TYPES is consistent across packages", async () => {
-    const types = await import("@jamesaphoenix/tx/types")
-    const sdk = await import("@jamesaphoenix/tx-agent-sdk")
-
-    expect(types.LEARNING_SOURCE_TYPES).toEqual(sdk.LEARNING_SOURCE_TYPES)
   })
 })

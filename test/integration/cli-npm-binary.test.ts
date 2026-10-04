@@ -5,7 +5,7 @@
  * and runs the tx binary with bun. Validates:
  * - Shebang is #!/usr/bin/env bun (not node)
  * - Published packages don't have "bun" export condition (which points to missing src/ files)
- * - The binary actually runs: tx help, tx init, tx add
+ * - The binary actually runs: tx help, tx init, tx task add
  *
  * IMPORTANT: Bun vitest workers (--bun flag + fork pool) inject loader hooks
  * that break npm subprocesses with "BuildMessage {}" errors. The heavy setup
@@ -13,26 +13,24 @@
  *
  * This test is SLOW and excluded from default vitest runs.
  * Run: bash test/integration/cli-npm-binary-setup.sh && \
- *      TX_NPM_BINARY_DIR=<dir> bunx --bun vitest run test/integration/cli-npm-binary.test.ts
+ *      TX_TEST_NPM=1 TX_NPM_BINARY_DIR=<dir> bunx --bun vitest run test/integration/cli-npm-binary.test.ts
  *
  * Or all-in-one:
  *   DIR=$(bash test/integration/cli-npm-binary-setup.sh) && \
- *   TX_NPM_BINARY_DIR="$DIR" bunx --bun vitest run test/integration/cli-npm-binary.test.ts
+ *   TX_TEST_NPM=1 TX_NPM_BINARY_DIR="$DIR" bunx --bun vitest run test/integration/cli-npm-binary.test.ts
  */
 
 import { describe, it, expect, beforeAll } from "vitest"
 import { spawnSync } from "node:child_process"
-import { existsSync, readFileSync } from "node:fs"
+import { existsSync, readFileSync, readdirSync } from "node:fs"
 import { join, resolve } from "node:path"
 
 const TIMEOUT = process.env.CI ? 60000 : 30000
 
 // Packages in dependency order
 const PACK_ORDER = [
-  { dir: "packages/types", name: "@jamesaphoenix/tx/types" },
   { dir: "packages/core", name: "@jamesaphoenix/tx" },
-  { dir: "packages/test-utils", name: "@jamesaphoenix/tx/testing" },
-  { dir: "packages/tx", name: "@jamesaphoenix/tx" },
+  { dir: "apps/agent-sdk", name: "@jamesaphoenix/tx-agent-sdk" },
   { dir: "apps/cli", name: "@jamesaphoenix/tx-cli" },
 ]
 
@@ -77,9 +75,9 @@ describe("CLI npm binary distribution", () => {
   })
 
   it("published packages do not have bun export condition", () => {
-    for (const pkg of PACK_ORDER.filter((p) => p.dir.startsWith("packages/"))) {
+    for (const pkg of PACK_ORDER) {
       const pkgJsonPath = join(tmpDir, "node_modules", pkg.name, "package.json")
-      if (!existsSync(pkgJsonPath)) continue
+      expect(existsSync(pkgJsonPath), `${pkg.name} must be installed`).toBe(true)
 
       const pkgJson = JSON.parse(readFileSync(pkgJsonPath, "utf-8"))
       for (const [subpath, conditions] of Object.entries(
@@ -95,6 +93,27 @@ describe("CLI npm binary distribution", () => {
     }
   })
 
+  it("contains no retired decision implementation or bundled agents", () => {
+    for (const pkg of PACK_ORDER) {
+      const root = join(tmpDir, "node_modules", pkg.name)
+      const files = readdirSync(join(root, "dist"), {recursive:true}).map(String)
+      expect(files.filter(path => /(^|\/)(decisions?|decision-repo|decision-service)\./.test(path))).toEqual([])
+      expect(files.filter(path => /(^|\/)(agents|ralph|watchdog)(\/|\.)/.test(path))).toEqual([])
+    }
+  })
+
+  it("supports the SDK HTTP transport under Node without loading Bun SQLite", () => {
+    const result = spawnSync(process.env.TX_NPM_NODE ?? "node", ["--input-type=module", "-e", `
+      import {TxClient} from '@jamesaphoenix/tx-agent-sdk';
+      const client = new TxClient({apiUrl:'http://127.0.0.1:1'});
+      if (!client.tasks || !client.docs || !client.spec) throw new Error('Missing retained namespace');
+      if ('decisions' in client || 'memory' in client) throw new Error('Retired namespace present');
+      console.log('HTTP transport ready');
+    `], {cwd:tmpDir, encoding:"utf8", timeout:TIMEOUT})
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toContain("HTTP transport ready")
+  })
+
   it("tx help runs successfully via bun", () => {
     const txBin = join(
       tmpDir,
@@ -102,6 +121,7 @@ describe("CLI npm binary distribution", () => {
     )
     const result = spawnSync("bun", [txBin, "help"], {
       encoding: "utf-8",
+      cwd:tmpDir,
       timeout: TIMEOUT,
     })
     expect(result.status).toBe(0)
@@ -115,13 +135,14 @@ describe("CLI npm binary distribution", () => {
     )
     const result = spawnSync("bun", [txBin, "--version"], {
       encoding: "utf-8",
+      cwd:tmpDir,
       timeout: TIMEOUT,
     })
     expect(result.status).toBe(0)
     expect(result.stdout).toMatch(/\d+\.\d+\.\d+/)
   }, TIMEOUT)
 
-  it("tx init + tx add works in isolated install", () => {
+  it("tx init + tx task add works in isolated install", () => {
     const txBin = join(
       tmpDir,
       "node_modules/@jamesaphoenix/tx-cli/dist/cli.js"
@@ -130,14 +151,15 @@ describe("CLI npm binary distribution", () => {
 
     const init = spawnSync("bun", [txBin, "init", "--db", dbPath], {
       encoding: "utf-8",
+      cwd:tmpDir,
       timeout: TIMEOUT,
     })
     expect(init.status).toBe(0)
 
     const add = spawnSync(
       "bun",
-      [txBin, "add", "test task", "--db", dbPath, "--json"],
-      { encoding: "utf-8", timeout: TIMEOUT }
+      [txBin, "task", "add", "test task", "--db", dbPath, "--json"],
+      { encoding: "utf-8", cwd:tmpDir, timeout: TIMEOUT }
     )
     expect(add.status).toBe(0)
     expect(add.stdout).toContain("test task")
@@ -153,6 +175,7 @@ describe("CLI npm binary distribution", () => {
     // init
     const init = spawnSync("bun", [txBin, "init", "--db", dbPath], {
       encoding: "utf-8",
+      cwd:tmpDir,
       timeout: TIMEOUT,
     })
     expect(init.status).toBe(0)
@@ -160,16 +183,16 @@ describe("CLI npm binary distribution", () => {
     // add two tasks
     const add1 = spawnSync(
       "bun",
-      [txBin, "add", "blocker task", "--db", dbPath, "--json"],
-      { encoding: "utf-8", timeout: TIMEOUT }
+      [txBin, "task", "add", "blocker task", "--db", dbPath, "--json"],
+      { encoding: "utf-8", cwd:tmpDir, timeout: TIMEOUT }
     )
     expect(add1.status).toBe(0)
     const task1 = JSON.parse(add1.stdout)
 
     const add2 = spawnSync(
       "bun",
-      [txBin, "add", "blocked task", "--db", dbPath, "--json"],
-      { encoding: "utf-8", timeout: TIMEOUT }
+      [txBin, "task", "add", "blocked task", "--db", dbPath, "--json"],
+      { encoding: "utf-8", cwd:tmpDir, timeout: TIMEOUT }
     )
     expect(add2.status).toBe(0)
     const task2 = JSON.parse(add2.stdout)
@@ -177,16 +200,16 @@ describe("CLI npm binary distribution", () => {
     // block task2 on task1
     const block = spawnSync(
       "bun",
-      [txBin, "block", task2.id, task1.id, "--db", dbPath],
-      { encoding: "utf-8", timeout: TIMEOUT }
+      [txBin, "task", "dep", "block", task2.id, task1.id, "--db", dbPath],
+      { encoding: "utf-8", cwd:tmpDir, timeout: TIMEOUT }
     )
     expect(block.status).toBe(0)
 
     // ready should return task1 (task2 is blocked)
     const ready = spawnSync(
       "bun",
-      [txBin, "ready", "--db", dbPath, "--json"],
-      { encoding: "utf-8", timeout: TIMEOUT }
+      [txBin, "task", "ready", "--db", dbPath, "--json"],
+      { encoding: "utf-8", cwd:tmpDir, timeout: TIMEOUT }
     )
     expect(ready.status).toBe(0)
     const readyTasks = JSON.parse(ready.stdout)
@@ -197,16 +220,16 @@ describe("CLI npm binary distribution", () => {
     // done task1
     const done = spawnSync(
       "bun",
-      [txBin, "done", task1.id, "--db", dbPath],
-      { encoding: "utf-8", timeout: TIMEOUT }
+      [txBin, "task", "done", task1.id, "--db", dbPath],
+      { encoding: "utf-8", cwd:tmpDir, timeout: TIMEOUT }
     )
     expect(done.status).toBe(0)
 
     // now task2 should be ready
     const ready2 = spawnSync(
       "bun",
-      [txBin, "ready", "--db", dbPath, "--json"],
-      { encoding: "utf-8", timeout: TIMEOUT }
+      [txBin, "task", "ready", "--db", dbPath, "--json"],
+      { encoding: "utf-8", cwd:tmpDir, timeout: TIMEOUT }
     )
     expect(ready2.status).toBe(0)
     const readyTasks2 = JSON.parse(ready2.stdout)

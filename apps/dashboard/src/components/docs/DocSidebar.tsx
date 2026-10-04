@@ -22,15 +22,16 @@ const STATUS_DOT: Record<string, string> = {
   locked: "bg-green-400",
 }
 
-const KIND_LABELS: Record<DocSerialized["kind"], string> = {
-  overview: "OV",
+const KIND_LABELS = new Map<string, string>(Object.entries({
+  plan: "Plan",
+  overview: "Overview",
   prd: "PRD",
-  design: "DD",
+  design: "Design",
   requirement: "REQ",
   system_design: "SD",
   runbook: "RB",
   decision: "DEC",
-}
+}))
 
 interface DocGroup {
   label: string
@@ -102,33 +103,22 @@ function DocItem({
   onClick: () => void
 }) {
   return (
-    <button
-      onClick={onClick}
-      className={`w-full text-left px-3 py-2 rounded-md transition ${
-        isChecked
-          ? "bg-blue-600/20 border border-blue-500/50"
-          : isSelected
+    <div className="relative">
+      {onToggleCheck && (
+        <input type="checkbox" checked={Boolean(isChecked)}
+          aria-label={`Select ${doc.title || doc.name} (v${doc.version})`}
+          onChange={() => onToggleCheck(docSelectionKey(doc))}
+          className="absolute left-3 top-3 z-10 h-4 w-4 cursor-pointer accent-blue-500" />
+      )}
+      <button
+        type="button" onClick={onClick} aria-current={isSelected ? "page" : undefined}
+        className={`w-full text-left px-3 py-2 rounded-md transition ${onToggleCheck ? "pl-9" : ""} ${
+          isChecked || isSelected
             ? "bg-blue-600/20 border border-blue-500/50"
             : "hover:bg-gray-800/70 border border-transparent"
-      }`}
-    >
+        }`}
+      >
       <div className="flex items-center gap-2">
-        {onToggleCheck && (
-          <span
-            role="checkbox"
-            aria-checked={isChecked}
-            onClick={(e) => { e.stopPropagation(); onToggleCheck(docSelectionKey(doc)) }}
-            className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition cursor-pointer ${
-              isChecked
-                ? "bg-blue-500 border-blue-500 text-white"
-                : "border-gray-500 hover:border-blue-400"
-            }`}
-          >
-            {isChecked && (
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5L8 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-            )}
-          </span>
-        )}
         <span className={`w-2 h-2 rounded-full flex-shrink-0 ${STATUS_DOT[doc.status] ?? "bg-gray-400"}`} />
         <span className="text-sm text-white truncate flex-1">
           {doc.name}
@@ -137,7 +127,7 @@ function DocItem({
           className="text-[10px] px-1.5 py-0.5 rounded border font-semibold"
           style={{ backgroundColor: "#334155", color: "#f8fafc", borderColor: "#64748b" }}
         >
-          {KIND_LABELS[doc.kind]}
+          {KIND_LABELS.get(doc.kind) ?? doc.kind}
         </span>
         <span
           className="text-[10px] px-1.5 py-0.5 rounded border font-semibold"
@@ -149,7 +139,8 @@ function DocItem({
       <div className="text-xs text-gray-500 ml-4 mt-0.5 truncate">
         {doc.title}
       </div>
-    </button>
+      </button>
+    </div>
   )
 }
 
@@ -157,19 +148,16 @@ export function DocSidebar({ selectedDocRef, onSelectDoc, showMap, onToggleMap, 
   const [searchQuery, setSearchQuery] = useState("")
 
   const docsQuery = useQuery({
-    queryKey: ["docs", kindFilter, statusFilter],
-    queryFn: () =>
-      fetchers.docs({
-        kind: kindFilter || undefined,
-        status: statusFilter || undefined,
-      }),
-    refetchInterval: 5000,
+    queryKey: ["docs"],
+    queryFn: () => fetchers.docs(),
+    refetchInterval: 10000,
   })
 
   const docs = docsQuery.data?.docs ?? []
   const filteredDocs = useMemo(
-    () => docs.filter((doc) => matchesDocQuery(doc, searchQuery)),
-    [docs, searchQuery],
+    () => docs.filter((doc) => (!kindFilter || doc.kind === kindFilter)
+      && (!statusFilter || doc.status === statusFilter) && matchesDocQuery(doc, searchQuery)),
+    [docs, kindFilter, statusFilter, searchQuery],
   )
   const { topLevel, groups } = useMemo(() => groupDocs(filteredDocs), [filteredDocs])
 
@@ -193,7 +181,7 @@ export function DocSidebar({ selectedDocRef, onSelectDoc, showMap, onToggleMap, 
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">
-          Docs
+          Documents
         </span>
         <Button
           size="sm"
@@ -221,25 +209,28 @@ export function DocSidebar({ selectedDocRef, onSelectDoc, showMap, onToggleMap, 
       {/* Filters */}
       <div className="flex gap-2 mb-2">
         <select
+          aria-label="Document kind"
           value={kindFilter}
           onChange={(e) => onKindFilterChange(e.target.value)}
           className="flex-1 bg-gray-800 border border-gray-700 text-xs text-gray-300 rounded px-2 py-1.5"
         >
           <option value="">All kinds</option>
-          <option value="overview">overview</option>
-          <option value="prd">prd</option>
-          <option value="design">design</option>
-          <option value="requirement">requirement</option>
-          <option value="system_design">system_design</option>
+          <option value="overview">Overview</option>
+          <option value="prd">PRD</option>
+          <option value="design">Design</option>
+          <option value="plan">Plan</option>
+          {[...new Set(docs.map(doc => doc.kind))].filter(kind => !["overview","prd","design","plan"].includes(kind)).sort().map(kind =>
+            <option key={kind} value={kind}>{KIND_LABELS.get(kind) ?? kind}</option>)}
         </select>
         <select
+          aria-label="Document status"
           value={statusFilter}
           onChange={(e) => onStatusFilterChange(e.target.value)}
           className="flex-1 bg-gray-800 border border-gray-700 text-xs text-gray-300 rounded px-2 py-1.5"
         >
           <option value="">All statuses</option>
-          <option value="changing">changing</option>
-          <option value="locked">locked</option>
+          <option value="changing">Changing</option>
+          <option value="locked">Locked</option>
         </select>
       </div>
 
@@ -247,6 +238,7 @@ export function DocSidebar({ selectedDocRef, onSelectDoc, showMap, onToggleMap, 
         value={searchQuery}
         onChange={(e) => setSearchQuery(e.target.value)}
         data-native-select-all="true"
+        aria-label="Search documents"
         placeholder="Search docs by name or title..."
         className="mb-3 w-full bg-gray-900 border border-gray-700 text-xs text-gray-200 rounded px-2.5 py-1.5 placeholder:text-gray-500 focus:outline-none focus:border-blue-500"
       />
@@ -257,6 +249,7 @@ export function DocSidebar({ selectedDocRef, onSelectDoc, showMap, onToggleMap, 
           <div className="text-center py-8 text-red-300">
             <div className="text-sm">Unable to load docs</div>
             <div className="text-xs mt-1 text-red-400/80">{loadError}</div>
+            <Button className="mt-3" onClick={() => {void docsQuery.refetch()}}>Retry documents</Button>
           </div>
         ) : (
           <>
@@ -299,9 +292,9 @@ export function DocSidebar({ selectedDocRef, onSelectDoc, showMap, onToggleMap, 
           <div className="text-center py-8 text-gray-500">
             <div className="text-sm">No docs found</div>
             <div className="text-xs mt-1">
-              {searchQuery
+              {searchQuery || kindFilter || statusFilter
                 ? "Try a broader search term"
-                : <>Run <code className="text-gray-400">tx doc add</code> to create one</>}
+                : <>Start with <code className="text-gray-400">tx doc add design my-design</code></>}
             </div>
           </div>
         )}

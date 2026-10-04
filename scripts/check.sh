@@ -64,11 +64,10 @@ run_tests() {
         local duration=$((end_time - start_time))
 
         # Extract test count from vitest output
-        local test_count=$(grep -oE '[0-9]+ passed' "$tmp_file" | head -1 || echo "")
-        local file_count=$(grep -oE '[0-9]+ passed \([0-9]+\)' "$tmp_file" | grep -oE '\([0-9]+\)' | tr -d '()' || echo "")
+        local test_count=$(grep -E '^[[:space:]]*Tests[[:space:]]' "$tmp_file" | grep -oE '[0-9]+ passed' | head -1 || echo "")
 
         if [ -n "$test_count" ]; then
-            printf "${GREEN}  ✓${NC} %s — %s ${YELLOW}(%ds)${NC}\n" "$description" "$test_count" "$duration"
+            printf "${GREEN}  ✓${NC} %s - %s ${YELLOW}(%ds)${NC}\n" "$description" "$test_count" "$duration"
         else
             printf "${GREEN}  ✓${NC} %s ${YELLOW}(%ds)${NC}\n" "$description" "$duration"
         fi
@@ -95,8 +94,10 @@ check_types() {
 }
 
 check_lint() {
-    run_silent "ESLint (packages)" "npx turbo lint"
-    run_silent "ESLint (root tests)" "npx eslint test/ --max-warnings 0"
+    local failed=0
+    run_silent "ESLint (packages)" "npx turbo lint" || failed=1
+    run_silent "ESLint (root tests)" "npx eslint test/ --max-warnings 0" || failed=1
+    return "$failed"
 }
 
 check_build() {
@@ -104,12 +105,16 @@ check_build() {
 }
 
 check_test() {
-    run_silent "Unit & Integration tests (packages)" "npx turbo test"
-    run_silent "Unit & Integration tests (root)" ".claude/skills/test-quiet/scripts/run.sh"
+    local failed=0
+    run_silent "Unit & Integration tests (packages)" "npx turbo test" || failed=1
+    run_silent "Unit & Integration tests (root)" "scripts/test-quiet.sh test/" || failed=1
+    run_tests "Production docs tests" "bun run test:docs" || failed=1
+    run_tests "Published package install tests" "bun run test:package-install" || failed=1
+    return "$failed"
 }
 
 check_test_quick() {
-    run_silent "Quick tests (no slow)" ".claude/skills/test-quiet/scripts/run.sh test/integration/core.test.ts"
+    run_silent "Quick tests (no slow)" "scripts/test-quiet.sh test/integration/core.test.ts"
 }
 
 check_workflow_policy() {

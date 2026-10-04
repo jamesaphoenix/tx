@@ -17,7 +17,7 @@ let _cachedLlms = null
 
 const DEFAULT_META_PATH = "apps/docs/content/docs/primitives/meta.json"
 const DEFAULT_LLMS_PATH = "apps/docs/public/llms.txt"
-const DEFAULT_URL_BASE = "https://tx-docs.vercel.app/docs/primitives/"
+const DEFAULT_URL_BASE = "https://txdocs.dev/docs/primitives/"
 
 /** Reset caches for tests. */
 export function _resetReported() {

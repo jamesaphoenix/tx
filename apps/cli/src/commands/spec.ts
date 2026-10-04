@@ -17,6 +17,7 @@ import {
   validateEarsRequirements,
   type BatchSource,
 } from "@jamesaphoenix/tx"
+import { invariant } from "./invariant.js"
 import { triangle as specHealthImpl } from "./triangle.js"
 import { toJson } from "../output.js"
 import { CliExitError } from "../cli-exit.js"
@@ -85,6 +86,7 @@ export const spec = (pos: string[], flags: Flags) => {
   const rest = pos.slice(1)
 
   switch (sub) {
+    case "invariant": return invariant(rest, flags)
     case "discover": return specDiscover(rest, flags)
     case "link": return specLink(rest, flags)
     case "unlink": return specUnlink(rest, flags)
@@ -344,6 +346,7 @@ const specMatrix = (_pos: string[], flags: Flags) =>
 
     for (const entry of matrix) {
       console.log(`${entry.invariantId}: ${entry.rule}`)
+      for (const source of entry.sourceRefs ?? []) console.log(`  source: ${source}`)
       if (entry.tests.length === 0) {
         console.log("  (no linked tests)")
         continue

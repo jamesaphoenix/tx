@@ -186,8 +186,11 @@ describe("API Spec Trace Integration", () => {
         const harden = yield* spec.fci({ doc: "api-phase-doc" })
         const signoff = yield* spec.complete({ doc: "api-phase-doc" }, "api-reviewer", "ship it")
         const status = yield* spec.status({ doc: "api-phase-doc" })
+        const docService = yield* DocService
+        const doc = yield* docService.get("api-phase-doc")
 
         return {
+          docId: doc.docId,
           build: { ...build },
           harden: { ...harden },
           signoff: serializeSignoff(signoff),
@@ -203,7 +206,7 @@ describe("API Spec Trace Integration", () => {
     expect(payload.harden.fci).toBe(100)
 
     expect(payload.signoff.scopeType).toBe("doc")
-    expect(payload.signoff.scopeValue).toBe("api-phase-doc")
+    expect(payload.signoff.scopeValue).toBe(payload.docId)
     expect(payload.signoff.signedOffBy).toBe("api-reviewer")
     expect(typeof payload.signoff.signedOffAt).toBe("string")
     expect(new Date(payload.signoff.signedOffAt).toString()).not.toBe("Invalid Date")

@@ -9,11 +9,8 @@ type TaskRepositoryWriteService = Pick<
   | "insert"
   | "update"
   | "updateMany"
-  | "setGroupContext"
-  | "clearGroupContext"
   | "remove"
   | "recoverTaskStatus"
-  | "updateVerifyCmd"
 >
 
 export const createTaskRepositoryWriteService = (
@@ -215,40 +212,6 @@ export const createTaskRepositoryWriteService = (
       }
     }),
 
-  setGroupContext: (taskId, context) =>
-    Effect.gen(function* () {
-      const now = new Date().toISOString()
-      const result = yield* Effect.try({
-        try: () =>
-          db.prepare(
-            `UPDATE tasks
-                 SET group_context = ?, updated_at = ?
-                 WHERE id = ?`
-          ).run(context, now, taskId),
-        catch: (cause) => new DatabaseError({ cause })
-      })
-      if (result.changes === 0) {
-        yield* Effect.fail(new TaskNotFoundError({ id: taskId }))
-      }
-    }),
-
-  clearGroupContext: (taskId) =>
-    Effect.gen(function* () {
-      const now = new Date().toISOString()
-      const result = yield* Effect.try({
-        try: () =>
-          db.prepare(
-            `UPDATE tasks
-                 SET group_context = NULL, updated_at = ?
-                 WHERE id = ?`
-          ).run(now, taskId),
-        catch: (cause) => new DatabaseError({ cause })
-      })
-      if (result.changes === 0) {
-        yield* Effect.fail(new TaskNotFoundError({ id: taskId }))
-      }
-    }),
-
   remove: (id) =>
     Effect.gen(function* () {
       const result = yield* Effect.try({
@@ -280,18 +243,5 @@ export const createTaskRepositoryWriteService = (
         return result.changes > 0
       },
       catch: (cause) => new DatabaseError({ cause })
-    }),
-
-  updateVerifyCmd: (taskId, cmd, schema) =>
-    Effect.gen(function* () {
-      const result = yield* Effect.try({
-        try: () => db.prepare(
-          "UPDATE tasks SET verify_cmd = ?, verify_schema = ?, updated_at = ? WHERE id = ?"
-        ).run(cmd, schema, new Date().toISOString(), taskId),
-        catch: (cause) => new DatabaseError({ cause })
-      })
-      if (result.changes === 0) {
-        return yield* Effect.fail(new TaskNotFoundError({ id: taskId }))
-      }
     }),
 })

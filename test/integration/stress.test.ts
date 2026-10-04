@@ -1,3 +1,4 @@
+import { makeMinimalLayerFromInfra } from "@jamesaphoenix/tx"
 /**
  * Stress Tests for Batch Operations
  *
@@ -18,44 +19,16 @@ import { Effect, Layer } from "effect"
 import { existsSync, readFileSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { Database } from "bun:sqlite"
 
 import { createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx/testing"
 import { fixtureId } from "../fixtures.js"
 import {
   SqliteClient,
   TaskRepository,
-  TaskRepositoryLive,
-  DependencyRepositoryLive,
-  LearningRepositoryLive,
-  FileLearningRepositoryLive,
-  AttemptRepositoryLive,
-  PinRepositoryLive,
-  AnchorRepositoryLive,
-  EdgeRepositoryLive,
-  DocRepositoryLive,
-  TaskServiceLive,
   TaskService,
-  DependencyServiceLive,
-  ReadyServiceLive,
   ReadyService,
-  HierarchyServiceLive,
   HierarchyService,
-  LearningServiceLive,
-  LearningService,
-  SyncServiceLive,
-  StreamServiceLive,
   SyncService,
-  EmbeddingService,
-  EmbeddingServiceNoop,
-  AutoSyncServiceNoop,
-  GuardRepositoryLive,
-  QueryExpansionServiceNoop,
-  RerankerServiceNoop,
-  RetrieverServiceLive,
-  ClaimRepositoryLive,
-  ClaimServiceLive,
-  OrchestratorStateRepositoryLive
 } from "@jamesaphoenix/tx"
 import type { TaskId } from "@jamesaphoenix/tx/types"
 
@@ -97,114 +70,12 @@ async function measurePerformance<T>(
 /**
  * Create test layer for task/dependency/hierarchy services
  */
-function makeTaskTestLayer(db: TestDatabase) {
-  const infra = Layer.succeed(SqliteClient, db.db as Database)
-  const repos = Layer.mergeAll(
-    TaskRepositoryLive,
-    DependencyRepositoryLive,
-    GuardRepositoryLive,
-    PinRepositoryLive,
-    ClaimRepositoryLive,
-    OrchestratorStateRepositoryLive
-  ).pipe(
-    Layer.provide(infra)
-  )
-  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
-  const services = Layer.mergeAll(
-    TaskServiceLive,
-    DependencyServiceLive,
-    ReadyServiceLive,
-    HierarchyServiceLive
-  ).pipe(
-    Layer.provide(Layer.mergeAll(repos, AutoSyncServiceNoop, claimService))
-  )
-  return Layer.mergeAll(services, repos)
-}
-
-/**
- * Create test layer for learning services
- */
-function makeLearningTestLayer(db: TestDatabase) {
-  const infra = Layer.succeed(SqliteClient, db.db as Database)
-  const repos = Layer.mergeAll(
-    TaskRepositoryLive,
-    DependencyRepositoryLive,
-    LearningRepositoryLive,
-    GuardRepositoryLive,
-    PinRepositoryLive,
-    ClaimRepositoryLive,
-    OrchestratorStateRepositoryLive
-  ).pipe(
-    Layer.provide(infra)
-  )
-  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
-  const retrieverLayer = RetrieverServiceLive.pipe(
-    Layer.provide(
-      Layer.mergeAll(
-        repos,
-        EmbeddingServiceNoop,
-        QueryExpansionServiceNoop,
-        RerankerServiceNoop
-      )
-    )
-  )
-  const services = Layer.mergeAll(
-    TaskServiceLive,
-    DependencyServiceLive,
-    ReadyServiceLive,
-    HierarchyServiceLive,
-    LearningServiceLive
-  ).pipe(
-    Layer.provide(
-      Layer.mergeAll(
-        repos,
-        EmbeddingServiceNoop,
-        AutoSyncServiceNoop,
-        QueryExpansionServiceNoop,
-        RerankerServiceNoop,
-        retrieverLayer,
-        claimService
-      )
-    )
-  )
-  return Layer.mergeAll(services, repos)
-}
+function makeTaskTestLayer(db: TestDatabase) { return makeMinimalLayerFromInfra(Layer.succeed(SqliteClient, db.db as any)) }
 
 /**
  * Create test layer for sync services
  */
-function makeSyncTestLayer(db: TestDatabase) {
-  const infra = Layer.succeed(SqliteClient, db.db as Database)
-  const repos = Layer.mergeAll(
-    TaskRepositoryLive,
-    DependencyRepositoryLive,
-    LearningRepositoryLive,
-    FileLearningRepositoryLive,
-    AttemptRepositoryLive,
-    PinRepositoryLive,
-    AnchorRepositoryLive,
-    EdgeRepositoryLive,
-    DocRepositoryLive,
-    GuardRepositoryLive,
-    ClaimRepositoryLive,
-    OrchestratorStateRepositoryLive
-  ).pipe(
-    Layer.provide(infra)
-  )
-  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
-  const baseServices = Layer.mergeAll(
-    TaskServiceLive,
-    DependencyServiceLive,
-    ReadyServiceLive,
-    HierarchyServiceLive
-  ).pipe(
-    Layer.provide(Layer.mergeAll(repos, AutoSyncServiceNoop, claimService))
-  )
-  const syncService = SyncServiceLive.pipe(
-    Layer.provide(Layer.mergeAll(infra, repos, baseServices, StreamServiceLive.pipe(Layer.provide(infra))))
-  )
-  return Layer.mergeAll(baseServices, syncService, repos)
-}
+function makeSyncTestLayer(db: TestDatabase) { return makeMinimalLayerFromInfra(Layer.succeed(SqliteClient, db.db as any)) }
 
 /**
  * Seed N tasks into the database directly (bypasses service for speed)
@@ -222,36 +93,6 @@ function seedBulkTasks(db: TestDatabase, count: number, prefix: string = "bulk")
       const id = stressFixtureId(prefix, i)
       insert.run(id, `Task ${i}`, `Description for task ${i}`, "backlog", null, 500 + i, now, now, null, "{}")
       ids.push(id)
-    }
-  })
-
-  return ids
-}
-
-/**
- * Seed N learnings into the database directly
- */
-function seedBulkLearnings(db: TestDatabase, count: number): number[] {
-  const now = new Date().toISOString()
-  const insert = db.db.prepare(
-    `INSERT INTO learnings (content, source_type, source_ref, created_at, keywords, category)
-     VALUES (?, ?, ?, ?, ?, ?)`
-  )
-
-  const ids: number[] = []
-  const categories = ["database", "api", "testing", "security", "performance"]
-  db.transaction(() => {
-    for (let i = 0; i < count; i++) {
-      const category = categories[i % categories.length]
-      const result = insert.run(
-        `Learning content ${i}: This is about ${category} best practices and patterns for software development`,
-        "manual",
-        null,
-        now,
-        JSON.stringify([category, "development", `term${i}`]),
-        category
-      )
-      ids.push(Number(result.lastInsertRowid))
     }
   })
 
@@ -400,70 +241,6 @@ describe.skipIf(SKIP_STRESS)("Stress: TaskRepository.findByIds", () => {
   })
 })
 
-describe.skipIf(SKIP_STRESS)("Stress: BM25 Search with 10,000+ learnings", () => {
-  let db: TestDatabase
-  let layer: ReturnType<typeof makeLearningTestLayer>
-
-  beforeEach(async () => {
-    db = await Effect.runPromise(createTestDatabase())
-    layer = makeLearningTestLayer(db)
-    seedBulkLearnings(db, 10000)
-  })
-
-  it("searches 10,000 learnings within threshold", async () => {
-    const { result: results, durationMs, memoryDeltaMb } = await measurePerformance(async () =>
-      Effect.runPromise(
-        Effect.gen(function* () {
-          const svc = yield* LearningService
-          return yield* svc.search({ query: "database best practices", limit: 20, minScore: 0 })
-        }).pipe(Effect.provide(layer))
-      )
-    )
-
-    console.log(`BM25 search (10k learnings): ${durationMs.toFixed(2)}ms, memory delta: ${memoryDeltaMb.toFixed(2)}MB`)
-
-    expect(results.length).toBeGreaterThan(0)
-    expect(results.length).toBeLessThanOrEqual(20)
-    expect(durationMs).toBeLessThan(THRESHOLDS.BM25_SEARCH_10K)
-  })
-
-  it("handles multiple sequential searches", async () => {
-    const queries = ["database patterns", "api security", "testing strategies", "performance optimization"]
-
-    const { durationMs } = await measurePerformance(async () => {
-      for (const query of queries) {
-        await Effect.runPromise(
-          Effect.gen(function* () {
-            const svc = yield* LearningService
-            return yield* svc.search({ query, limit: 10, minScore: 0 })
-          }).pipe(Effect.provide(layer))
-        )
-      }
-    })
-
-    console.log(`4 sequential BM25 searches: ${durationMs.toFixed(2)}ms`)
-
-    // Should complete 4 searches in reasonable time
-    expect(durationMs).toBeLessThan(THRESHOLDS.BM25_SEARCH_10K * 2)
-  })
-
-  it("search with no results is fast", async () => {
-    const { result: results, durationMs } = await measurePerformance(async () =>
-      Effect.runPromise(
-        Effect.gen(function* () {
-          const svc = yield* LearningService
-          return yield* svc.search({ query: "xyznonexistent123abc", limit: 20, minScore: 0 })
-        }).pipe(Effect.provide(layer))
-      )
-    )
-
-    console.log(`BM25 search (no results): ${durationMs.toFixed(2)}ms`)
-
-    expect(results).toHaveLength(0)
-    expect(durationMs).toBeLessThan(500) // No-results should be fast
-  })
-})
-
 describe.skipIf(SKIP_STRESS)("Stress: Sync Export/Import with 5000+ tasks", () => {
   let db: TestDatabase
   let layer: ReturnType<typeof makeSyncTestLayer>
@@ -548,7 +325,7 @@ describe.skipIf(SKIP_STRESS)("Stress: Sync Export/Import with 5000+ tasks", () =
   it("handles export with dependencies", async () => {
     const ids = seedBulkTasks(db, 1000, "sync-deps")
 
-    // Add some dependencies (every 10th task blocks the next)
+    // Add some dependencies (every 10th task block s the next)
     const insertDep = db.db.prepare(
       `INSERT INTO task_dependencies (blocker_id, blocked_id, created_at) VALUES (?, ?, ?)`
     )
@@ -602,7 +379,7 @@ describe.skipIf(SKIP_STRESS)("Stress: Deep Dependency Chains (100+ levels)", () 
     expect(durationMs).toBeLessThan(THRESHOLDS.DEEP_HIERARCHY_100)
   })
 
-  it("getWithDeps on deeply blocked task shows all blockers", async () => {
+  it("getWithDeps on deeply blocked task show s all blockers", async () => {
     const lastTaskId = chainIds[chainIds.length - 1]!
 
     const { result: task, durationMs } = await measurePerformance(async () =>
@@ -725,84 +502,18 @@ describe.skipIf(SKIP_STRESS)("Stress: Deep Hierarchy (100+ levels)", () => {
   })
 })
 
-describe.skipIf(SKIP_STRESS)("Stress: Batch Embedding Generation", () => {
-  it("handles 100+ texts with mock embedding service", async () => {
-    // Create mock embedding service layer for testing batch behavior
-    const texts = Array.from({ length: 100 }, (_, i) =>
-      `Learning content ${i}: This is test content for embedding generation`
-    )
-
-    // Create a mock embedding service that simulates batch processing
-    const MockEmbeddingLayer = Layer.succeed(EmbeddingService, {
-      embed: (_text: string) => Effect.succeed(new Float32Array(256).fill(0.1)),
-      embedBatch: (texts: readonly string[]) =>
-        Effect.succeed(texts.map(() => new Float32Array(256).fill(0.1))),
-      isAvailable: () => Effect.succeed(true),
-      dimensions: 256
-    })
-
-    const { result, durationMs, memoryDeltaMb } = await measurePerformance(async () =>
-      Effect.runPromise(
-        Effect.gen(function* () {
-          const svc = yield* EmbeddingService
-          return yield* svc.embedBatch(texts)
-        }).pipe(Effect.provide(MockEmbeddingLayer))
-      )
-    )
-
-    console.log(`Batch embed 100 texts: ${durationMs.toFixed(2)}ms, memory delta: ${memoryDeltaMb.toFixed(2)}MB`)
-
-    expect(result).toHaveLength(100)
-    expect(result[0]).toBeInstanceOf(Float32Array)
-    expect(result[0]!.length).toBe(256)
-    expect(durationMs).toBeLessThan(THRESHOLDS.BATCH_EMBED_100)
-  })
-
-  it("handles 500 texts in batch", async () => {
-    const texts = Array.from({ length: 500 }, (_, i) =>
-      `Content ${i}: Extended learning text for stress testing`
-    )
-
-    const MockEmbeddingLayer = Layer.succeed(EmbeddingService, {
-      embed: (_text: string) => Effect.succeed(new Float32Array(256).fill(0.1)),
-      embedBatch: (textsInput: readonly string[]) =>
-        Effect.succeed(textsInput.map(() => new Float32Array(256).fill(0.1))),
-      isAvailable: () => Effect.succeed(true),
-      dimensions: 256
-    })
-
-    const { result, durationMs } = await measurePerformance(async () =>
-      Effect.runPromise(
-        Effect.gen(function* () {
-          const svc = yield* EmbeddingService
-          return yield* svc.embedBatch(texts)
-        }).pipe(Effect.provide(MockEmbeddingLayer))
-      )
-    )
-
-    console.log(`Batch embed 500 texts: ${durationMs.toFixed(2)}ms`)
-
-    expect(result).toHaveLength(500)
-    // Should scale linearly, so 5x texts should be < 5x threshold
-    expect(durationMs).toBeLessThan(THRESHOLDS.BATCH_EMBED_100 * 5)
-  })
-})
-
 describe.skipIf(SKIP_STRESS)("Stress: Combined Operations", () => {
   let db: TestDatabase
   let taskLayer: ReturnType<typeof makeTaskTestLayer>
-  let learningLayer: ReturnType<typeof makeLearningTestLayer>
 
   beforeEach(async () => {
     db = await Effect.runPromise(createTestDatabase())
     taskLayer = makeTaskTestLayer(db)
-    learningLayer = makeLearningTestLayer(db)
   })
 
   it("handles concurrent reads under load", async () => {
     // Seed data
     const taskIds = seedBulkTasks(db, 1000, "concurrent")
-    seedBulkLearnings(db, 1000)
 
     // Run multiple operations concurrently
     const { durationMs } = await measurePerformance(async () => {
@@ -820,19 +531,6 @@ describe.skipIf(SKIP_STRESS)("Stress: Combined Operations", () => {
             return yield* svc.getReady()
           }).pipe(Effect.provide(taskLayer))
         ),
-        // Learning operations
-        Effect.runPromise(
-          Effect.gen(function* () {
-            const svc = yield* LearningService
-            return yield* svc.search({ query: "database", limit: 20, minScore: 0 })
-          }).pipe(Effect.provide(learningLayer))
-        ),
-        Effect.runPromise(
-          Effect.gen(function* () {
-            const svc = yield* LearningService
-            return yield* svc.getRecent(50)
-          }).pipe(Effect.provide(learningLayer))
-        )
       ])
     })
 
@@ -844,7 +542,6 @@ describe.skipIf(SKIP_STRESS)("Stress: Combined Operations", () => {
 
   it("handles repeated operations efficiently", async () => {
     seedBulkTasks(db, 500, "repeated")
-    seedBulkLearnings(db, 500)
 
     const iterations = 10
     const { durationMs } = await measurePerformance(async () => {
@@ -855,12 +552,7 @@ describe.skipIf(SKIP_STRESS)("Stress: Combined Operations", () => {
             return yield* svc.getReady()
           }).pipe(Effect.provide(taskLayer))
         )
-        await Effect.runPromise(
-          Effect.gen(function* () {
-            const svc = yield* LearningService
-            return yield* svc.search({ query: "testing", limit: 10, minScore: 0 })
-          }).pipe(Effect.provide(learningLayer))
-        )
+
       }
     })
 

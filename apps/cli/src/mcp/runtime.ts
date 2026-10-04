@@ -12,25 +12,13 @@ import {
   ReadyService,
   DependencyService,
   HierarchyService,
-  LearningService,
-  FileLearningService,
   SyncService,
-  MessageService,
   DocService,
-  RunHeartbeatService,
-  PinService,
-  ClaimService,
-  MemoryService,
-  MemoryRetrieverService,
-  GuardService,
-  VerifyService,
-  ReflectService,
-  DecomposeService,
   SpecTraceService,
-  DecisionService,
   LabelRepository,
   SqliteClient,
   resolveTxDbPath,
+  resolveWorkspaceContext,
 } from "@jamesaphoenix/tx"
 
 // -----------------------------------------------------------------------------
@@ -42,22 +30,9 @@ export type McpServices =
   | ReadyService
   | DependencyService
   | HierarchyService
-  | LearningService
-  | FileLearningService
   | SyncService
-  | MessageService
   | DocService
-  | RunHeartbeatService
-  | PinService
-  | ClaimService
-  | MemoryService
-  | MemoryRetrieverService
-  | GuardService
-  | VerifyService
-  | ReflectService
-  | DecomposeService
   | SpecTraceService
-  | DecisionService
   | LabelRepository
   | SqliteClient
 
@@ -75,12 +50,13 @@ let managedRuntime: ManagedRuntime.ManagedRuntime<McpServices, any> | null = nul
  * Initialize the Effect runtime ONCE at server startup.
  * Creates the full service layer with database connection.
  */
-export const initRuntime = async (dbPath = resolveTxDbPath()): Promise<void> => {
+export const initRuntime = async (dbPath = resolveTxDbPath(), options: {contentRoot?: string} = {}): Promise<void> => {
   if (managedRuntime) {
     return // Already initialized
   }
 
-  const appLayer = makeAppLayer(dbPath)
+  const workspace = resolveWorkspaceContext({dbPath, contentRoot: options.contentRoot})
+  const appLayer = makeAppLayer(dbPath, {contentRoot: workspace.contentRoot, projection: workspace})
   managedRuntime = ManagedRuntime.make(appLayer)
 }
 

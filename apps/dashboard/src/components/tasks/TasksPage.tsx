@@ -4,6 +4,7 @@ import { useStore } from "@tanstack/react-store"
 import Select, { type MultiValue, type SingleValue, type StylesConfig } from "react-select"
 import {
   fetchers,
+  ApiError,
   type TaskAssigneeType,
   type TaskWithDeps,
   type PaginatedTasksResponse,
@@ -41,7 +42,6 @@ export interface TasksPageProps {
   themeMode?: ThemeMode
   defaultTaskAssigmentType?: TaskAssigneeType
   defaultTaskView?: "list" | "kanban"
-  autoAddStatuses?: string[]
   /**
    * Incrementing signal from the app shell to request opening the
    * task composer even before page-level shortcut registration settles.
@@ -328,7 +328,6 @@ export function TasksPage({
   themeMode = "light",
   defaultTaskAssigmentType = "human",
   defaultTaskView = "list",
-  autoAddStatuses = [],
   newTaskRequestNonce = 0
 }: TasksPageProps) {
   const isDarkTheme = themeMode === "dark"
@@ -608,7 +607,12 @@ export function TasksPage({
   }, [queryClient])
 
   const createTaskFromComposer = useCallback(async (payload: TaskComposerModalSubmit) => {
-    const created = await fetchers.createTask({
+    const labels = payload.labelIds.flatMap<{labelId:number} | {name:string;color:string}>(labelId => {
+      if (labelId > 0) return [{labelId}]
+      const label = composerFallbackLabels[labelId]
+      return label ? [{name:label.name,color:label.color}] : []
+    })
+    await fetchers.createTask({
       title: payload.title,
       description: payload.description,
       parentId: payload.parentId,
@@ -616,35 +620,8 @@ export function TasksPage({
       assigneeType: payload.assigneeType,
       assigneeId: payload.assigneeId,
       assignedBy: "dashboard:composer",
+      labels,
     })
-
-    const persistedLabelIds = payload.labelIds.filter((labelId) => labelId > 0)
-    const fallbackLabels = payload.labelIds
-      .filter((labelId) => labelId < 0)
-      .map((labelId) => composerFallbackLabels[labelId])
-      .filter((label): label is { name: string; color: string } => Boolean(label))
-
-    if (persistedLabelIds.length > 0 || fallbackLabels.length > 0) {
-      await Promise.all([
-        ...persistedLabelIds.map((labelId) => fetchers.assignTaskLabel(created.id, { labelId })),
-        ...fallbackLabels.map((label) => fetchers.assignTaskLabel(created.id, {
-          name: label.name,
-          color: label.color,
-        })),
-      ])
-    }
-
-    // Auto-add to current cycle if task status matches autoAddStatuses
-    if (autoAddStatuses.length > 0 && autoAddStatuses.includes(payload.stage)) {
-      const currentCycle = cycles.find((c) => c.status === "current")
-      if (currentCycle) {
-        try {
-          await fetchers.addTasksToCycle(currentCycle.id, [created.id])
-        } catch {
-          // Non-critical: task was created, auto-add to cycle failed silently
-        }
-      }
-    }
 
     setComposerFallbackLabels({})
     await invalidateTaskQueries()
@@ -661,7 +638,7 @@ export function TasksPage({
     }
 
     closeComposer()
-  }, [closeComposer, composerFallbackLabels, invalidateTaskQueries, queryClient, autoAddStatuses, cycles])
+  }, [closeComposer, composerFallbackLabels, invalidateTaskQueries, queryClient])
 
   const createLabel = useCallback(async (payload: { name: string; color?: string }): Promise<TaskLabel | null> => {
     const normalizedName = payload.name.trim()
@@ -680,8 +657,7 @@ export function TasksPage({
       await invalidateTaskQueries()
       return created
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      if (!message.includes("404")) {
+      if (!(error instanceof ApiError && error.status === 404)) {
         throw error
       }
 
@@ -841,9 +817,8 @@ export function TasksPage({
       try {
         await fetchers.deleteTask(id)
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
         // Treat already-deleted rows as success for bulk command actions.
-        if (!message.includes("404")) {
+        if (!(error instanceof ApiError && error.status === 404)) {
           throw error
         }
       }
@@ -943,16 +918,16 @@ export function TasksPage({
         selectedIds,
         labels: allLabels,
         cycles,
-        onBulkSetStatus: (status) => void setSelectedTasksStatusStage(status as TaskStatusValue),
+        onBulkSetStatus: (status) => setSelectedTasksStatusStage(status as TaskStatusValue),
         onBulkToggleLabel: (label) => {
-          void (async () => {
+          return (async () => {
             for (const id of selectedIds) {
               await fetchers.assignTaskLabel(id, { labelId: label.id })
             }
             await invalidateTaskQueries()
           })()
         },
-        onBulkMoveToCycle: (cycleId) => void moveTaskToCycle(cycleId, selectedIds),
+        onBulkMoveToCycle: (cycleId) => moveTaskToCycle(cycleId, selectedIds),
       }))
 
       cmds.push({
@@ -1052,7 +1027,7 @@ export function TasksPage({
         group: "Actions",
         icon: "action",
         shortcut: "⌘⇧A",
-        action: () => void toggleSelectedTaskAssigneeType(),
+        action: () => toggleSelectedTaskAssigneeType(),
       },
       {
         id: "tasks:labels-prompt",
@@ -1086,22 +1061,22 @@ export function TasksPage({
       task: selectedTask ? { id: selectedTask.id, labels: selectedTask.labels } : null,
       labels: allLabels,
       cycles,
-      onSetStatus: (status) => void changeTaskStatusStage(status as TaskStatusValue, selectedTask!.id),
-      onToggleLabel: (label) => void toggleLabel(label),
+      onSetStatus: (status) => changeTaskStatusStage(status as TaskStatusValue, selectedTask!.id),
+      onToggleLabel: (label) => toggleLabel(label),
       onSetScore: () => {
         if (!selectedTask) return
         const input = window.prompt("Score:", String(selectedTask.score ?? 0))
         if (input === null) return
         const score = parseInt(input, 10)
         if (Number.isNaN(score)) return
-        void (async () => {
+        return (async () => {
           await fetchers.updateTask(selectedTask.id, { score })
           await invalidateTaskQueries()
         })()
       },
       onMoveToCycle: (cycleId) => {
         if (viewState.taskId) {
-          void moveTaskToCycle(cycleId, [viewState.taskId])
+          return moveTaskToCycle(cycleId, [viewState.taskId])
         }
       },
     }))
@@ -1148,7 +1123,7 @@ export function TasksPage({
           sublabel: `${selectedChildIds.size} selected`,
           group: "Children",
           icon: "delete",
-          action: () => void deleteSelectedChildren(),
+          action: () => deleteSelectedChildren(),
         },
       )
 
@@ -1164,7 +1139,7 @@ export function TasksPage({
           label: stage.label,
           group: "Statuses",
           icon: "action" as const,
-          action: () => void setSelectedChildrenStatusStage(stage.value),
+          action: () => setSelectedChildrenStatusStage(stage.value),
         })),
       })
     }
@@ -1500,11 +1475,11 @@ export function TasksPage({
               onCopyTaskReference={() => { void copySelectedTaskReference() }}
               allLabels={allLabels}
               isLabelAssigned={isAssignedLabel}
-              onToggleLabel={(label) => { void toggleLabel(label) }}
+              onToggleLabel={toggleLabel}
               onCreateLabel={(payload) => createAndAssignLabel(payload)}
               statusStage={selectedTask ? toHumanTaskStage(selectedTask.status) : undefined}
-              onChangeStatusStage={(stage) => { void changeTaskStatusStage(stage) }}
-              onUpdateAssignment={(payload) => { void updateTaskAssignment(payload) }}
+              onChangeStatusStage={(stage) => changeTaskStatusStage(stage)}
+              onUpdateAssignment={(payload) => updateTaskAssignment(payload)}
               selectedChildIds={selectedChildIds}
               onToggleChildSelection={toggleChildSelection}
               onSelectAllChildren={() => setSelectedChildIds(new Set(childTasks.map((task) => task.id)))}

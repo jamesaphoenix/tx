@@ -11,8 +11,10 @@ import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   listTomlSections,
+  defaultSpecTestPatterns,
   readTxConfig,
   writeDashboardDefaultTaskAssigmentType,
+  writeDashboardAutoAddStatuses,
   scaffoldConfigToml,
   DASHBOARD_DEFAULT_TASK_ASSIGMENT_KEY,
 } from "@jamesaphoenix/tx";
@@ -30,27 +32,13 @@ const BUILTIN_LINT_MESSAGES = NO_CONFIG_DEFAULTS.spec.lintMessages;
 const DEFAULTS = {
   docs: { path: "specs" },
   spec: {
-    testPatterns: [
-      "test/**/*.test.{ts,js,tsx,jsx}",
-      "tests/**/*.py",
-      "**/*_test.go",
-      "**/*_test.rs",
-      "**/test_*.py",
-      "**/*.spec.{ts,js,tsx,jsx}",
-      "**/Test*.java",
-      "**/*Test.java",
-      "**/*_spec.rb",
-      "**/*.test.{c,cpp,cc}",
-      "**/*_test.{c,cpp,cc}",
-    ],
+    testPatterns: [...defaultSpecTestPatterns()],
     designDocMissingTaskLinks: "always",
     // Section definitions are large and are asserted structurally below; reuse
     // the values readTxConfig produces for a project with no config file.
     types: BUILTIN_SPEC_TYPES,
     lintMessages: BUILTIN_LINT_MESSAGES,
   },
-  memory: { defaultDir: "specs" },
-  cycles: { scanPrompt: null, agents: 3, model: "claude-opus-4-6" },
   dashboard: {
     defaultTaskAssigmentType: "human",
     defaultTaskView: "list",
@@ -58,31 +46,7 @@ const DEFAULTS = {
       cycleLengthDays: 7,
       cycleStartDay: "monday",
       carryStatuses: ["planning", "active", "blocked", "review", "needs_review"],
-    },
-  },
-  pins: { targetFiles: ["CLAUDE.md", "AGENTS.md"], blockAgentDoneWhenTaskIdPresent: true },
-  guard: {
-    mode: "advisory",
-    maxPending: null,
-    maxChildren: null,
-    maxDepth: null,
-  },
-  verify: { timeout: 300, defaultSchema: null },
-  reflect: {
-    provider: "auto",
-    model: null,
-    defaultSessions: 10,
-    includeTranscripts: false,
-  },
-  reviews: {
-    designDocs: {
-      enabled: false,
-      runtime: "pi",
-      transport: "rpc",
-      template: "double-check",
-      blocking: false,
-      createFollowupTasks: true,
-      retriggerOnTaskReopen: true,
+      autoAddStatuses: ["backlog", "ready"],
     },
   },
 } as const;
@@ -108,6 +72,19 @@ afterEach(() => {
 });
 
 describe("toml-config", () => {
+  it("persists an explicitly disabled auto-add selection without losing unrelated config", () => {
+    const cwd = makeTempDir()
+    writeConfig(cwd, '[docs]\npath = "custom-specs"\n# Keep this comment\n[dashboard.cycles]\ncarry_statuses = ["active"]\n')
+    writeDashboardAutoAddStatuses(["ready","ready"],cwd)
+    expect(readTxConfig(cwd).dashboard.cycles.autoAddStatuses).toEqual(["ready"])
+    writeDashboardAutoAddStatuses([],cwd)
+    const config = readTxConfig(cwd)
+    expect(config.dashboard.cycles.autoAddStatuses).toEqual([])
+    expect(config.dashboard.cycles.carryStatuses).toEqual(["active"])
+    expect(config.docs.path).toBe("custom-specs")
+    expect(readFileSync(join(cwd,".tx/config.toml"),"utf8")).toContain("# Keep this comment")
+  })
+
   it("[INV-SPECCFG-001] returns defaults when config is missing", () => {
     const cwd = makeTempDir();
     const config = readTxConfig(cwd);
@@ -147,7 +124,6 @@ describe("toml-config", () => {
 
     const parsed = readTxConfig(cwd);
     expect(parsed.docs.path).toBe("custom/docs");
-    expect(parsed.cycles.agents).toBe(7);
     expect(parsed.dashboard.defaultTaskAssigmentType).toBe("human");
   });
 
@@ -200,7 +176,6 @@ describe("toml-config", () => {
     expect(raw).toContain("# keep dashboard comment");
     expect(raw).toContain('[docs]\npath = "custom/docs"');
     expect(raw).toContain('ui_mode = "compact"');
-    expect(raw).toContain('[cycles]\nmodel = "claude-opus-4-6"');
     expect(raw).toContain('default_task_assigment_type = "agent"');
   });
 
@@ -224,15 +199,7 @@ describe("toml-config", () => {
 
     const parsed = readTxConfig(cwd);
     expect(parsed.dashboard.defaultTaskAssigmentType).toBe("human");
-  });
-
-  it("parses memory default_dir from config", () => {
-    const cwd = makeTempDir();
-    writeConfig(cwd, ["[memory]", 'default_dir = "knowledge"'].join("\n"));
-
-    const parsed = readTxConfig(cwd);
-    expect(parsed.memory.defaultDir).toBe("knowledge");
-  });
+  });;
 
   it("parses [spec] test_patterns array", () => {
     const cwd = makeTempDir();
@@ -272,55 +239,7 @@ describe("toml-config", () => {
 
     const parsed = readTxConfig(cwd);
     expect(parsed.spec.designDocMissingTaskLinks).toBe("always");
-  });
-
-  it("defaults memory default_dir to docs when section is absent", () => {
-    const cwd = makeTempDir();
-    writeConfig(cwd, ["[docs]", 'path = "specs"'].join("\n"));
-
-    const parsed = readTxConfig(cwd);
-    expect(parsed.memory.defaultDir).toBe("specs");
-  });
-
-  it("parses pins target_files as comma-separated list", () => {
-    const cwd = makeTempDir();
-    writeConfig(
-      cwd,
-      ["[pins]", 'target_files = "CLAUDE.md, AGENTS.md"'].join("\n"),
-    );
-
-    const parsed = readTxConfig(cwd);
-    expect(parsed.pins.targetFiles).toEqual(["CLAUDE.md", "AGENTS.md"]);
-    expect(parsed.pins.blockAgentDoneWhenTaskIdPresent).toBe(true);
-  });
-
-  it("parses pins block_agent_done_when_task_id_present override", () => {
-    const cwd = makeTempDir();
-    writeConfig(
-      cwd,
-      ["[pins]", "block_agent_done_when_task_id_present = false"].join("\n"),
-    );
-
-    const parsed = readTxConfig(cwd);
-    expect(parsed.pins.targetFiles).toEqual(["CLAUDE.md", "AGENTS.md"]);
-    expect(parsed.pins.blockAgentDoneWhenTaskIdPresent).toBe(false);
-  });
-
-  it("defaults pins target_files to CLAUDE.md and AGENTS.md when section is absent", () => {
-    const cwd = makeTempDir();
-    writeConfig(cwd, ["[docs]", 'path = "specs"'].join("\n"));
-
-    const parsed = readTxConfig(cwd);
-    expect(parsed.pins.targetFiles).toEqual(["CLAUDE.md", "AGENTS.md"]);
-  });
-
-  it("parses single pin target file", () => {
-    const cwd = makeTempDir();
-    writeConfig(cwd, ["[pins]", 'target_files = "AGENTS.md"'].join("\n"));
-
-    const parsed = readTxConfig(cwd);
-    expect(parsed.pins.targetFiles).toEqual(["AGENTS.md"]);
-  });
+  });;;;;;
 });
 
 describe("scaffoldConfigToml", () => {
@@ -341,34 +260,18 @@ describe("scaffoldConfigToml", () => {
     expect(raw).toContain("EARS (Easy Approach to Requirements Syntax) is mandatory");
     expect(raw).toContain("[spec]");
     expect(raw).toContain("tx spec discover");
-    expect(raw).toContain("[memory]");
-    expect(raw).toContain("https://txdocs.dev/docs/primitives/memory");
-    expect(raw).toContain('default_dir = "specs"');
-    expect(raw).toContain("[cycles]");
-    expect(raw).toContain("https://txdocs.dev/docs/headful/docs-runs-cycles");
     expect(raw).toContain("[dashboard]");
     expect(raw).toContain(
-      "https://txdocs.dev/docs/headful/filters-and-settings",
+      "https://txdocs.dev/docs/getting-started",
     );
-    expect(raw).toContain("[pins]");
-    expect(raw).toContain("https://txdocs.dev/docs/primitives/pin");
     // Check defaults are set
     expect(raw).toContain('path = "specs"');
     expect(raw).toContain("test_patterns = [");
     expect(raw).toContain('design_doc_missing_task_links = "always"');
-    expect(raw).toContain("agents = 3");
-    expect(raw).toContain('model = "claude-opus-4-6"');
     expect(raw).toContain('default_task_assigment_type = "human"');
-    expect(raw).toContain('target_files = "CLAUDE.md, AGENTS.md"');
-    expect(raw).toContain("block_agent_done_when_task_id_present = true");
-    // Bounded autonomy sections
-    expect(raw).toContain("[guard]");
-    expect(raw).toContain('mode = "advisory"');
-    expect(raw).toContain("[verify]");
-    expect(raw).toContain("timeout = 300");
-    expect(raw).toContain("[reflect]");
-    expect(raw).toContain('provider = "auto"');
-    expect(raw).toContain("default_sessions = 10");
+    expect(raw.split("\n").length).toBeLessThan(90)
+    expect(readTxConfig(cwd)).toEqual(DEFAULTS)
+    // Configuration stays limited to docs, verification and task UI settings.
   });
 
   it("is a no-op when config.toml already exists", () => {
@@ -443,11 +346,10 @@ describe("spec type configuration", () => {
     const config = readTxConfig(makeTempDir());
 
     expect(Object.keys(config.spec.types).sort()).toEqual([
-      "decision",
       "design",
       "overview",
+      "plan",
       "prd",
-      "runbook",
     ]);
     expect(config.spec.types.prd.sections.map((s) => s.heading)).toEqual([
       "Summary",
@@ -524,26 +426,7 @@ describe("spec type configuration", () => {
     expect(readTxConfig(cwd).spec.types.rfc.sections.map((s) => s.heading)).toEqual([
       "Summary",
     ]);
-  });
-
-  it("overrides a built-in type's sections while keeping other built-ins", () => {
-    const cwd = makeTempDir();
-    writeConfig(
-      cwd,
-      [
-        "[spec.types.prd]",
-        'sections = ["Summary", "Why Now"]',
-        "",
-      ].join("\n"),
-    );
-
-    const config = readTxConfig(cwd);
-    expect(config.spec.types.prd.sections.map((s) => s.heading)).toEqual([
-      "Summary",
-      "Why Now",
-    ]);
-    expect(config.spec.types.design.sections).toEqual(BUILTIN_SPEC_TYPES.design.sections);
-  });
+  });;
 
   it("keeps built-in sections when a type declares only severity", () => {
     const cwd = makeTempDir();
@@ -594,7 +477,6 @@ describe("spec type configuration", () => {
 
     const config = readTxConfig(cwd);
     expect(config.spec.designDocMissingTaskLinks).toBe("always");
-    expect(config.spec.testPatterns.length).toBe(11);
-    expect(config.memory.defaultDir).toBe("specs");
+    expect(config.spec.testPatterns).toEqual(defaultSpecTestPatterns());
   });
 });

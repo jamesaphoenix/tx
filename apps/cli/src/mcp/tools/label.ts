@@ -52,7 +52,7 @@ const handleLabelAdd = async (args: {
       isError: false,
     }
   } catch (error) {
-    return handleToolError("tx_auto_label_add", args, error)
+    return handleToolError("tx_task_label_add", args, error)
   }
 }
 
@@ -79,7 +79,7 @@ const handleLabelDelete = async (args: {
       isError: false,
     }
   } catch (error) {
-    return handleToolError("tx_auto_label_delete", args, error)
+    return handleToolError("tx_task_label_delete", args, error)
   }
 }
 
@@ -106,7 +106,7 @@ const handleLabelAssign = async (args: {
       isError: false,
     }
   } catch (error) {
-    return handleToolError("tx_auto_label_assign", args, error)
+    return handleToolError("tx_task_label_assign", args, error)
   }
 }
 
@@ -126,7 +126,7 @@ const handleLabelUnassign = async (args: {
     if (result === "removed") {
       text = `Label "${args.labelName}" removed from ${id}`
     } else if (result === "label_not_found") {
-      text = `Label "${args.labelName}" not found. Use tx_auto_label_list to see available labels.`
+      text = `Label "${args.labelName}" not found. Use tx_task_label_list to see available labels.`
     } else {
       text = `Label "${args.labelName}" was not assigned to ${id}`
     }
@@ -146,7 +146,7 @@ const handleLabelUnassign = async (args: {
       isError: false,
     }
   } catch (error) {
-    return handleToolError("tx_auto_label_unassign", args, error)
+    return handleToolError("tx_task_label_unassign", args, error)
   }
 }
 
@@ -166,7 +166,7 @@ const handleLabelList = async (
           type: "text",
           text:
             labels.length === 0
-              ? "No labels defined. Use tx_auto_label_add to create one."
+              ? "No labels defined. Use tx_task_label_add to create one."
               : `${labels.length} label(s)`,
         },
         { type: "text", text: JSON.stringify(labels.map(serializeLabel)) },
@@ -174,7 +174,7 @@ const handleLabelList = async (
       isError: false,
     }
   } catch (error) {
-    return handleToolError("tx_auto_label_list", {}, error)
+    return handleToolError("tx_task_label_list", {}, error)
   }
 }
 
@@ -185,7 +185,7 @@ const handleLabelList = async (
 export const registerLabelTools = (server: McpServer): void => {
   registerEffectTool(
     server,
-    "tx_auto_label_add",
+    "tx_task_label_add",
     "Create a new label for ready queue scoping. Labels can be assigned to tasks to filter tx_ready and tx_list results.",
     {
       name: z.string().describe("Label name (case-insensitive, must be unique)"),
@@ -200,7 +200,7 @@ export const registerLabelTools = (server: McpServer): void => {
 
   registerEffectTool(
     server,
-    "tx_auto_label_delete",
+    "tx_task_label_delete",
     "Delete a label. Also removes all task assignments for this label.",
     {
       name: z.string().describe("Label name to delete"),
@@ -210,8 +210,8 @@ export const registerLabelTools = (server: McpServer): void => {
 
   registerEffectTool(
     server,
-    "tx_auto_label_assign",
-    "Assign a label to a task. The label must already exist (create with tx_auto_label_add first). Use labels to scope ready queue filtering.",
+    "tx_task_label_assign",
+    "Assign a label to a task. The label must already exist (create with tx_task_label_add first). Use labels to scope ready queue filtering.",
     {
       taskId: z.string().describe("Task ID to assign the label to"),
       labelName: z.string().describe("Name of the label to assign"),
@@ -222,7 +222,7 @@ export const registerLabelTools = (server: McpServer): void => {
 
   registerEffectTool(
     server,
-    "tx_auto_label_unassign",
+    "tx_task_label_unassign",
     "Remove a label from a task. Returns whether the label was actually assigned.",
     {
       taskId: z.string().describe("Task ID to remove the label from"),
@@ -234,7 +234,7 @@ export const registerLabelTools = (server: McpServer): void => {
 
   registerEffectTool(
     server,
-    "tx_auto_label_list",
+    "tx_task_label_list",
     "List all defined labels. Returns label names, colors, and metadata.",
     {},
     async (args) => handleLabelList(args as Record<string, unknown>)

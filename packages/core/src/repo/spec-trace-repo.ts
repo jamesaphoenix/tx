@@ -2,7 +2,7 @@ import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
 import { DatabaseError, EntityFetchError } from "../errors.js"
 import { rowToSpecSignoff, rowToSpecTest, rowToSpecTestRun } from "../mappers/spec-trace.js"
-import { buildInvariantFilterSql } from "./spec-trace-repo.filter.js"
+import { buildInvariantFilterSql, docScopeAliases } from "./spec-trace-repo.filter.js"
 import type { SpecPruneCandidate, SpecTraceRepositoryService, SyncDiscoveredSpecTestInput } from "./spec-trace-repo.types.js"
 import { ensureSpecProjection } from "./spec-projection.js"
 import { legacySpecProjectionContext, type SpecProjectionContext } from "../workspace-context.js"
@@ -86,7 +86,7 @@ export const makeSpecTraceRepositoryLive = (
                ON CONFLICT(projection_key, invariant_id, test_id) DO UPDATE SET
                  test_file = excluded.test_file,
                  test_name = excluded.test_name,
-                 framework = excluded.framework,
+                 framework = CASE WHEN spec_tests.discovery = 'manual' THEN spec_tests.framework ELSE excluded.framework END,
                  -- Never downgrade a manually curated link to an auto-discovered
                  -- source (auto-discovery would otherwise overwrite 'manual' with
                  -- 'tag', after which the prune step could delete it). A manual
@@ -171,17 +171,19 @@ export const makeSpecTraceRepositoryLive = (
           try: () => {
             if (testIds.length === 0) return new Map<string, readonly SpecTest[]>()
 
-            const placeholders = testIds.map(() => "?").join(", ")
-            const rows = db.prepare<SpecTestRow>(
-              `SELECT * FROM spec_tests WHERE projection_key = ? AND test_id IN (${placeholders}) ORDER BY test_id, invariant_id`
-            ).all(projectionKey, ...testIds)
-
             const result = new Map<string, SpecTest[]>()
-            for (const row of rows) {
-              const mapped = rowToSpecTest(row)
-              const current = result.get(mapped.testId) ?? []
-              current.push(mapped)
-              result.set(mapped.testId, current)
+            for (let offset = 0; offset < testIds.length; offset += 500) {
+              const chunk = testIds.slice(offset, offset + 500)
+              const placeholders = chunk.map(() => "?").join(", ")
+              const rows = db.prepare<SpecTestRow>(
+                `SELECT * FROM spec_tests WHERE projection_key = ? AND test_id IN (${placeholders}) ORDER BY test_id, invariant_id`
+              ).all(projectionKey, ...chunk)
+              for (const row of rows) {
+                const mapped = rowToSpecTest(row)
+                const current = result.get(mapped.testId) ?? []
+                current.push(mapped)
+                result.set(mapped.testId, current)
+              }
             }
 
             return result
@@ -189,16 +191,21 @@ export const makeSpecTraceRepositoryLive = (
           catch: (cause) => new DatabaseError({ cause }),
         }),
 
-      findSpecTestsByTestName: (testName) =>
-        Effect.try({
-          try: () => {
-            const rows = db.prepare<SpecTestRow>(
-              "SELECT * FROM spec_tests WHERE projection_key = ? AND test_name = ? ORDER BY invariant_id"
-            ).all(projectionKey, testName)
-            return rows.map(rowToSpecTest)
-          },
-          catch: (cause) => new DatabaseError({ cause }),
-        }),
+      findParameterizedSpecTestsByFiles: (testFiles) => Effect.try({
+        try: () => {
+          const rows: SpecTest[] = []
+          const files = [...new Set(testFiles)]
+          for (let offset = 0; offset < files.length; offset += 500) {
+            const chunk = files.slice(offset, offset + 500)
+            const placeholders = chunk.map(() => "?").join(",")
+            rows.push(...db.prepare<SpecTestRow>(`SELECT * FROM spec_tests WHERE projection_key = ?
+              AND framework IN ('vitest-each','jest-each') AND test_file IN (${placeholders})
+              ORDER BY test_id, invariant_id`).all(projectionKey,...chunk).map(rowToSpecTest))
+          }
+          return rows
+        },
+        catch: cause => new DatabaseError({cause}),
+      }),
 
       previewDiscoveredSpecTestPrune: ({ rows, invariantIds }) =>
         Effect.try({
@@ -223,7 +230,7 @@ export const makeSpecTraceRepositoryLive = (
                ON CONFLICT(projection_key, invariant_id, test_id) DO UPDATE SET
                  test_file = excluded.test_file,
                  test_name = excluded.test_name,
-                 framework = excluded.framework,
+                 framework = CASE WHEN spec_tests.discovery = 'manual' THEN spec_tests.framework ELSE excluded.framework END,
                  -- Never downgrade a manually curated link to an auto-discovered
                  -- source (auto-discovery would otherwise overwrite 'manual' with
                  -- 'tag', after which the prune step could delete it). A manual
@@ -236,7 +243,12 @@ export const makeSpecTraceRepositoryLive = (
               )
 
               const transaction = runImmediateTransaction(() => {
+                const markSource = db.prepare(`UPDATE spec_tests SET framework = 'source'
+                  WHERE projection_key = ? AND invariant_id = ? AND test_file = ? AND discovery = 'comment'`)
                 for (const row of rows) {
+                  // Reclassify older auto-discovered source annotations in this
+                  // scope, including shifted lines. Keep explicit manual tests.
+                  if (row.framework === "source") markSource.run(projectionKey,row.invariantId,row.testFile)
                   upsert.run(
                     projectionKey,
                     row.invariantId,
@@ -461,6 +473,7 @@ export const makeSpecTraceRepositoryLive = (
                    SELECT 1 FROM spec_tests st
                    WHERE st.projection_key = i.projection_key
                      AND st.invariant_id = i.id
+                     AND (st.framework IS NULL OR st.framework != 'source')
                  )
                ORDER BY i.id`
             ).all(...params)
@@ -478,6 +491,7 @@ export const makeSpecTraceRepositoryLive = (
       upsertSignoff: (scopeType, scopeValue, signedOffBy, notes) =>
         Effect.try({
           try: () => {
+            if (scopeType === "doc" && scopeValue !== null) scopeValue = docScopeAliases(db,scopeValue)[0]!
             ensureSpecProjection(db, projection)
             if (scopeValue === null) {
               db.prepare(
@@ -521,6 +535,13 @@ export const makeSpecTraceRepositoryLive = (
       findSignoff: (scopeType, scopeValue) =>
         Effect.try({
           try: () => {
+            if (scopeType === "doc" && scopeValue !== null) {
+              const aliases = docScopeAliases(db,scopeValue)
+              const row = db.prepare<SpecSignoffRow>(`SELECT * FROM spec_signoffs
+                WHERE projection_key=? AND scope_type='doc' AND scope_value IN (${aliases.map(() => "?").join(",")})
+                ORDER BY signed_off_at DESC,id DESC LIMIT 1`).get(projectionKey,...aliases)
+              return row ? rowToSpecSignoff(row) : null
+            }
             const row = db.prepare<SpecSignoffRow>(
               `SELECT * FROM spec_signoffs WHERE projection_key = ? AND scope_type = ? AND (
                  (scope_value IS NULL AND ? IS NULL) OR scope_value = ?

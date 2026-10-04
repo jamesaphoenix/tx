@@ -8,7 +8,7 @@
  * ```typescript
  * import { chaos } from '@tx/test-utils'
  *
- * await chaos.raceWorkers(5, taskId)
+ * await chaos.doubleComplete({ taskId, db })
  * await chaos.crashAfter(100)
  * ```
  *
@@ -21,14 +21,6 @@ export {
   CrashSimulationError,
   type CrashAfterOptions,
   type CrashAfterResult,
-  // Worker heartbeat manipulation
-  killHeartbeat,
-  WorkerHeartbeatController,
-  type KillHeartbeatOptions,
-  // Race condition testing
-  raceWorkers,
-  type RaceWorkersOptions,
-  type RaceWorkersResult,
   // State corruption
   corruptState,
   type CorruptStateOptions,
@@ -46,10 +38,6 @@ export {
   partialWrite,
   type PartialWriteOptions,
   type PartialWriteResult,
-  // Delayed claim testing
-  delayedClaim,
-  type DelayedClaimOptions,
-  type DelayedClaimResult,
   // Stress testing
   stressLoad,
   type StressLoadOptions,

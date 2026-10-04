@@ -71,30 +71,30 @@ describe("CLI golden path", { timeout: SUITE_TIMEOUT }, () => {
     ].join("\n"))
 
     const prdTask = parseJson<{ id: string }>(
-      expectOk(runTx(cwd, ["add", "Write auth PRD", "--json"]), 'tx add "Write auth PRD"'),
+      expectOk(runTx(cwd, ["task", "add", "Write auth PRD", "--json"]), 'tx task add "Write auth PRD"'),
     )
     const implementTask = parseJson<{ id: string }>(
-      expectOk(runTx(cwd, ["add", "Implement auth flow", "--json"]), 'tx add "Implement auth flow"'),
+      expectOk(runTx(cwd, ["task", "add", "Implement auth flow", "--json"]), 'tx task add "Implement auth flow"'),
     )
 
-    expectOk(runTx(cwd, ["block", implementTask.id, prdTask.id]), "tx block implement -> prd")
+    expectOk(runTx(cwd, ["task", "dep", "block", implementTask.id, prdTask.id]), "tx task dep block implement -> prd")
 
     const readyBefore = parseJson<Array<{ id: string }>>(
-      expectOk(runTx(cwd, ["ready", "--json"]), "tx ready before completion"),
+      expectOk(runTx(cwd, ["task", "ready", "--json"]), "tx task ready before completion"),
     )
     expect(readyBefore.map((task) => task.id)).toContain(prdTask.id)
     expect(readyBefore.map((task) => task.id)).not.toContain(implementTask.id)
 
     const prdTaskDetails = parseJson<{ id: string; title: string }>(
-      expectOk(runTx(cwd, ["show", prdTask.id, "--json"]), "tx show prd task"),
+      expectOk(runTx(cwd, ["task", "show", prdTask.id, "--json"]), "tx task show prd task"),
     )
     expect(prdTaskDetails.id).toBe(prdTask.id)
     expect(prdTaskDetails.title).toBe("Write auth PRD")
 
-    expectOk(runTx(cwd, ["done", prdTask.id]), "tx done prd task")
+    expectOk(runTx(cwd, ["task", "done", prdTask.id]), "tx task done prd task")
 
     const readyAfter = parseJson<Array<{ id: string }>>(
-      expectOk(runTx(cwd, ["ready", "--json"]), "tx ready after completion"),
+      expectOk(runTx(cwd, ["task", "ready", "--json"]), "tx task ready after completion"),
     )
     expect(readyAfter.map((task) => task.id)).toContain(implementTask.id)
 
@@ -203,6 +203,6 @@ describe("CLI golden path", { timeout: SUITE_TIMEOUT }, () => {
 
     const codexSkillContent = readFileSync(join(cwd, ".codex", "skills", "tx-tasks", "SKILL.md"), "utf-8")
     expect(codexSkillContent).toContain("Create tasks")
-    expect(codexSkillContent).toContain("tx add")
+    expect(codexSkillContent).toContain("tx task add")
   })
 })

@@ -1,12 +1,12 @@
 import { Context, Effect, Layer } from "effect"
-import { resolve } from "node:path"
+import { isAbsolute, resolve, win32 } from "node:path"
 import { XMLParser, XMLValidator } from "fast-xml-parser"
 import { SpecTraceRepository, type InvariantSummary, type SpecTraceFilter } from "../repo/spec-trace-repo.js"
 import { DocService } from "../services/doc-service.js"
 import { DatabaseError, ValidationError } from "../errors.js"
 import { defaultSpecTestPatterns, discoverSpecTests } from "../utils/spec-discovery.js"
 import { readTxConfig } from "../utils/toml-config.js"
-import { toNormalizedRelativePath } from "../utils/file-path.js"
+import { resolvePathForComparison, toNormalizedRelativePath } from "../utils/file-path.js"
 import type {
   BatchRunInput,
   DiscoverResult,
@@ -51,16 +51,21 @@ const normalizeDetails = (value: string | null | undefined): string | null => {
   return value.slice(0, MAX_RUN_DETAILS_LENGTH)
 }
 
-const extractTestNameFromCanonicalId = (testId: string): string | null => {
-  const splitAt = testId.lastIndexOf("::")
-  if (splitAt < 0) return null
-  const name = testId.slice(splitAt + 2).trim()
-  return name.length > 0 ? name : null
-}
-
 const toCanonicalTestId = (testFile: string, testName: string | null): string => {
   const name = testName && testName.trim().length > 0 ? testName.trim() : "manual"
   return `${testFile}::${name}`
+}
+
+const parameterizedTitlePattern = (title: string): RegExp => {
+  const tokens = /%%|%[sdifjoOp#$]|\$[\w$.]+/g
+  const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  let pattern = "", cursor = 0
+  for (const match of title.matchAll(tokens)) {
+    pattern += escape(title.slice(cursor,match.index))
+    pattern += match[0] === "%%" ? "%" : "[\\s\\S]*?"
+    cursor = match.index! + match[0].length
+  }
+  return new RegExp(`^${pattern}${escape(title.slice(cursor))}$`)
 }
 
 const resolveSignoffScope = (filter?: SpecTraceFilter): {
@@ -90,7 +95,7 @@ const classifyInvariants = (params: {
   let untested = 0
 
   for (const invariant of invariants) {
-    const tests = testsByInvariant.get(invariant.id) ?? []
+    const tests = (testsByInvariant.get(invariant.id) ?? []).filter(test => test.framework !== "source")
     if (tests.length === 0) {
       uncovered += 1
       continue
@@ -183,18 +188,17 @@ export const makeSpecTraceServiceLive = (
     const repo = yield* SpecTraceRepository
     const docService = yield* DocService
 
-    const resolveLinksForTestId = (testId: string) =>
-      Effect.gen(function* () {
-        const direct = yield* repo.findSpecTestsByTestId(testId)
-        if (direct.length > 0) return direct
-
-        const testName = extractTestNameFromCanonicalId(testId)
-        if (!testName) return [] as readonly SpecTest[]
-
-        const byName = yield* repo.findSpecTestsByTestName(testName)
-        // Only accept fallback when unambiguous.
-        return byName.length === 1 ? byName : []
-      })
+    const normalizeEvidenceId = (testId: string): string => {
+      const separator = testId.indexOf("::")
+      if (separator < 0) return testId
+      const file = testId.slice(0, separator).replace(/\\/g, "/")
+      const root = resolvePathForComparison(contentRoot ?? process.cwd())
+      const normalized = toNormalizedRelativePath(root,
+        isAbsolute(file) || win32.isAbsolute(file) ? resolvePathForComparison(file) : file)
+      return `${normalized}::${testId.slice(separator + 2)}`
+    }
+    // Evidence belongs to a file and assertion, not to a title used elsewhere.
+    const resolveLinksForTestId = (testId: string) => repo.findSpecTestsByTestId(normalizeEvidenceId(testId)).pipe(Effect.map(rows => rows.filter(row => row.framework !== "source")))
 
     const computeFci = (filter?: SpecTraceFilter) =>
       Effect.gen(function* () {
@@ -339,7 +343,7 @@ export const makeSpecTraceServiceLive = (
 
       unlink: (invariantId, testId) => repo.deleteSpecTest(invariantId, testId),
 
-      testsForInvariant: (invariantId) => repo.findSpecTestsByInvariant(invariantId),
+      testsForInvariant: (invariantId) => repo.findSpecTestsByInvariant(invariantId).pipe(Effect.map(rows => rows.filter(row => row.framework !== "source"))),
 
       invariantsForTest: (testId) =>
         Effect.gen(function* () {
@@ -385,35 +389,27 @@ export const makeSpecTraceServiceLive = (
             }
           }
 
-          const uniqueTestIds = [...new Set(results.map((row) => row.testId))]
+          const uniqueTestIds = [...new Set(results.map((row) => normalizeEvidenceId(row.testId)))]
           const byTestId = yield* repo.findSpecTestsByTestIds(uniqueTestIds)
-          const byNameCache = new Map<string, readonly SpecTest[]>()
+          const parameterized = yield* repo.findParameterizedSpecTestsByFiles(uniqueTestIds.map(id => id.slice(0,id.indexOf("::"))))
+          const patterns = parameterized.map(link => ({link,pattern:parameterizedTitlePattern(link.testName ?? "")}))
 
           const unmatched = new Set<string>()
-          const inserts: Array<{
+          const inserts = new Map<number, {
             specTestId: number
             passed: boolean
             durationMs?: number | null
             details?: string | null
             runAt?: string
-          }> = []
+          }>()
 
           for (const row of results) {
-            let links = byTestId.get(row.testId) ?? []
-
-            if (links.length === 0) {
-              const testName = extractTestNameFromCanonicalId(row.testId)
-              if (testName) {
-                let cached = byNameCache.get(testName)
-                if (!cached) {
-                  cached = yield* repo.findSpecTestsByTestName(testName)
-                  byNameCache.set(testName, cached)
-                }
-                if (cached.length === 1) {
-                  links = cached
-                }
-              }
-            }
+            const normalized = normalizeEvidenceId(row.testId)
+            const separator = normalized.indexOf("::")
+            const file = normalized.slice(0,separator), title = normalized.slice(separator + 2)
+            const exact = (byTestId.get(normalized) ?? []).filter(link => link.framework !== "source")
+            const links = [...exact,...patterns.filter(({link,pattern}) => link.testFile === file &&
+              link.testName !== title && pattern.test(title)).map(({link}) => link)]
 
             if (links.length === 0) {
               unmatched.add(row.testId)
@@ -421,17 +417,20 @@ export const makeSpecTraceServiceLive = (
             }
 
             for (const link of links) {
-              inserts.push({
+              const previous = inserts.get(link.id)
+              const details = normalizeDetails(row.details ?? null)
+              inserts.set(link.id, {
                 specTestId: link.id,
-                passed: row.passed,
-                durationMs: row.durationMs ?? null,
-                details: normalizeDetails(row.details ?? null),
+                passed: row.passed && (previous?.passed ?? true),
+                durationMs: previous?.durationMs != null || row.durationMs != null
+                  ? (previous?.durationMs ?? 0) + (row.durationMs ?? 0) : null,
+                details: normalizeDetails([previous?.details, details].filter(Boolean).join("\n") || null),
                 runAt: options?.runAt,
               })
             }
           }
 
-          const inserted = yield* repo.insertRunsBatch(inserts)
+          const inserted = yield* repo.insertRunsBatch([...inserts.values()])
 
           return {
             received: results.length,
@@ -472,7 +471,9 @@ export const makeSpecTraceServiceLive = (
             invariantId: invariant.id,
             rule: invariant.rule,
             subsystem: invariant.subsystem,
-            tests: (testsByInvariant.get(invariant.id) ?? []).sort((a, b) => a.testId.localeCompare(b.testId)),
+            tests: (testsByInvariant.get(invariant.id) ?? []).filter(test => test.framework !== "source").sort((a, b) => a.testId.localeCompare(b.testId)),
+            sourceRefs: (testsByInvariant.get(invariant.id) ?? []).filter(test => test.framework === "source")
+              .map(test => test.testId.replace(/::spec@line-(\d+)$/, ":$1")).sort(),
           }))
 
           return out
@@ -579,33 +580,6 @@ const parseGenericBatch = (value: unknown): BatchRunInput[] => {
   return out
 }
 
-/**
- * Strip common absolute path prefixes to produce a relative path.
- * Handles both Unix and Windows paths. Tries to detect the repo root
- * by looking for common project markers in the path.
- */
-const normalizeVitestFilePath = (filePath: string): string => {
-  const normalized = filePath.replace(/\\/g, "/")
-
-  // If already relative, return as-is
-  if (!normalized.startsWith("/") && !/^[A-Za-z]:\//.test(normalized)) {
-    return normalized
-  }
-
-  // Try to find the repo-relative path by detecting common monorepo markers
-  const markers = ["/apps/", "/packages/", "/src/", "/test/", "/tests/", "/lib/"]
-  for (const marker of markers) {
-    const idx = normalized.indexOf(marker)
-    if (idx >= 0) {
-      return normalized.slice(idx + 1)
-    }
-  }
-
-  // Fallback: use just the filename
-  const lastSlash = normalized.lastIndexOf("/")
-  return lastSlash >= 0 ? normalized.slice(lastSlash + 1) : normalized
-}
-
 const parseVitestBatch = (value: unknown): BatchRunInput[] => {
   const out: BatchRunInput[] = []
 
@@ -626,7 +600,8 @@ const parseVitestBatch = (value: unknown): BatchRunInput[] => {
         assertionResults?: unknown
       }
       const rawFileName = typeof fileObj.name === "string" ? fileObj.name.replace(/\\/g, "/") : "vitest"
-      const relFileName = normalizeVitestFilePath(rawFileName)
+      // Preserve the path until the service can resolve it against its content root.
+      const relFileName = rawFileName
       if (!Array.isArray(fileObj.assertionResults)) continue
 
       for (const assertion of fileObj.assertionResults) {
@@ -639,10 +614,11 @@ const parseVitestBatch = (value: unknown): BatchRunInput[] => {
           failureMessages?: unknown
         }
         const status = typeof a.status === "string" ? a.status : "failed"
-        if (status !== "passed" && status !== "pass" && status !== "failed" && status !== "fail") {
+        const skipped = status === "skipped" || status === "pending" || status === "todo"
+        if (!skipped && status !== "passed" && status !== "pass" && status !== "failed" && status !== "fail") {
           continue
         }
-        const details = Array.isArray(a.failureMessages)
+        const details = skipped ? `Test did not execute (${status})` : Array.isArray(a.failureMessages)
           ? a.failureMessages.filter((x): x is string => typeof x === "string").join("\n")
           : undefined
         const passed = status === "passed" || status === "pass"

@@ -1,3 +1,4 @@
+const normaliseTaskCommand = (args: string[]): string[] => /^(add|list|ready|show|update|done|reset|delete|bulk|label|dep|block|unblock|children|tree)$/.test(args[0] ?? "") ? ["task", ...(/^(block|unblock|children|tree)$/.test(args[0]) ? ["dep"] : []), ...args] : args
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { spawn, spawnSync, type ChildProcessByStdio } from "node:child_process"
 import { createServer } from "node:net"
@@ -57,6 +58,8 @@ function getFreePort(): Promise<number> {
 }
 
 function runTx(args: string[], dbPath: string, cwd: string): ExecResult {
+  args = normaliseTaskCommand(args)
+
   const res = spawnSync("bun", [CLI_SRC, ...args, "--db", dbPath], {
     cwd,
     encoding: "utf-8",

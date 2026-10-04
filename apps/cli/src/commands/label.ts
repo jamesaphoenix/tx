@@ -8,7 +8,10 @@ import { Effect } from "effect"
 import { LabelRepository } from "@jamesaphoenix/tx"
 import { toJson } from "../output.js"
 import { type Flags, flag, parseTaskId } from "../utils/parse.js"
+import { CliUserError, unknownSubcommandError, usageError } from "../cli-errors.js"
 import { CliExitError } from "../cli-exit.js"
+
+const shellQuote = (value: string): string => '"' + value.replace(/["\\$`]/g, "\\$&") + '"'
 
 export const label = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
@@ -21,17 +24,16 @@ export const label = (pos: string[], flags: Flags) =>
     if (sub === "assign") return yield* labelAssign(pos.slice(1), flags)
     if (sub === "unassign") return yield* labelUnassign(pos.slice(1), flags)
 
-    console.error(`Unknown label subcommand: ${sub}`)
-    console.error("Usage: tx label [add|delete|assign|unassign|list]")
-    throw new CliExitError(1)
+    return yield* Effect.fail(unknownSubcommandError({command:"task label",subcommand:sub,
+      usage:"tx task label [add|delete|assign|unassign|list]"}))
   })
 
 const labelAdd = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const name = pos[0]
     if (!name) {
-      console.error("Usage: tx label add <name> [--color <hex>]")
-      throw new CliExitError(1)
+      return yield* Effect.fail(usageError({message:"A label name is required.",
+        usage:"tx task label add <name> [--color <hex>] [--json]"}))
     }
     const color = (typeof flags.color === "string" ? flags.color : null) ?? "#6b7280"
 
@@ -49,8 +51,8 @@ const labelRemove = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const name = pos[0]
     if (!name) {
-      console.error("Usage: tx label delete <name>")
-      throw new CliExitError(1)
+      return yield* Effect.fail(usageError({message:"A label name is required.",
+        usage:"tx task label delete <name> [--json]"}))
     }
 
     const repo = yield* LabelRepository
@@ -72,23 +74,17 @@ const labelAssign = (pos: string[], flags: Flags) =>
     const rawId = pos[0]
     const name = pos[1]
     if (!rawId || !name) {
-      console.error("Usage: tx label assign <task-id> <label-name>")
-      throw new CliExitError(1)
+      return yield* Effect.fail(usageError({message:"A task ID and label name are required.",
+        usage:"tx task label assign <task-id> <label-name> [--json]"}))
     }
     const id = parseTaskId(rawId)
 
     const repo = yield* LabelRepository
     yield* repo.assign(id, name).pipe(
-      Effect.catchTags({
-        TaskNotFoundError: () => {
-          console.error(`Error: Task ${id} not found`)
-          return Effect.die(new CliExitError(1))
-        },
-        LabelNotFoundError: (e) => {
-          console.error(`Error: ${e.message}. Create it first with: tx label add "${name}"`)
-          return Effect.die(new CliExitError(1))
-        },
-      })
+      Effect.mapError(error => error._tag === "LabelNotFoundError"
+        ? new CliUserError({code:"service/label-not-found",message:error.message,
+          hint:`Create it first with: tx task label add -- ${shellQuote(name)}`,exitCode:2})
+        : error)
     )
 
     if (flag(flags, "json")) {
@@ -103,8 +99,8 @@ const labelUnassign = (pos: string[], flags: Flags) =>
     const rawId = pos[0]
     const name = pos[1]
     if (!rawId || !name) {
-      console.error("Usage: tx label unassign <task-id> <label-name>")
-      throw new CliExitError(1)
+      return yield* Effect.fail(usageError({message:"A task ID and label name are required.",
+        usage:"tx task label unassign <task-id> <label-name> [--json]"}))
     }
     const id = parseTaskId(rawId)
 
@@ -117,7 +113,7 @@ const labelUnassign = (pos: string[], flags: Flags) =>
       if (result === "removed") {
         console.log(`Label "${name}" removed from ${id}`)
       } else if (result === "label_not_found") {
-        console.error(`Label "${name}" not found. Use \`tx label list\` to see available labels.`)
+        console.error(`Label "${name}" not found. Use \`tx task label list\` to see available labels.`)
         throw new CliExitError(1)
       } else {
         console.log(`Label "${name}" was not assigned to ${id}`)
@@ -134,7 +130,7 @@ const labelList = (flags: Flags) =>
       console.log(toJson(labels))
     } else {
       if (labels.length === 0) {
-        console.log("No labels defined. Use `tx label add <name>` to create one.")
+        console.log("No labels defined. Use `tx task label add <name>` to create one.")
       } else {
         console.log(`${labels.length} label(s):`)
         for (const l of labels) {

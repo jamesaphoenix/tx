@@ -90,7 +90,7 @@ describe("CLI spec lint", () => {
   describe("task-doc coverage", () => {
     it("warns about tasks not linked to docs", () => {
       // Add a task but don't attach it to a doc
-      const addResult = runTx(cwd, dbPath, ["add", "Unlinked task"])
+      const addResult = runTx(cwd, dbPath, ["task", "add", "Unlinked task"])
       expect(addResult.status).toBe(0)
 
       const result = runTx(cwd, dbPath, ["spec", "lint"])
@@ -100,8 +100,8 @@ describe("CLI spec lint", () => {
     })
 
     it("JSON reports coverage warnings", () => {
-      runTx(cwd, dbPath, ["add", "Task A"])
-      runTx(cwd, dbPath, ["add", "Task B"])
+      runTx(cwd, dbPath, ["task", "add", "Task A"])
+      runTx(cwd, dbPath, ["task", "add", "Task B"])
 
       const result = runTx(cwd, dbPath, ["spec", "lint", "--json"])
       expect(result.status).toBe(0)

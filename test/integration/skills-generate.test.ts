@@ -14,16 +14,16 @@ describe("tx skills generate", () => {
     const result=run(["help","skills","generate"],sandbox())
     expect(result.status).toBe(0);expect(result.stdout).toContain("--output-dir");expect(result.stdout).toContain("--clean")
   })
-  it("generates three install-ready guides for each target with valid manifests", () => {
+  it("generates four install-ready guides for each target with valid manifests", () => {
     const root=sandbox(), out=join(root,"out")
     const result=run(["skills","generate","--output-dir",out,"--clean","--json"],root)
     expect(result.status).toBe(0)
     const parsed=JSON.parse(result.stdout) as {targets:Array<{target:string;manifestPath:string;skillCount:number;fileCount:number}>}
     expect(parsed.targets).toHaveLength(2)
     for(const target of parsed.targets){
-      expect(target.skillCount).toBe(3);expect(target.fileCount).toBe(4)
+      expect(target.skillCount).toBe(4);expect(target.fileCount).toBe(5)
       const manifest=JSON.parse(readFileSync(target.manifestPath,"utf8")) as {skills:Array<{id:string;installPath:string}>}
-      expect(manifest.skills.map(s=>s.id)).toEqual(["tx-tasks","tx-docs","verify-invariants"])
+      expect(manifest.skills.map(s=>s.id)).toEqual(["tx-plan","tx-tasks","tx-docs","verify-invariants"])
       for(const skill of manifest.skills){
         const dir=join(out,target.target,skill.installPath), content=readFileSync(join(dir,"SKILL.md"),"utf8")
         expect(readdirSync(dir)).toEqual(["SKILL.md"])

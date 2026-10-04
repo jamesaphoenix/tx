@@ -41,18 +41,10 @@ afterEach(() => {
 })
 
 describe("resolveSpecTypes", () => {
-  it("[INV-SPECCFG-001] resolves the five built-in spec types plus legacy kinds", () => {
+  it("[INV-SPECCFG-001] resolves only overview, PRD, design and plan by default", () => {
     const registry = resolveSpecTypes(readTxConfig(makeTempDir()))
 
-    expect(specTypeNames(registry)).toEqual([
-      "decision",
-      "design",
-      "overview",
-      "prd",
-      "requirement",
-      "runbook",
-      "system_design",
-    ])
+    expect(specTypeNames(registry)).toEqual(["design", "overview", "plan", "prd"])
     expect(registry.types.get("prd")!.builtin).toBe(true)
     expect(registry.types.get("prd")!.sectionsCustomized).toBe(false)
     expect(registry.warnings).toEqual([])

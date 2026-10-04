@@ -26,6 +26,7 @@ export const SyncLive = HttpApiBuilder.group(TxApi, "sync", (handlers) =>
         return {
           importedEvents: result.importedEvents,
           appliedEvents: result.appliedEvents,
+          ignoredEvents: result.ignoredEvents,
           streamCount: result.streamCount
         }
       }).pipe(Effect.mapError(mapCoreError))
@@ -68,6 +69,7 @@ export const SyncLive = HttpApiBuilder.group(TxApi, "sync", (handlers) =>
         return {
           importedEvents: result.importedEvents,
           appliedEvents: result.appliedEvents,
+          ignoredEvents: result.ignoredEvents,
           streamCount: result.streamCount,
           rebuilt: result.rebuilt,
         }

@@ -1,3 +1,4 @@
+import { makeMinimalLayerFromInfra } from "@jamesaphoenix/tx"
 /**
  * Golden Path: Sync Workflow Integration Tests
  *
@@ -13,36 +14,15 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { Effect, Layer } from "effect"
-import { Database } from "bun:sqlite"
 import { existsSync, unlinkSync, readFileSync, mkdirSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
   SqliteClient,
-  TaskRepositoryLive,
-  DependencyRepositoryLive,
   DependencyRepository,
-  LearningRepositoryLive,
-  FileLearningRepositoryLive,
-  AttemptRepositoryLive,
-  PinRepositoryLive,
-  AnchorRepositoryLive,
-  EdgeRepositoryLive,
-  DocRepositoryLive,
-  TaskServiceLive,
   TaskService,
-  DependencyServiceLive,
   DependencyService,
-  ReadyServiceLive,
-  HierarchyServiceLive,
-  SyncServiceLive,
-  StreamServiceLive,
   SyncService,
-  AutoSyncServiceNoop,
-  GuardRepositoryLive,
-  ClaimRepositoryLive,
-  ClaimServiceLive,
-  OrchestratorStateRepositoryLive
 } from "@jamesaphoenix/tx"
 import type { TaskId } from "@jamesaphoenix/tx/types"
 import { fixtureId, createTestDatabase, type TestDatabase } from "@jamesaphoenix/tx/testing"
@@ -51,38 +31,7 @@ import { fixtureId, createTestDatabase, type TestDatabase } from "@jamesaphoenix
 // Test Layer Factory
 // =============================================================================
 
-function makeTestLayer(db: TestDatabase) {
-  const infra = Layer.succeed(SqliteClient, db.db as Database)
-  const repos = Layer.mergeAll(
-    TaskRepositoryLive,
-    DependencyRepositoryLive,
-    GuardRepositoryLive,
-    LearningRepositoryLive,
-    FileLearningRepositoryLive,
-    AttemptRepositoryLive,
-    PinRepositoryLive,
-    AnchorRepositoryLive,
-    EdgeRepositoryLive,
-    DocRepositoryLive,
-    ClaimRepositoryLive,
-    OrchestratorStateRepositoryLive
-  ).pipe(
-    Layer.provide(infra)
-  )
-  const claimService = ClaimServiceLive.pipe(Layer.provide(repos))
-  const baseServices = Layer.mergeAll(
-    TaskServiceLive,
-    DependencyServiceLive,
-    ReadyServiceLive,
-    HierarchyServiceLive
-  ).pipe(
-    Layer.provide(Layer.mergeAll(repos, AutoSyncServiceNoop, claimService))
-  )
-  const syncService = SyncServiceLive.pipe(
-    Layer.provide(Layer.mergeAll(baseServices, repos, infra, StreamServiceLive.pipe(Layer.provide(infra))))
-  )
-  return Layer.mergeAll(baseServices, syncService, repos)
-}
+function makeTestLayer(db: TestDatabase) { return makeMinimalLayerFromInfra(Layer.succeed(SqliteClient, db.db as any)) }
 
 // =============================================================================
 // Test Fixtures
@@ -470,7 +419,7 @@ describe("Golden Path: Conflict Resolution", () => {
     expect(result.task.title).toBe("Local Title") // Local unchanged
   })
 
-  it("delete operation with newer timestamp deletes local task", async () => {
+  it("task delete operation with newer timestamp deletes local task", async () => {
     const insert = db.db.prepare(
       `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -508,7 +457,7 @@ describe("Golden Path: Conflict Resolution", () => {
     expect(result.tasks.find(t => t.id === SYNC_FIXTURES.TASK_ROOT)).toBeUndefined()
   })
 
-  it("delete operation with older timestamp reports conflict and preserves local task", async () => {
+  it("task delete operation with older timestamp reports conflict and preserves local task", async () => {
     const insert = db.db.prepare(
       `INSERT INTO tasks (id, title, description, status, score, parent_id, created_at, updated_at, completed_at, metadata)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`

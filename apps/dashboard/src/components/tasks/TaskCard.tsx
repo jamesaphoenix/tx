@@ -1,21 +1,6 @@
 import { forwardRef, useEffect, useRef, useImperativeHandle } from "react"
-import type { TaskWithDeps, OrchestrationStatus } from "../../api/client"
+import type { TaskWithDeps, } from "../../api/client"
 import { canonicalTaskLabelName } from "./TaskPropertySelects"
-
-function OrchestrationBadge({ status }: { status: OrchestrationStatus }) {
-  const styles: Record<OrchestrationStatus, string> = {
-    unclaimed: "bg-gray-500/20 text-gray-300 border-gray-400/30",
-    claimed: "bg-cyan-500/20 text-cyan-200 border-cyan-400/40",
-    running: "bg-yellow-500/20 text-yellow-200 border-yellow-400/40",
-    lease_expired: "bg-red-500/20 text-red-200 border-red-400/40",
-    released: "bg-gray-500/20 text-gray-300 border-gray-400/30",
-  }
-  return (
-    <span className={`rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${styles[status] ?? "bg-gray-500/20 text-gray-300 border-gray-400/30"}`}>
-      {status.replace(/_/g, " ")}
-    </span>
-  )
-}
 
 const STATUS_BADGE_STYLES: Record<string, string> = {
   backlog: "bg-gray-500/20 text-gray-300 border-gray-400/30",
@@ -63,7 +48,7 @@ export interface TaskCardProps {
 export const TaskCard = forwardRef<HTMLDivElement, TaskCardProps>(
   function TaskCard({
     task,
-    isFocused = false,
+    isFocused,
     showFocusRing = true,
     isSelected = false,
     onToggleSelect,
@@ -100,12 +85,13 @@ export const TaskCard = forwardRef<HTMLDivElement, TaskCardProps>(
         aria-label={`View task: ${task.title}`}
         onClick={onClick}
         onKeyDown={(e) => {
+          if (e.target !== e.currentTarget) return
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault()
             onClick?.()
           }
         }}
-        tabIndex={isFocused ? 0 : -1}
+        tabIndex={isFocused === false ? -1 : 0}
         style={{
           animationDelay: `${animationDelayMs}ms`,
           marginLeft: `${indentPx}px`,
@@ -116,6 +102,9 @@ export const TaskCard = forwardRef<HTMLDivElement, TaskCardProps>(
           <div className="flex min-w-0 items-center gap-2">
             {onToggleSelect && (
               <button
+                type="button"
+                aria-label={`Select task ${task.title}`}
+                aria-pressed={isSelected}
                 onClick={(e) => { e.stopPropagation(); onToggleSelect(task.id) }}
                 className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition ${
                   isSelected
@@ -132,9 +121,7 @@ export const TaskCard = forwardRef<HTMLDivElement, TaskCardProps>(
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
             {!compact && <StatusBadge status={task.status} />}
-            {task.orchestrationStatus && task.orchestrationStatus !== "unclaimed" && (
-              <OrchestrationBadge status={task.orchestrationStatus} />
-            )}
+
           </div>
         </div>
 

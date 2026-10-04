@@ -6,9 +6,10 @@ import {
   type TaskDetailResponse,
   type TaskLabel,
   type TaskWithDeps,
-  type OrchestrationStatus,
 } from "../../api/client"
 import { Button } from "../ui"
+import { EditableTaskTitle } from "./EditableTaskTitle"
+import { DocumentLinks } from "../docs/DocumentLinks"
 import { useDebounce } from "../../hooks/useDebounce"
 import {
   canonicalTaskLabelName,
@@ -62,7 +63,7 @@ function parseTimestamp(value: TimestampInput): Date | null {
 
 function formatTimestamp(value: TimestampInput): string {
   const date = parseTimestamp(value)
-  if (!date) return "—"
+  if (!date) return "Not set"
   return date.toLocaleString()
 }
 
@@ -79,21 +80,6 @@ function StatusBadge({ status }: { status: string }) {
   }
   return (
     <span className={`px-2 py-0.5 text-xs rounded-full text-white ${colors[status] ?? "bg-gray-400"}`}>
-      {status.replace(/_/g, " ")}
-    </span>
-  )
-}
-
-function OrchestrationBadge({ status }: { status: OrchestrationStatus }) {
-  const styles: Record<OrchestrationStatus, string> = {
-    unclaimed: "bg-gray-600 text-gray-200",
-    claimed: "bg-cyan-600 text-cyan-100",
-    running: "bg-yellow-600 text-yellow-100",
-    lease_expired: "bg-red-600 text-red-100",
-    released: "bg-gray-500 text-gray-200",
-  }
-  return (
-    <span className={`px-2 py-0.5 text-xs rounded-full ${styles[status] ?? "bg-gray-500 text-gray-200"}`}>
       {status.replace(/_/g, " ")}
     </span>
   )
@@ -221,7 +207,7 @@ export function TaskDetail({
   statusStage,
   onChangeStatusStage,
   onUpdateAssignment,
-  allLabels = [],
+  allLabels,
   isLabelAssigned,
   onToggleLabel,
   onCreateLabel,
@@ -233,6 +219,8 @@ export function TaskDetail({
 }: TaskDetailProps) {
   const queryClient = useQueryClient()
   const debouncedTaskId = useDebounce(taskId, 120)
+  const [statusError, setStatusError] = useState<string | null>(null)
+  const [isSavingStatus, setIsSavingStatus] = useState(false)
   const [isSyncingLabelSelection, setIsSyncingLabelSelection] = useState(false)
   const [createLabelError, setCreateLabelError] = useState<string | null>(null)
   const [descriptionDraft, setDescriptionDraft] = useState("")
@@ -250,13 +238,49 @@ export function TaskDetail({
   })
   const saveSequenceRef = useRef(0)
   const assignmentSaveSequenceRef = useRef(0)
+  const statusSaveSequenceRef = useRef(0)
+  const labelSaveSequenceRef = useRef(0)
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["task", debouncedTaskId],
     queryFn: ({ signal }) => fetchers.taskDetail(debouncedTaskId, { signal }),
     enabled: !!debouncedTaskId,
     placeholderData: keepPreviousData,
+    refetchInterval: 5000,
   })
+
+  const {data: labelsData} = useQuery({
+    queryKey: ["labels"],
+    queryFn: () => fetchers.labels(),
+    enabled: allLabels === undefined,
+  })
+
+  const refreshTaskProperties = useCallback(async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({queryKey: ["task", taskId]}),
+      queryClient.invalidateQueries({queryKey: ["tasks"]}),
+      queryClient.invalidateQueries({queryKey: ["cycles"]}),
+      queryClient.invalidateQueries({queryKey: ["cycle"]}),
+    ])
+  }, [queryClient, taskId])
+
+  const saveStatus = async (stage: HumanTaskStage) => {
+    if (isSavingStatus) return
+    const sequence = ++statusSaveSequenceRef.current
+    setIsSavingStatus(true)
+    setStatusError(null)
+    try {
+      if (onChangeStatusStage) await onChangeStatusStage(stage)
+      else {
+        await fetchers.updateTask(taskId, {status: stage})
+        await refreshTaskProperties()
+      }
+    } catch (error) {
+      if (sequence === statusSaveSequenceRef.current) setStatusError(error instanceof Error ? error.message : "Failed to update status")
+    } finally {
+      if (sequence === statusSaveSequenceRef.current) setIsSavingStatus(false)
+    }
+  }
 
   const parentTaskId = data?.task.parentId ?? null
   const { data: ancestorBreadcrumbs = [] } = useQuery({
@@ -293,6 +317,8 @@ export function TaskDetail({
 
   useEffect(() => {
     setIsSyncingLabelSelection(false)
+    setStatusError(null)
+    setIsSavingStatus(false)
     setCreateLabelError(null)
     setIsSavingDescription(false)
     setDescriptionError(null)
@@ -300,10 +326,12 @@ export function TaskDetail({
     setAssignmentError(null)
     saveSequenceRef.current += 1
     assignmentSaveSequenceRef.current += 1
+    statusSaveSequenceRef.current += 1
+    labelSaveSequenceRef.current += 1
   }, [taskId])
 
   useEffect(() => {
-    if (!data?.task.id) return
+    if (!data?.task.id || data.task.id !== taskId) return
     const nextDescription = data.task.description ?? ""
     setDescriptionDraft(nextDescription)
     lastSavedDescriptionRef.current = nextDescription
@@ -322,6 +350,27 @@ export function TaskDetail({
     setIsSavingAssignment(false)
   }, [data?.task.id])
 
+  // CLI edits and refetches may update the same task. Refresh clean text only;
+  // a draft or failed save remains owned by the person editing it.
+  useEffect(() => {
+    if (!data || data.task.id !== taskId || isSavingDescription || descriptionError) return
+    if (descriptionDraft !== lastSavedDescriptionRef.current) return
+    const nextDescription = data.task.description ?? ""
+    if (nextDescription === lastSavedDescriptionRef.current) return
+    lastSavedDescriptionRef.current = nextDescription
+    setDescriptionDraft(nextDescription)
+  }, [data?.task.id, data?.task.description, taskId, isSavingDescription, descriptionError])
+
+  useEffect(() => {
+    if (!data || data.task.id !== taskId || isSavingAssignment || assignmentError) return
+    const saved = lastSavedAssignmentRef.current
+    if (selectedAssigneeType !== saved.assigneeType || assigneeIdDraft.trim() !== saved.assigneeId) return
+    const next = {assigneeType: data.task.assigneeType ?? "human", assigneeId: data.task.assigneeId ?? ""}
+    lastSavedAssignmentRef.current = next
+    setSelectedAssigneeType(next.assigneeType)
+    setAssigneeIdDraft(next.assigneeId)
+  }, [data?.task.id, data?.task.assigneeType, data?.task.assigneeId, taskId, isSavingAssignment, assignmentError])
+
   useEffect(() => {
     const input = descriptionInputRef.current
     if (!input) return
@@ -330,7 +379,7 @@ export function TaskDetail({
   }, [descriptionDraft, data?.task.id])
 
   useEffect(() => {
-    if (!data?.task.id) return
+    if (!data?.task.id || data.task.id !== taskId || isSavingDescription || descriptionError) return
     if (descriptionDraft === lastSavedDescriptionRef.current) return
 
     const requestTaskId = data.task.id
@@ -352,9 +401,10 @@ export function TaskDetail({
             if (!existing || existing.task.id !== updatedTask.id) return existing
             return {
               ...existing,
-              task: updatedTask,
+              task: {...existing.task, description: updatedTask.description},
             }
           })
+          void queryClient.invalidateQueries({queryKey: ["task", updatedTask.id]})
         })
         .catch((error) => {
           if (requestSequence !== saveSequenceRef.current) return
@@ -367,13 +417,13 @@ export function TaskDetail({
     }, 650)
 
     return () => window.clearTimeout(timer)
-  }, [data?.task.id, descriptionDraft, queryClient])
+  }, [data?.task.id, taskId, descriptionDraft, isSavingDescription, descriptionError, queryClient])
 
   const persistAssignment = useCallback(async (
     assigneeType: TaskAssigneeType,
     assigneeIdInput: string
   ) => {
-    if (!onUpdateAssignment) return
+    if (isSavingAssignment) return
 
     const normalizedAssigneeId = assigneeIdInput.trim()
     const lastSaved = lastSavedAssignmentRef.current
@@ -386,11 +436,12 @@ export function TaskDetail({
     setAssignmentError(null)
 
     try {
-      await onUpdateAssignment({
-        assigneeType,
-        assigneeId: normalizedAssigneeId || null,
-        assignedBy: "dashboard:detail",
-      })
+      const payload = {assigneeType, assigneeId: normalizedAssigneeId || null, assignedBy: "dashboard:detail"}
+      if (onUpdateAssignment) await onUpdateAssignment(payload)
+      else {
+        await fetchers.updateTask(taskId, payload)
+        await refreshTaskProperties()
+      }
       if (requestSequence !== assignmentSaveSequenceRef.current) return
       lastSavedAssignmentRef.current = {
         assigneeType,
@@ -406,16 +457,17 @@ export function TaskDetail({
         setIsSavingAssignment(false)
       }
     }
-  }, [onUpdateAssignment])
+  }, [onUpdateAssignment, isSavingAssignment, taskId, refreshTaskProperties])
 
-  if (isLoading) {
-    return null
+  if (isLoading || debouncedTaskId !== taskId || (data && data.task.id !== taskId)) {
+    return <div role="status" className="p-4 text-gray-500">Loading task...</div>
   }
 
   if (error) {
     return (
       <div className="p-4 text-red-400">
-        Error loading task: {String(error)}
+        <p role="alert">Error loading task: {error instanceof Error ? error.message : String(error)}</p>
+        <Button className="mt-3" onClick={() => {void refetch()}}>Retry task</Button>
       </div>
     )
   }
@@ -441,7 +493,7 @@ export function TaskDetail({
   const selectedChildrenCount = selectedChildIds.size
   const mergedLabels = (() => {
     const byId = new Map<number, TaskLabel>()
-    for (const label of allLabels) {
+    for (const label of allLabels ?? labelsData?.labels ?? []) {
       byId.set(label.id, label)
     }
     for (const label of task.labels ?? []) {
@@ -480,23 +532,27 @@ export function TaskDetail({
   const breadcrumbs = [...ancestorBreadcrumbs, { id: task.id, title: task.title }]
 
   const syncLabelsFromSelect = async (nextLabelIds: number[]) => {
-    if (!onToggleLabel) return
+    if (isSyncingLabelSelection) return
     const desiredIds = new Set(nextLabelIds)
     const currentIds = new Set(selectedLabelIds)
     const toAdd = mergedLabels.filter((label) => desiredIds.has(label.id) && !currentIds.has(label.id))
     const toRemove = mergedLabels.filter((label) => !desiredIds.has(label.id) && currentIds.has(label.id))
     if (toAdd.length === 0 && toRemove.length === 0) return
 
+    const sequence = ++labelSaveSequenceRef.current
     setIsSyncingLabelSelection(true)
     setCreateLabelError(null)
     try {
       for (const label of [...toAdd, ...toRemove]) {
-        await onToggleLabel(label)
+        if (onToggleLabel) await onToggleLabel(label)
+        else if (currentIds.has(label.id)) await fetchers.unassignTaskLabel(taskId, label.id)
+        else await fetchers.assignTaskLabel(taskId, {labelId: label.id})
       }
     } catch (error) {
-      setCreateLabelError(error instanceof Error ? error.message : "Failed to update labels")
+      if (sequence === labelSaveSequenceRef.current) setCreateLabelError(error instanceof Error ? error.message : "Failed to update labels")
     } finally {
-      setIsSyncingLabelSelection(false)
+      await refreshTaskProperties()
+      if (sequence === labelSaveSequenceRef.current) setIsSyncingLabelSelection(false)
     }
   }
 
@@ -544,16 +600,14 @@ export function TaskDetail({
           <div className="mb-2 flex items-center gap-2">
             <code className="text-sm text-gray-400">{task.id}</code>
             <StatusBadge status={task.status} />
-            {task.orchestrationStatus && task.orchestrationStatus !== "unclaimed" && (
-              <OrchestrationBadge status={task.orchestrationStatus} />
-            )}
+
             {task.isReady && (
               <span className="rounded-full border border-blue-500 bg-blue-500/20 px-2 py-0.5 text-xs text-blue-400">
                 Ready
               </span>
             )}
           </div>
-          <h2 className="text-2xl font-semibold text-white">{task.title}</h2>
+          <EditableTaskTitle key={task.id} taskId={task.id} title={task.title} />
           <div className="mt-2 rounded-md border border-white/10 bg-gray-900/20">
             <div className="mb-1 flex items-center justify-end gap-2">
               <span className={`text-[11px] ${
@@ -574,6 +628,7 @@ export function TaskDetail({
               value={descriptionDraft}
               onChange={(event) => {
                 setDescriptionDraft(event.target.value)
+                setDescriptionError(null)
                 const input = descriptionInputRef.current
                 if (!input) return
                 input.style.height = "0px"
@@ -587,7 +642,12 @@ export function TaskDetail({
             />
 
             {descriptionError && (
-              <p className="mt-2 text-xs text-red-400">{descriptionError}</p>
+              <div className="mt-2 flex items-center gap-2 text-xs text-red-400">
+                <p role="alert">{descriptionError}</p>
+                <button type="button" onClick={() => setDescriptionError(null)} className="underline">
+                  Retry saving description
+                </button>
+              </div>
             )}
           </div>
           {task.labels && task.labels.length > 0 && (
@@ -620,6 +680,8 @@ export function TaskDetail({
             )}
           </div>
         </div>
+
+        <DocumentLinks nodeId={`task:${task.id}`} />
 
         <div>
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -708,35 +770,15 @@ export function TaskDetail({
             <TaskStatusSelect
               instanceId={`task-detail-status-${task.id}`}
               value={currentStatusStage}
-              onChange={(nextStage) => {
-                void onChangeStatusStage?.(nextStage)
-              }}
+              onChange={(nextStage) => {void saveStatus(nextStage)}}
+              disabled={isSavingStatus}
               theme={themeMode}
             />
-            <p className="mt-2 text-[11px] text-gray-500">Internal status: {task.status}</p>
+            <p className="mt-2 text-[11px] text-gray-500">{isSavingStatus ? "Saving status..." : `Internal status: ${task.status}`}</p>
+            {statusError && <p role="alert" className="mt-2 text-xs text-red-400">{statusError}</p>}
           </section>
 
-          {task.orchestrationStatus && task.orchestrationStatus !== "unclaimed" && (
-            <section>
-              <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-gray-500">Orchestration</p>
-              <OrchestrationBadge status={task.orchestrationStatus} />
-              {task.claimedBy && (
-                <p className="mt-1.5 text-[11px] text-gray-400">
-                  Worker: <span className="text-gray-200">{task.claimedBy}</span>
-                </p>
-              )}
-              {task.claimExpiresAt && (
-                <p className="text-[11px] text-gray-400">
-                  Lease expires: <span className="text-gray-200">{formatTimestamp(task.claimExpiresAt)}</span>
-                </p>
-              )}
-              {(task.failedAttempts ?? 0) > 0 && (
-                <p className="mt-1 text-[11px] text-red-400">
-                  Failed attempts: {task.failedAttempts}
-                </p>
-              )}
-            </section>
-          )}
+
 
           <section>
             <div className="mb-2 flex items-center justify-between">
@@ -757,6 +799,7 @@ export function TaskDetail({
             <TaskAssigneeTypeSelect
               instanceId={`task-detail-assignee-type-${task.id}`}
               value={selectedAssigneeType}
+              disabled={isSavingAssignment}
               onChange={(nextType) => {
                 setSelectedAssigneeType(nextType)
                 void persistAssignment(nextType, assigneeIdDraft)
@@ -770,6 +813,7 @@ export function TaskDetail({
             <input
               id={`task-detail-assignee-id-${task.id}`}
               value={assigneeIdDraft}
+              disabled={isSavingAssignment}
               onChange={(event) => setAssigneeIdDraft(event.target.value)}
               onBlur={() => {
                 void persistAssignment(selectedAssigneeType, assigneeIdDraft)
@@ -783,11 +827,12 @@ export function TaskDetail({
               className="mt-1 w-full rounded-md border border-gray-600 bg-gray-800 px-2.5 py-2 text-sm text-gray-200 outline-none transition focus:border-blue-400"
             />
 
+            {assignmentError && <p role="alert" className="mt-2 text-xs text-red-400">{assignmentError}</p>}
             <p className="mt-2 text-[11px] text-gray-500">
               Assigned at: {formatTimestamp(task.assignedAt)}
             </p>
             <p className="text-[11px] text-gray-500">
-              Assigned by: {task.assignedBy ?? "—"}
+              Assigned by: {task.assignedBy ?? "Not set"}
             </p>
           </section>
 
@@ -804,9 +849,14 @@ export function TaskDetail({
               onChange={(nextLabelIds) => {
                 void syncLabelsFromSelect(nextLabelIds)
               }}
-              onCreateLabel={onCreateLabel}
+              onCreateLabel={onCreateLabel ?? (async (payload) => {
+                const response = await fetchers.assignTaskLabel(taskId, payload)
+                await queryClient.invalidateQueries({queryKey: ["labels"]})
+                await refreshTaskProperties()
+                return response.label ?? null
+              })}
               theme={themeMode}
-              disabled={isSyncingLabelSelection || (!onToggleLabel && !onCreateLabel)}
+              disabled={isSyncingLabelSelection}
               noOptionsMessage="No labels yet."
             />
 
@@ -814,7 +864,7 @@ export function TaskDetail({
               <p className="mt-2 text-[11px] text-gray-500">Updating labels...</p>
             )}
             {createLabelError && (
-              <p className="mt-2 text-[11px] text-red-400">{createLabelError}</p>
+              <p role="alert" className="mt-2 text-[11px] text-red-400">{createLabelError}</p>
             )}
           </section>
 

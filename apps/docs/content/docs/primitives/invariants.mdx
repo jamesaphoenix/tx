@@ -1,187 +1,49 @@
 ---
-title: Invariants
-description: Doc-derived invariants with enforcement levels and spec traceability
+doc_style: guide
+title: tx spec invariant
+description: Define the contracts your code must preserve
 ---
-
-import { Tabs, Tab } from 'fumadocs-ui/components/tabs'
 
 ## Purpose
 
-Invariants are rules extracted from structured documentation (PRDs and design docs). Each invariant has an enforcement level and optional subsystem ownership. Invariants are managed through [`tx spec`](/docs/primitives/spec-trace).
+An invariant states what must remain true, who enforces it and how to verify it.
+Keep invariants in the design specification; map them beside the code and tests.
 
-Invariants enable:
-
-- **Doc-to-test traceability** — each invariant maps to a testable assertion
-- **Enforcement levels** — audit, warn, error, or block
-- **Check recording** — track pass/fail results over time
-- **Subsystem scoping** — filter invariants by owning subsystem
-
-## Usage
-
-<Tabs groupId="interface" persist items={["CLI", "TypeScript SDK", "MCP", "REST API"]}>
-
-<Tab value="CLI">
+## Commands
 
 ```bash
-# Discover invariants from docs and link to tests
-tx spec discover
-
-# Run all checks (drift, EARS, coverage, spec-test status)
-tx spec lint
-
-# List uncovered invariants
-tx spec gaps
-
-# Show full traceability matrix
-tx spec matrix
-
-# Record a test run result
-tx spec run test/auth.test.ts::"login works" --passed
-
-# Batch import test results
-vitest run --reporter=json | tx spec batch --from vitest
-
-# Check coverage and phase status
-tx spec fci
-tx spec status
+tx spec invariant list --doc checkout-design
+tx spec discover --doc checkout-design
+tx spec gaps --doc checkout-design
+tx spec matrix --doc checkout-design
 ```
 
-</Tab>
+Use a stable document ID, `kind/name` or an unambiguous name for `--doc`.
+Document, subsystem and enforcement filters combine; an unknown or ambiguous
+reference returns an error. REST, MCP and both SDK transports use the same scope.
 
-<Tab value="TypeScript SDK">
+## Workflow
 
-```typescript
-import { TxClient } from '@jamesaphoenix/tx-agent-sdk'
+Add an embedded YAML block to the generated design document:
 
-const tx = new TxClient({ dbPath: '.tx/tasks.db' })
-
-// List all invariants
-const all = await tx.invariants.list()
-
-// Filter by subsystem or enforcement
-const authInvariants = await tx.invariants.list({
-  subsystem: 'auth',
-  enforcement: 'error',
-})
-
-// Get a specific invariant
-const inv = await tx.invariants.get('INV-AUTH-001')
-
-// Record a check result
-const check = await tx.invariants.record(
-  'INV-AUTH-001',
-  true,           // passed
-  'All tokens validated',  // details (optional)
-  1200,           // durationMs (optional)
-)
+```yaml
+invariants:
+  - id: INV-CHECKOUT-001
+    statement: payment retries preserve exactly one order
+    severity: high
+    verified_by:
+      - test/checkout.test.ts
 ```
 
-</Tab>
+Put `// @spec INV-CHECKOUT-001` beside the implementation that enforces the rule.
+Put `[INV-CHECKOUT-001]` in a test title with assertions that would fail if the rule
+were broken. Run discovery, inspect the matrix and fill meaningful gaps.
 
-<Tab value="MCP">
+A mapping identifies coverage; it does not prove a passing result. Execute the
+mapped tests and record their results through [tx spec](./spec-trace). The
+`verify-invariants` skill covers both code mapping and verification.
 
-**Tool name:** `tx_invariant_list`
-
-```json
-{
-  "name": "tx_invariant_list",
-  "arguments": {
-    "subsystem": "auth",
-    "enforcement": "error"
-  }
-}
-```
-
-| Arg | Type | Required | Description |
-|-----|------|----------|-------------|
-| `subsystem` | `string` | No | Filter by subsystem |
-| `enforcement` | `string` | No | Filter by enforcement level |
-
-**Tool name:** `tx_invariant_get`
-
-```json
-{
-  "name": "tx_invariant_get",
-  "arguments": {
-    "id": "INV-AUTH-001"
-  }
-}
-```
-
-**Tool name:** `tx_invariant_record`
-
-```json
-{
-  "name": "tx_invariant_record",
-  "arguments": {
-    "invariantId": "INV-AUTH-001",
-    "passed": true,
-    "details": "All tokens validated",
-    "durationMs": 1200
-  }
-}
-```
-
-| Arg | Type | Required | Description |
-|-----|------|----------|-------------|
-| `invariantId` | `string` | Yes | Invariant ID to record against |
-| `passed` | `boolean` | Yes | Whether the check passed |
-| `details` | `string` | No | Descriptive text (max 10000 chars) |
-| `durationMs` | `number` | No | Check duration in milliseconds |
-
-</Tab>
-
-<Tab value="REST API">
-
-```
-GET  /api/invariants
-GET  /api/invariants/:id
-POST /api/invariants/:id/check
-```
-
-**Example:**
-
-```bash
-# List all invariants
-curl http://localhost:3456/api/invariants
-
-# Filter by subsystem
-curl http://localhost:3456/api/invariants?subsystem=auth
-
-# Get a specific invariant
-curl http://localhost:3456/api/invariants/INV-AUTH-001
-
-# Record a check result
-curl -X POST http://localhost:3456/api/invariants/INV-AUTH-001/check \
-  -H 'Content-Type: application/json' \
-  -d '{"passed": true, "details": "All tokens validated"}'
-```
-
-</Tab>
-
-</Tabs>
-
-## Enforcement Levels
-
-| Level | Behavior |
-|-------|----------|
-| `audit` | Recorded but no action taken |
-| `warn` | Warning emitted on failure |
-| `error` | Error reported on failure |
-| `block` | Blocks downstream operations on failure |
-
-## Invariant Lifecycle
-
-Invariants are derived from doc YAML, not created manually:
-
-1. Define invariants in a PRD or design doc markdown file
-2. Run `tx spec discover` to extract them into the database and link to tests
-3. Run `tx spec run` or `tx spec batch` to record pass/fail results
-4. Run `tx spec lint` to check overall health
-5. Run `tx spec complete` to sign off when coverage is full
-
-## Related Commands
-
-- [`tx doc`](/docs/primitives/docs): Manage the structured docs that invariants are derived from
-- [`tx spec`](/docs/primitives/spec-trace): Spec-to-test traceability built on top of invariants
-- [`tx verify`](/docs/primitives/verify): Attach machine-checkable done criteria to tasks
+Source annotations appear separately in `tx spec matrix` as enforcement locations.
+They do not count as test coverage, failing evidence or missing test results.
+Use `tx spec invariant record` for a performed manual review. To prove a rule with
+a lint or constraint check, link that executable check and record its real result.
