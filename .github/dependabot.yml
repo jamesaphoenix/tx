@@ -3,8 +3,8 @@
 
 version: 2
 updates:
-  # npm/bun dependencies
-  - package-ecosystem: "npm"
+  # Bun workspace dependencies (bun.lock)
+  - package-ecosystem: "bun"
     directory: "/"
     schedule:
       interval: "weekly"
