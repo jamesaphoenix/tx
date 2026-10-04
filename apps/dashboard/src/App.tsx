@@ -990,10 +990,10 @@ function AppContent() {
     <div className="h-screen flex flex-col overflow-hidden bg-gray-900 text-white">
       {/* Header */}
       <header className="flex-shrink-0 px-4 py-2.5">
-        <div className="flex max-w-full items-center justify-between">
-          <div className="flex items-center gap-6">
-            <h1 className="text-xl font-bold">tx</h1>
-            <nav className="flex gap-1">
+        <div className="flex max-w-full flex-wrap items-center justify-between gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-3 sm:gap-6">
+            <h1 className="flex-shrink-0 text-xl font-bold">tx</h1>
+            <nav className="flex min-w-0 flex-wrap gap-1" aria-label="Dashboard sections">
               {([
                 { id: "tasks", label: "Tasks" },
                 { id: "docs", label: "Documents" },
@@ -1011,7 +1011,7 @@ function AppContent() {
               ))}
             </nav>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-shrink-0 items-center gap-2">
             <Button
               size="icon-lg"
               variant={activeTab === "settings" ? "primary" : "secondary"}

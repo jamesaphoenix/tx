@@ -6,8 +6,7 @@ import { Effect } from "effect"
 import { DocService } from "@jamesaphoenix/tx"
 import { toJson } from "../output.js"
 import { type Flags, flag, opt } from "../utils/parse.js"
-import { unknownSubcommandError } from "../cli-errors.js"
-import { CliExitError } from "../cli-exit.js"
+import { CliUserError, unknownSubcommandError, usageError } from "../cli-errors.js"
 
 /** Dispatch invariant subcommands. */
 export const invariant = (pos: string[], flags: Flags) => {
@@ -53,16 +52,17 @@ const invariantShow = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const id = pos[0]
     if (!id) {
-      console.error("Usage: tx spec invariant show <id>")
-      throw new CliExitError(1)
+      return yield* Effect.fail(usageError({message:"An invariant ID is required.",
+        usage:"tx spec invariant show <id> [--json]"}))
     }
 
     const svc = yield* DocService
     const all = yield* svc.listInvariants()
     const inv = all.find(i => i.id === id)
     if (!inv) {
-      console.error(`Invariant not found: ${id}`)
-      throw new CliExitError(1)
+      return yield* Effect.fail(new CliUserError({code:"service/invariant-not-found",
+        message:`Invariant not found: ${id}`,exitCode:2,
+        hint:"Run `tx spec invariant list` to see available invariants."}))
     }
 
     if (flag(flags, "json")) {
@@ -84,15 +84,15 @@ const invariantRecord = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const id = pos[0]
     if (!id) {
-      console.error("Usage: tx spec invariant record <id> --passed|--failed [--details <text>]")
-      throw new CliExitError(1)
+      return yield* Effect.fail(usageError({message:"An invariant ID is required.",
+        usage:"tx spec invariant record <id> --passed|--failed [--details <text>] [--json]"}))
     }
 
     const passed = flag(flags, "passed")
     const failed = flag(flags, "failed")
     if (passed === failed) {
-      console.error("Specify exactly one of --passed or --failed")
-      throw new CliExitError(1)
+      return yield* Effect.fail(usageError({message:"Specify exactly one of --passed or --failed",
+        usage:"tx spec invariant record <id> --passed|--failed [--json]"}))
     }
 
     const details = opt(flags, "details", "d") ?? undefined

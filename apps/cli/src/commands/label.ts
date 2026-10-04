@@ -8,8 +8,10 @@ import { Effect } from "effect"
 import { LabelRepository } from "@jamesaphoenix/tx"
 import { toJson } from "../output.js"
 import { type Flags, flag, parseTaskId } from "../utils/parse.js"
-import { unknownSubcommandError } from "../cli-errors.js"
+import { CliUserError, unknownSubcommandError, usageError } from "../cli-errors.js"
 import { CliExitError } from "../cli-exit.js"
+
+const shellQuote = (value: string): string => '"' + value.replace(/["\\$`]/g, "\\$&") + '"'
 
 export const label = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
@@ -30,8 +32,8 @@ const labelAdd = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const name = pos[0]
     if (!name) {
-      console.error("Usage: tx task label add <name> [--color <hex>]")
-      throw new CliExitError(1)
+      return yield* Effect.fail(usageError({message:"A label name is required.",
+        usage:"tx task label add <name> [--color <hex>] [--json]"}))
     }
     const color = (typeof flags.color === "string" ? flags.color : null) ?? "#6b7280"
 
@@ -49,8 +51,8 @@ const labelRemove = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const name = pos[0]
     if (!name) {
-      console.error("Usage: tx task label delete <name>")
-      throw new CliExitError(1)
+      return yield* Effect.fail(usageError({message:"A label name is required.",
+        usage:"tx task label delete <name> [--json]"}))
     }
 
     const repo = yield* LabelRepository
@@ -72,23 +74,17 @@ const labelAssign = (pos: string[], flags: Flags) =>
     const rawId = pos[0]
     const name = pos[1]
     if (!rawId || !name) {
-      console.error("Usage: tx task label assign <task-id> <label-name>")
-      throw new CliExitError(1)
+      return yield* Effect.fail(usageError({message:"A task ID and label name are required.",
+        usage:"tx task label assign <task-id> <label-name> [--json]"}))
     }
     const id = parseTaskId(rawId)
 
     const repo = yield* LabelRepository
     yield* repo.assign(id, name).pipe(
-      Effect.catchTags({
-        TaskNotFoundError: () => {
-          console.error(`Error: Task ${id} not found`)
-          return Effect.die(new CliExitError(1))
-        },
-        LabelNotFoundError: (e) => {
-          console.error(`Error: ${e.message}. Create it first with: tx task label add "${name}"`)
-          return Effect.die(new CliExitError(1))
-        },
-      })
+      Effect.mapError(error => error._tag === "LabelNotFoundError"
+        ? new CliUserError({code:"service/label-not-found",message:error.message,
+          hint:`Create it first with: tx task label add -- ${shellQuote(name)}`,exitCode:2})
+        : error)
     )
 
     if (flag(flags, "json")) {
@@ -103,8 +99,8 @@ const labelUnassign = (pos: string[], flags: Flags) =>
     const rawId = pos[0]
     const name = pos[1]
     if (!rawId || !name) {
-      console.error("Usage: tx task label unassign <task-id> <label-name>")
-      throw new CliExitError(1)
+      return yield* Effect.fail(usageError({message:"A task ID and label name are required.",
+        usage:"tx task label unassign <task-id> <label-name> [--json]"}))
     }
     const id = parseTaskId(rawId)
 

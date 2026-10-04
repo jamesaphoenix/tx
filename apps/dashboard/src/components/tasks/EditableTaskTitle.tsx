@@ -1,4 +1,4 @@
-import { useId, useState } from "react"
+import { useEffect, useId, useRef, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { Button } from "../ui"
 import { fetchers, type TaskDetailResponse } from "../../api/client"
@@ -9,6 +9,9 @@ export function EditableTaskTitle({taskId, title}: {taskId: string; title: strin
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(title)
   const [validationError, setValidationError] = useState<string | null>(null)
+  const titleButtonRef = useRef<HTMLButtonElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const wasEditing = useRef(false)
   const save = useMutation({
     mutationFn: (nextTitle: string) => fetchers.updateTask(taskId, {title: nextTitle}),
     onSuccess: (updated) => {
@@ -21,6 +24,13 @@ export function EditableTaskTitle({taskId, title}: {taskId: string; title: strin
       setEditing(false)
     },
   })
+  useEffect(() => {
+    const closed = wasEditing.current && !editing
+    wasEditing.current = editing
+    if (document.activeElement !== document.body) return
+    if (closed) titleButtonRef.current?.focus()
+    else if (editing && save.isError) inputRef.current?.focus()
+  },[editing,save.isError])
   const cancel = () => { setEditing(false); setValidationError(null); save.reset() }
   const submit = () => {
     if (save.isPending) return
@@ -31,11 +41,11 @@ export function EditableTaskTitle({taskId, title}: {taskId: string; title: strin
     save.mutate(nextTitle)
   }
   if (!editing) return <h2 className="text-2xl font-semibold text-white">
-    <button type="button" title="Edit task title" className="group inline-flex items-start gap-2 rounded text-left hover:text-gray-300 focus-visible:outline focus-visible:outline-blue-400"
+    <button ref={titleButtonRef} type="button" title="Edit task title" className="group inline-flex items-start gap-2 rounded text-left hover:text-gray-300 focus-visible:outline focus-visible:outline-blue-400"
       onClick={() => {setDraft(title); save.reset(); setValidationError(null); setEditing(true)}}>{title}<svg aria-hidden="true" className="mt-2 h-4 w-4 shrink-0 text-gray-500 group-hover:text-gray-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m16 3 5 5-12 12H4v-5Z" /></svg></button>
   </h2>
   return <div>
-    <input autoFocus aria-label="Task title" data-native-select-all="true" value={draft}
+    <input ref={inputRef} autoFocus aria-label="Task title" data-native-select-all="true" value={draft}
       aria-invalid={Boolean(validationError || save.error)} aria-describedby={validationError || save.error ? errorId : undefined}
       disabled={save.isPending} onChange={event => {setDraft(event.target.value); setValidationError(null)}}
       onKeyDown={event => {

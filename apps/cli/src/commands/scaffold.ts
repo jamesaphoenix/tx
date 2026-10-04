@@ -218,7 +218,7 @@ async function promptForSkills(target: SkillTarget): Promise<string[] | symbol> 
     options: AVAILABLE_SKILLS.map((skill) => ({
       value: skill.id,
       label: skill.title,
-      hint: `${skill.id} — ${skill.shortDescription}`,
+      hint: `${skill.id}: ${skill.shortDescription}`,
     })),
   })
 }

@@ -1,6 +1,7 @@
 import { dashboardSpecHealth } from "./spec-health.js"
 import { Database } from "bun:sqlite"
 import { randomUUID } from "node:crypto"
+import { Schema } from "effect"
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs"
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 import { resolve, dirname } from "node:path"
@@ -559,16 +560,6 @@ interface AddCycleTasksPayload {
   taskIds?: string[]
 }
 
-interface CreateLabelPayload {
-  name?: string
-  color?: string
-}
-
-interface UpdateLabelPayload {
-  name?: string
-  color?: string
-}
-
 interface AssignLabelPayload {
   labelId?: number
   name?: string
@@ -645,6 +636,23 @@ function validateTaskFields(payload: unknown): string | null {
 
 function normalizeLabelName(name: string): string {
   return name.trim().replace(/\s+/g, " ")
+}
+
+const labelNameSchema = Schema.String.pipe(Schema.filter(value => value.trim().length > 0))
+const labelColorSchema = Schema.String.pipe(Schema.pattern(/^#[0-9a-f]{6}$/i))
+const labelMetadataSchema = Schema.Struct({name:Schema.optional(labelNameSchema),color:Schema.optional(labelColorSchema)})
+const newLabelSchema = Schema.Struct({name:labelNameSchema,color:Schema.optional(labelColorSchema)})
+const labelAssignmentSchema = Schema.Union(
+  Schema.Struct({labelId:Schema.Number.pipe(Schema.filter(value => Number.isSafeInteger(value) && value > 0)),
+    name:Schema.optional(Schema.Never),color:Schema.optional(Schema.Never)}),
+  Schema.Struct({name:labelNameSchema,color:Schema.optional(labelColorSchema),labelId:Schema.optional(Schema.Never)}),
+)
+
+function decodeLabelPayload<A,I>(schema: Schema.Schema<A,I>, payload: unknown): A {
+  try { return Schema.decodeUnknownSync(schema)(payload) }
+  catch {
+    throw new DashboardRequestError("A label needs a positive integer labelId or a non-empty name and optional six-digit hex colour. Do not combine labelId with name or colour.",400)
+  }
 }
 
 function isTaskStatus(value: string): value is (typeof TASK_STATUSES)[number] {
@@ -1326,11 +1334,17 @@ function materializeDocId(doc: Pick<DocRow, "doc_id" | "name" | "version">): str
   return doc.doc_id ?? deriveDocStableId(`${doc.name}:${doc.version}`)
 }
 
+function parsePositiveIntegerSelector(raw: string, label: string): number {
+  const parsed = Number(raw)
+  if (!/^[1-9]\d*$/.test(raw) || !Number.isSafeInteger(parsed)) {
+    throw new DashboardRequestError(`Invalid ${label}: ${raw}. Expected a positive safe integer.`,400)
+  }
+  return parsed
+}
+
 function parseDocVersionQuery(c: Context): number | undefined {
   const raw = c.req.query("version")
-  if (!raw) return undefined
-  const parsed = Number.parseInt(raw, 10)
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined
+  return raw === undefined ? undefined : parsePositiveIntegerSelector(raw,"document version")
 }
 
 function parseKindScopedDocRef(ref: string): { kind: string; name: string } | null {
@@ -2102,11 +2116,7 @@ app.get("/api/tasks", (c) => {
     let labelId: number | null = null
 
     if (labelIdRaw !== undefined) {
-      const parsedLabelId = parseInt(labelIdRaw, 10)
-      if (Number.isNaN(parsedLabelId)) {
-        return c.json({ error: `Invalid label ID: ${labelIdRaw}` }, 400)
-      }
-      labelId = parsedLabelId
+      labelId = parsePositiveIntegerSelector(labelIdRaw,"label ID")
     }
 
     // Build WHERE clauses
@@ -2216,15 +2226,9 @@ app.post("/api/tasks", async (c) => {
     if (payload.labels !== undefined) {
       if (!Array.isArray(payload.labels) || payload.labels.length > 200) return c.json({error:"labels must be an array of at most 200 labels"},400)
       for (const label of payload.labels) {
-        if (!label || typeof label !== "object" || Array.isArray(label)) return c.json({error:"Each label must be an object"},400)
-        if (label.labelId !== undefined) {
-          if (!Number.isSafeInteger(label.labelId) || label.labelId <= 0 || label.name !== undefined || label.color !== undefined) {
-            return c.json({error:"A label needs a positive labelId or a name and optional colour"},400)
-          }
-          if (!db.prepare("SELECT 1 FROM task_labels WHERE id=?").get(label.labelId)) return c.json({error:`Label not found: ${label.labelId}`},400)
-        } else if (typeof label.name !== "string" || !label.name.trim() ||
-          (label.color !== undefined && (typeof label.color !== "string" || !/^#[0-9a-f]{6}$/i.test(label.color)))) {
-          return c.json({error:"A new label needs a name and an optional six-digit hex colour"},400)
+        const decoded = decodeLabelPayload(labelAssignmentSchema,label)
+        if (decoded.labelId !== undefined && !db.prepare("SELECT 1 FROM task_labels WHERE id=?").get(decoded.labelId)) {
+          return c.json({error:`Label not found: ${decoded.labelId}`},400)
         }
       }
     }
@@ -2479,10 +2483,7 @@ app.get("/api/task-labels", listLabelsHandler)
 const createLabelHandler = async (c: Context) => {
   try {
     const db = getDb()
-    const payload = await c.req.json<CreateLabelPayload>()
-    if (!payload.name || !payload.name.trim()) {
-      return c.json({ error: "Label name is required" }, 400)
-    }
+    const payload = decodeLabelPayload(newLabelSchema,await c.req.json<unknown>())
     const label = upsertLabel(db, { name: payload.name, color: payload.color })
     return c.json(label, 201)
   } catch (e) {
@@ -2499,10 +2500,7 @@ const updateLabelHandler = async (c: Context) => {
   try {
     const db = getDb()
     const labelIdRaw = c.req.param("labelId")
-    const labelId = parseInt(labelIdRaw, 10)
-    if (isNaN(labelId)) {
-      return c.json({ error: `Invalid label ID: ${labelIdRaw}` }, 400)
-    }
+    const labelId = parsePositiveIntegerSelector(labelIdRaw,"label ID")
 
     const existing = db.prepare(`
       SELECT id, name, color, created_at, updated_at
@@ -2514,7 +2512,7 @@ const updateLabelHandler = async (c: Context) => {
       return c.json({ error: "Label not found" }, 404)
     }
 
-    const payload = await c.req.json<UpdateLabelPayload>()
+    const payload = decodeLabelPayload(labelMetadataSchema,await c.req.json<unknown>())
     const nextName = payload.name !== undefined ? normalizeLabelName(payload.name) : existing.name
     if (!nextName) {
       return c.json({ error: "Label name is required" }, 400)
@@ -2567,10 +2565,7 @@ const deleteLabelHandler = (c: Context) => {
   try {
     const db = getDb()
     const labelIdRaw = c.req.param("labelId")
-    const labelId = parseInt(labelIdRaw, 10)
-    if (isNaN(labelId)) {
-      return c.json({ error: `Invalid label ID: ${labelIdRaw}` }, 400)
-    }
+    const labelId = parsePositiveIntegerSelector(labelIdRaw,"label ID")
 
     const existing = db.prepare("SELECT 1 FROM task_labels WHERE id = ?").get(labelId)
     if (!existing) {
@@ -2598,7 +2593,7 @@ const assignLabelHandler = async (c: Context) => {
       return c.json({ error: "Task not found" }, 404)
     }
 
-    const payload = await c.req.json<AssignLabelPayload>()
+    const payload = decodeLabelPayload(labelAssignmentSchema,await c.req.json<unknown>())
     let label: TaskLabel | null = null
 
     if (payload.labelId !== undefined) {
@@ -2642,10 +2637,7 @@ const unassignLabelHandler = (c: Context) => {
     const db = getDb()
     const taskId = c.req.param("id")
     const labelIdRaw = c.req.param("labelId")
-    const labelId = parseInt(labelIdRaw, 10)
-    if (isNaN(labelId)) {
-      return c.json({ error: `Invalid label ID: ${labelIdRaw}` }, 400)
-    }
+    const labelId = parsePositiveIntegerSelector(labelIdRaw,"label ID")
 
     const taskExists = db.prepare("SELECT 1 FROM tasks WHERE id = ?").get(taskId)
     if (!taskExists) {
@@ -3076,7 +3068,7 @@ app.get("/api/docs/by-id/:docId", (c) => {
   try {
     const db = getDb()
     if (!hasDocsSchema(db)) {
-      return c.json({ error: "Docs are not initialized. Run 'tx migrate' first." }, 404)
+      return c.json({ error: "Docs are not initialized. Run 'tx init' to apply schema migrations." }, 404)
     }
 
     const docId = c.req.param("docId")
@@ -3098,7 +3090,7 @@ app.get("/api/docs/by-id/:docId/source", (c) => {
   try {
     const db = getDb()
     if (!hasDocsSchema(db)) {
-      return c.json({ error: "Docs are not initialized. Run 'tx migrate' first." }, 404)
+      return c.json({ error: "Docs are not initialized. Run 'tx init' to apply schema migrations." }, 404)
     }
 
     const docId = c.req.param("docId")
@@ -3161,7 +3153,7 @@ app.delete("/api/docs/by-id/:docId", (c) => {
   try {
     const db = getDb()
     if (!hasDocsSchema(db)) {
-      return c.json({ error: "Docs are not initialized. Run 'tx migrate' first." }, 404)
+      return c.json({ error: "Docs are not initialized. Run 'tx init' to apply schema migrations." }, 404)
     }
 
     const docId = c.req.param("docId")
@@ -3189,7 +3181,7 @@ app.get("/api/docs/:name", (c) => {
   try {
     const db = getDb()
     if (!hasDocsSchema(db)) {
-      return c.json({ error: "Docs are not initialized. Run 'tx migrate' first." }, 404)
+      return c.json({ error: "Docs are not initialized. Run 'tx init' to apply schema migrations." }, 404)
     }
 
     const name = c.req.param("name")
@@ -3210,7 +3202,7 @@ app.get("/api/docs/:name/source", (c) => {
   try {
     const db = getDb()
     if (!hasDocsSchema(db)) {
-      return c.json({ error: "Docs are not initialized. Run 'tx migrate' first." }, 404)
+      return c.json({ error: "Docs are not initialized. Run 'tx init' to apply schema migrations." }, 404)
     }
 
     const name = c.req.param("name")
@@ -3267,7 +3259,7 @@ app.delete("/api/docs/:name", (c) => {
   try {
     const db = getDb()
     if (!hasDocsSchema(db)) {
-      return c.json({ error: "Docs are not initialized. Run 'tx migrate' first." }, 404)
+      return c.json({ error: "Docs are not initialized. Run 'tx init' to apply schema migrations." }, 404)
     }
 
     const name = c.req.param("name")

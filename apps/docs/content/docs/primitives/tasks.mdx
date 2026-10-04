@@ -34,6 +34,11 @@ New tasks start in `backlog` with score `0`. Higher integer scores appear first.
 Use `tx task update <task-id> --description=""` to clear a description.
 For a title beginning with a dash, use `tx task add -- "--A task title"`.
 
+Bulk operations validate every task ID before changing tasks. Bulk scores must be
+safe integers; decimals and trailing text are rejected. Once inputs validate,
+individual task failures are reported alongside successful changes in the
+`succeeded` and `failed` JSON lists. Inspect both lists before retrying.
+
 Weekly cycles are optional. Reading tasks or cycles does not create a planning
 period. Create a cycle explicitly; its auto-add selection includes every matching
 task. An empty auto-add selection disables automatic membership.

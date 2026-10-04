@@ -310,6 +310,75 @@ describe("Dashboard API - GET /api/tasks", () => {
     await shared.close()
   })
 
+  it.each(["labels","task-labels"])("rejects truncated %s IDs before changing or deleting labels",async collection => {
+    const labelId = Number(db.db.prepare("INSERT INTO task_labels(name,color) VALUES('Preserved label','#123456')").run().lastInsertRowid)
+    db.db.prepare("INSERT INTO task_label_assignments(task_id,label_id) VALUES(?,?)").run(FIXTURES.TASK_AUTH,labelId)
+    for (const malformed of [`${labelId}junk`,`${labelId}.5`,`+${labelId}`,"0","-1","9007199254740993"]) {
+      const path = `/api/${collection}/${encodeURIComponent(malformed)}`
+      for (const method of ["PATCH","DELETE"]) {
+        const response = await request(app,path,{method,headers:{"Content-Type":"application/json"},body:method === "PATCH" ? JSON.stringify({name:"Unexpected change"}) : undefined})
+        expect(response.status,`${method} ${path}`).toBe(400)
+        expect(db.db.prepare("SELECT name FROM task_labels WHERE id=?").get(labelId)).toEqual({name:"Preserved label"})
+      }
+      const unassign = await request(app,`/api/tasks/${FIXTURES.TASK_AUTH}/${collection}/${encodeURIComponent(malformed)}`,{method:"DELETE"})
+      expect(unassign.status).toBe(400)
+      expect(db.db.prepare("SELECT label_id FROM task_label_assignments WHERE task_id=?").get(FIXTURES.TASK_AUTH)).toEqual({label_id:labelId})
+      const filter = await request(app,`/api/tasks?labelId=${encodeURIComponent(malformed)}`)
+      expect(filter.status).toBe(400)
+    }
+    const valid = await request(app,`/api/${collection}/${labelId}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:"Valid update"})})
+    expect(valid.status).toBe(200)
+  })
+
+  it.each(["labels","task-labels"])("validates %s metadata before writing",async collection => {
+    const labelId = Number(db.db.prepare("INSERT INTO task_labels(name,color) VALUES('Typed label','#123456')").run().lastInsertRowid)
+    for (const fields of [{name:42},{name:null},{name:""},{name:" "},{color:42},{color:null},{color:"red"}]) {
+      for (const [method,path] of [["POST",`/api/${collection}`],["PATCH",`/api/${collection}/${labelId}`]]) {
+        const response = await request(app,path,{method,headers:{"Content-Type":"application/json"},body:JSON.stringify({name:"Typed label",color:"#123456",...fields})})
+        expect(response.status,`${method} ${JSON.stringify(fields)}`).toBe(400)
+        expect(db.db.prepare("SELECT name,color FROM task_labels ORDER BY id").all()).toEqual([{name:"Typed label",color:"#123456"}])
+      }
+    }
+  })
+
+  it.each(["labels","task-labels"])("validates %s assignment payloads without coercion or ambiguous selectors",async collection => {
+    const labelId = Number(db.db.prepare("INSERT INTO task_labels(name,color) VALUES('Assignment label','#123456')").run().lastInsertRowid)
+    const path = `/api/tasks/${FIXTURES.TASK_AUTH}/${collection}`
+    for (const payload of [{labelId:String(labelId)},{labelId:labelId+.5},{labelId:null},
+      {labelId,name:"Ambiguous"},{labelId,color:"#abcdef"},{name:42},{name:" "},
+      {name:"New label",color:42},{name:"New label",color:"red"}]) {
+      const response = await request(app,path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)})
+      expect(db.db.prepare("SELECT * FROM task_label_assignments").all()).toEqual([])
+      expect(response.status,JSON.stringify(payload)).toBe(400)
+      expect(db.db.prepare("SELECT name FROM task_labels ORDER BY id").all()).toEqual([{name:"Assignment label"}])
+    }
+    for (const payload of [{labelId},{name:"New label",color:"#abcdef"}]) {
+      const valid = await request(app,path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)})
+      expect(valid.status).toBe(200)
+    }
+    expect(db.db.prepare("SELECT label_id FROM task_label_assignments WHERE task_id=?").all(FIXTURES.TASK_AUTH)).toHaveLength(2)
+  })
+
+  it.each(["","junk","1oops","1.5","0","-1","9007199254740993"])("rejects invalid explicit document version %j without selecting or deleting the latest version",async version => {
+    const docId = "doc-123456abcdef"
+    for (const [number,status] of [[1,"locked"],[2,"changing"]] as const) {
+      db.db.prepare("INSERT INTO docs(doc_id,hash,kind,name,title,version,status,file_path) VALUES(?,?,?,?,?,?,?,?)")
+        .run(docId,`numeric-v${number}`,"design","numeric-version","Version validation",number,status,`design/numeric-v${number}.md`)
+    }
+    for (const ref of ["by-id/"+docId,"numeric-version"]) {
+      const path = `/api/docs/${ref}?version=${encodeURIComponent(version)}`
+      for (const method of ["GET","DELETE"]) {
+        const response = await request(app,path,{method})
+        expect(response.status,`${method} ${path}`).toBe(400)
+        expect(db.db.prepare("SELECT version FROM docs WHERE doc_id=? ORDER BY version").all(docId)).toEqual([{version:1},{version:2}])
+      }
+      const source = await request(app,`/api/docs/${ref}/source?version=${encodeURIComponent(version)}`)
+      expect(source.status).toBe(400)
+    }
+    expect((await request(app,`/api/docs/by-id/${docId}?version=1`)).status).toBe(200)
+    expect((await request(app,`/api/docs/by-id/${docId}`)).status).toBe(200)
+  })
+
   it("returns all tasks with TaskWithDeps fields", async () => {
     const res = await request(app, "/api/tasks")
     expect(res.status).toBe(200)

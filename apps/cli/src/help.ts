@@ -595,6 +595,8 @@ Subcommands:
   reset <id...>          Reset multiple tasks to ready status
   delete <id...>         Delete multiple tasks
 
+All task IDs are validated before changes begin. Scores must be safe integers;
+decimals, trailing text and values beyond integer precision are rejected.
 Operations are executed sequentially. Each task is processed independently;
 failures on one task do not prevent processing of the remaining tasks.
 A summary of successes and failures is printed at the end.
