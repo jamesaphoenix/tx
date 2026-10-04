@@ -30,7 +30,7 @@ const invariantList = (_pos: string[], flags: Flags) =>
     const enforcement = opt(flags, "enforcement", "e") ?? undefined
 
     const svc = yield* DocService
-    const invariants = yield* svc.listInvariants({ subsystem, enforcement })
+    const invariants = yield* svc.listInvariants({ doc:opt(flags,"doc"), subsystem, enforcement })
 
     if (flag(flags, "json")) {
       console.log(toJson(invariants))

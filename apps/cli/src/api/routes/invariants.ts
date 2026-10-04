@@ -47,6 +47,7 @@ export const InvariantsLive = HttpApiBuilder.group(TxApi, "invariants", (handler
       Effect.gen(function* () {
         const docService = yield* DocService
         const invariants = yield* docService.listInvariants({
+          doc: urlParams.doc,
           subsystem: urlParams.subsystem,
           enforcement: urlParams.enforcement,
         })

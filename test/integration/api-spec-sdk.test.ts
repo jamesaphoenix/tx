@@ -310,4 +310,51 @@ describe("API + SDK spec traceability integration", () => {
     } finally { await direct.dispose(); await disposeRuntime() }
   })
 
+  it("scopes invariant lists by stable and qualified document references across every interface",async () => {
+    const httpClient = new TxClient({apiUrl:baseUrl})
+    const direct = new TxClient({dbPath,contentRoot:tmpProjectDir})
+    const docs: Array<{docId:string;kind:string;invariant:string}> = []
+    for (const [kind,invariant] of [["design","INV-SCOPED-DESIGN"],["prd","INV-SCOPED-PRD"]]) {
+      const created = runTx(["doc","add",kind!,"shared-scope","--db",dbPath,"--json"],tmpProjectDir)
+      expect(created.status,created.stderr).toBe(0)
+      const doc = JSON.parse(created.stdout)
+      const file = join(tmpProjectDir,"specs",doc.filePath)
+      const source = readFileSync(file,"utf8")
+      const block = `invariants:\n  - id: ${invariant}\n    statement: document-scoped lists exclude other documents\n    severity: high\n    verified_by:\n      - test/scoped.test.ts`
+      writeFileSync(file,kind === "design" ? source.replace("invariants: []",block)
+        : source.replace(/ears_requirements:\n[\s\S]*?\n```/,"ears_requirements: []\n```") + `\n# Invariants\n\x60\x60\x60yaml\n${block}\n\x60\x60\x60\n`)
+      expect(runTx(["doc","sync",`${kind}/shared-scope`,"--db",dbPath],tmpProjectDir).status).toBe(0)
+      docs.push({docId:doc.docId,kind:kind!,invariant:invariant!})
+    }
+    const {initRuntime,disposeRuntime} = await import("../../apps/cli/src/mcp/runtime.js")
+    const {registerInvariantTools} = await import("../../apps/cli/src/mcp/tools/invariant.js")
+    const handlers = new Map<string,(args:any) => Promise<any>>()
+    registerInvariantTools({registerTool:(name:string,_config:unknown,handler:(args:any) => Promise<any>) => handlers.set(name,handler)} as any)
+    await initRuntime(dbPath,{contentRoot:tmpProjectDir})
+    try {
+      for (const doc of docs) {
+        for (const ref of [doc.docId,`${doc.kind}/shared-scope`]) {
+          const expected = [doc.invariant]
+          expect((await httpClient.invariants.list({doc:ref})).map(row => row.id)).toEqual(expected)
+          expect((await direct.invariants.list({doc:ref})).map(row => row.id)).toEqual(expected)
+          const cli = runTx(["spec","invariant","list","--doc",ref,"--db",dbPath,"--json"],tmpProjectDir)
+          expect(cli.status,cli.stderr).toBe(0)
+          expect(JSON.parse(cli.stdout).map((row:{id:string}) => row.id)).toEqual(expected)
+          const response = await fetch(`${baseUrl}/api/invariants?doc=${encodeURIComponent(ref)}`)
+          expect(response.status).toBe(200)
+          expect((await response.json()).invariants.map((row:{id:string}) => row.id)).toEqual(expected)
+          const mcp = await handlers.get("tx_invariant_list")!({doc:ref})
+          expect(mcp.isError).toBe(false)
+          expect(JSON.parse(mcp.content[1].text).map((row:{id:string}) => row.id)).toEqual(expected)
+        }
+        expect(await httpClient.invariants.list({doc:doc.docId,subsystem:"wrong-subsystem"})).toEqual([])
+      }
+      expect(await httpClient.invariants.list()).toHaveLength(2)
+      const ambiguous = await fetch(`${baseUrl}/api/invariants?doc=shared-scope`)
+      expect(ambiguous.status).toBe(400)
+      const missing = await fetch(`${baseUrl}/api/invariants?doc=missing-scope`)
+      expect(missing.status).toBe(404)
+    } finally {await direct.dispose();await disposeRuntime()}
+  })
+
 })

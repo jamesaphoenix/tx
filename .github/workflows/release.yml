@@ -74,7 +74,8 @@ jobs:
           TX_CLI_VERSION: ${{ steps.version.outputs.value }}
           BUILD_ARTIFACT: ${{ matrix.artifact }}
         run: |
-          strings "./$BUILD_ARTIFACT" | grep -qF "$TX_CLI_VERSION" || {
+          # Drain strings output: grep -q can close the pipe early and fail with SIGPIPE.
+          strings "./$BUILD_ARTIFACT" | grep -F "$TX_CLI_VERSION" >/dev/null || {
             echo "::error::Version string '$TX_CLI_VERSION' not found in binary $BUILD_ARTIFACT"
             exit 1
           }

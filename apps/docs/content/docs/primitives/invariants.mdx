@@ -12,11 +12,15 @@ Keep invariants in the design specification; map them beside the code and tests.
 ## Commands
 
 ```bash
-tx spec invariant list
+tx spec invariant list --doc checkout-design
 tx spec discover --doc checkout-design
 tx spec gaps --doc checkout-design
 tx spec matrix --doc checkout-design
 ```
+
+Use a stable document ID, `kind/name` or an unambiguous name for `--doc`.
+Document, subsystem and enforcement filters combine; an unknown or ambiguous
+reference returns an error. REST, MCP and both SDK transports use the same scope.
 
 ## Workflow
 

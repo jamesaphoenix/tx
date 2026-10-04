@@ -955,7 +955,8 @@ Examples:
 Usage: tx spec invariant list [--doc <ref>] [--subsystem <name>] [--json]
 
 Options:
-  --doc <ref>          Filter by document
+  --doc <ref>          Filter by stable ID, kind/name or unambiguous name
+  --enforcement <type> Filter by enforcement type
   --subsystem <name>   Filter by subsystem
   --json              Structured output`,
   "spec invariant show": `tx spec invariant show - Inspect one invariant

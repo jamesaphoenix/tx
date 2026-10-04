@@ -117,7 +117,7 @@ interface Transport {
   docsRender(name?: string): Promise<string[]>
 
   // Invariants
-  invariantsList(options?: { subsystem?: string; enforcement?: string }): Promise<SerializedInvariant[]>
+  invariantsList(options?: { doc?: string; subsystem?: string; enforcement?: string }): Promise<SerializedInvariant[]>
   invariantsGet(id: string): Promise<SerializedInvariant>
   invariantsRecord(id: string, passed: boolean, details?: string, durationMs?: number): Promise<SerializedInvariantCheck>
 
@@ -384,7 +384,7 @@ class HttpTransport implements Transport {
   }
 
   // Invariants
-  async invariantsList(options?: { subsystem?: string; enforcement?: string }): Promise<SerializedInvariant[]> {
+  async invariantsList(options?: { doc?: string; subsystem?: string; enforcement?: string }): Promise<SerializedInvariant[]> {
     const r = await this.request<{ invariants: SerializedInvariant[] }>("GET", "/api/invariants", { params: options })
     return r.invariants
   }
@@ -1310,7 +1310,7 @@ class DirectTransport implements Transport {
   }
 
   // Invariants
-  async invariantsList(options?: { subsystem?: string; enforcement?: string }): Promise<SerializedInvariant[]> {
+  async invariantsList(options?: { doc?: string; subsystem?: string; enforcement?: string }): Promise<SerializedInvariant[]> {
     await this.ensureRuntime()
     const Effect = (this as any).Effect
     const core = (this as any).core
@@ -1997,7 +1997,7 @@ class DocsNamespace {
 class InvariantsNamespace {
   constructor(private readonly transport: Transport) {}
 
-  async list(options?: { subsystem?: string; enforcement?: string }): Promise<SerializedInvariant[]> { return this.transport.invariantsList(options) }
+  async list(options?: { doc?: string; subsystem?: string; enforcement?: string }): Promise<SerializedInvariant[]> { return this.transport.invariantsList(options) }
   async get(id: string): Promise<SerializedInvariant> { return this.transport.invariantsGet(id) }
   async record(id: string, passed: boolean, details?: string, durationMs?: number): Promise<SerializedInvariantCheck> { return this.transport.invariantsRecord(id, passed, details, durationMs) }
 }

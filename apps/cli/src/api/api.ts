@@ -537,6 +537,7 @@ const InvariantListResponse = Schema.Struct({
 })
 
 const InvariantListParams = Schema.Struct({
+  doc: Schema.optional(Schema.String),
   subsystem: Schema.optional(Schema.String),
   enforcement: Schema.optional(Schema.String),
 })

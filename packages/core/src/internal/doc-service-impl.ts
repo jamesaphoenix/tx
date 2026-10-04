@@ -555,9 +555,10 @@ export class DocService extends Context.Tag("DocService")<
       invariants: readonly Invariant[]
     }, DocNotFoundError | DocLockedError | InvalidDocYamlError | ValidationError | DatabaseError>
     listInvariants: (filter?: {
+      doc?: string
       subsystem?: string
       enforcement?: string
-    }) => Effect.Effect<Invariant[], DatabaseError>
+    }) => Effect.Effect<Invariant[], DocNotFoundError | ValidationError | DatabaseError>
     recordInvariantCheck: (
       id: string,
       passed: boolean,
@@ -1683,7 +1684,11 @@ export const makeDocServiceLive = (
           }
         }),
 
-      listInvariants: (filter?) => docRepo.findInvariants(filter),
+      listInvariants: (filter?) => Effect.gen(function* () {
+        const {doc: ref,...otherFilters} = filter ?? {}
+        const doc = ref !== undefined ? yield* resolveDocReference(ref) : undefined
+        return yield* docRepo.findInvariants({...otherFilters,docId:doc?.id})
+      }),
 
       recordInvariantCheck: (id, passed, details?, durationMs?) =>
         Effect.gen(function* () {
