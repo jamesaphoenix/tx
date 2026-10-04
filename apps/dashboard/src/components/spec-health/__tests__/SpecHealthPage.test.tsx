@@ -15,7 +15,7 @@ describe("Spec Health", () => {
   it("shows missing and failing evidence separately [INV-LEAN-004] [INV-REQ-LEAN-004]", async () => {
     server.use(http.get("/api/spec/health", () => HttpResponse.json({status:"broken", specTest:{total:3,covered:2,uncovered:1,coveragePercent:67,passing:0,failing:1,untested:1,docsComplete:0,docsHarden:0,docsBuild:1}, decisions:{pending:0,approvedUnsynced:0,total:0},docDrift:{driftedDocs:0,totalDocs:1},docs:[{name:"checkout",phase:"BUILD",gaps:1,drift:[]}]})))
     renderPage()
-    expect(await screen.findByText("broken")).toBeInTheDocument()
+    expect(await screen.findByText("Failing test evidence")).toBeInTheDocument()
     expect(screen.getByText("Failing evidence")).toBeInTheDocument()
     expect(screen.getByText("Missing test results")).toBeInTheDocument()
     expect(screen.getByText("checkout")).toBeInTheDocument()
@@ -29,6 +29,8 @@ describe("Spec Health", () => {
       ]})))
     renderPage()
     expect(await screen.findByRole("link",{name:/Checkout design/})).toHaveAttribute("href","/?tab=docs&docId=doc-111111111111&version=2")
+    expect(screen.getByText("Missing test evidence")).toBeInTheDocument()
+    expect(screen.queryByText("drifting")).not.toBeInTheDocument()
     expect(screen.getByText("2 of 2 (100%)")).toBeInTheDocument()
     expect(screen.getByText("1 untested invariant(s)")).toBeInTheDocument()
     expect(screen.getByText("No invariants")).toBeInTheDocument()

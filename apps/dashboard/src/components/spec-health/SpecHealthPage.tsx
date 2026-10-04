@@ -20,10 +20,17 @@ export function SpecHealthPage() {
     ["Failing evidence", data.specTest.failing],
     ["Drifting documents", data.docDrift.driftedDocs],
   ] as const
+  const statusLabel = data.specTest.failing > 0 ? "Failing test evidence"
+    : data.docDrift.driftedDocs > 0 ? "Document content changed"
+    : data.specTest.uncovered > 0 ? "Missing invariant mappings"
+    : data.specTest.untested > 0 ? "Missing test evidence"
+    : data.specTest.docsHarden > 0 ? "Awaiting human sign-off"
+    : data.specTest.total === 0 ? "No declared invariants"
+    : "Verified and signed off"
   return <section className="overflow-y-auto p-4 md:p-6">
     <h1 className="text-xl font-semibold">Spec Health</h1>
     <p className="mt-2 text-gray-400">Current designs, invariant mappings and executed test evidence.</p>
-    {data.docDrift.totalDocs > 0 && <p className="mt-4">Status: <strong>{data.status}</strong></p>}
+    {data.docDrift.totalDocs > 0 && <p className="mt-4">Status: <strong>{statusLabel}</strong></p>}
     {data.docDrift.totalDocs === 0 && <p className="mt-4">No specifications yet. Create a design document to get started.</p>}
     <dl className="my-6 grid grid-cols-2 gap-3 md:grid-cols-3">
       {metrics.map(([label, value]) => <div key={label} className="rounded-lg bg-gray-800 p-4">

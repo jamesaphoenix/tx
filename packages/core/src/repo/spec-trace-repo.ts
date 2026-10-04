@@ -2,7 +2,7 @@ import { Context, Effect, Layer } from "effect"
 import { SqliteClient } from "../db.js"
 import { DatabaseError, EntityFetchError } from "../errors.js"
 import { rowToSpecSignoff, rowToSpecTest, rowToSpecTestRun } from "../mappers/spec-trace.js"
-import { buildInvariantFilterSql } from "./spec-trace-repo.filter.js"
+import { buildInvariantFilterSql, docScopeAliases } from "./spec-trace-repo.filter.js"
 import type { SpecPruneCandidate, SpecTraceRepositoryService, SyncDiscoveredSpecTestInput } from "./spec-trace-repo.types.js"
 import { ensureSpecProjection } from "./spec-projection.js"
 import { legacySpecProjectionContext, type SpecProjectionContext } from "../workspace-context.js"
@@ -171,23 +171,41 @@ export const makeSpecTraceRepositoryLive = (
           try: () => {
             if (testIds.length === 0) return new Map<string, readonly SpecTest[]>()
 
-            const placeholders = testIds.map(() => "?").join(", ")
-            const rows = db.prepare<SpecTestRow>(
-              `SELECT * FROM spec_tests WHERE projection_key = ? AND test_id IN (${placeholders}) ORDER BY test_id, invariant_id`
-            ).all(projectionKey, ...testIds)
-
             const result = new Map<string, SpecTest[]>()
-            for (const row of rows) {
-              const mapped = rowToSpecTest(row)
-              const current = result.get(mapped.testId) ?? []
-              current.push(mapped)
-              result.set(mapped.testId, current)
+            for (let offset = 0; offset < testIds.length; offset += 500) {
+              const chunk = testIds.slice(offset, offset + 500)
+              const placeholders = chunk.map(() => "?").join(", ")
+              const rows = db.prepare<SpecTestRow>(
+                `SELECT * FROM spec_tests WHERE projection_key = ? AND test_id IN (${placeholders}) ORDER BY test_id, invariant_id`
+              ).all(projectionKey, ...chunk)
+              for (const row of rows) {
+                const mapped = rowToSpecTest(row)
+                const current = result.get(mapped.testId) ?? []
+                current.push(mapped)
+                result.set(mapped.testId, current)
+              }
             }
 
             return result
           },
           catch: (cause) => new DatabaseError({ cause }),
         }),
+
+      findParameterizedSpecTestsByFiles: (testFiles) => Effect.try({
+        try: () => {
+          const rows: SpecTest[] = []
+          const files = [...new Set(testFiles)]
+          for (let offset = 0; offset < files.length; offset += 500) {
+            const chunk = files.slice(offset, offset + 500)
+            const placeholders = chunk.map(() => "?").join(",")
+            rows.push(...db.prepare<SpecTestRow>(`SELECT * FROM spec_tests WHERE projection_key = ?
+              AND framework IN ('vitest-each','jest-each') AND test_file IN (${placeholders})
+              ORDER BY test_id, invariant_id`).all(projectionKey,...chunk).map(rowToSpecTest))
+          }
+          return rows
+        },
+        catch: cause => new DatabaseError({cause}),
+      }),
 
       previewDiscoveredSpecTestPrune: ({ rows, invariantIds }) =>
         Effect.try({
@@ -473,6 +491,7 @@ export const makeSpecTraceRepositoryLive = (
       upsertSignoff: (scopeType, scopeValue, signedOffBy, notes) =>
         Effect.try({
           try: () => {
+            if (scopeType === "doc" && scopeValue !== null) scopeValue = docScopeAliases(db,scopeValue)[0]!
             ensureSpecProjection(db, projection)
             if (scopeValue === null) {
               db.prepare(
@@ -516,6 +535,13 @@ export const makeSpecTraceRepositoryLive = (
       findSignoff: (scopeType, scopeValue) =>
         Effect.try({
           try: () => {
+            if (scopeType === "doc" && scopeValue !== null) {
+              const aliases = docScopeAliases(db,scopeValue)
+              const row = db.prepare<SpecSignoffRow>(`SELECT * FROM spec_signoffs
+                WHERE projection_key=? AND scope_type='doc' AND scope_value IN (${aliases.map(() => "?").join(",")})
+                ORDER BY signed_off_at DESC,id DESC LIMIT 1`).get(projectionKey,...aliases)
+              return row ? rowToSpecSignoff(row) : null
+            }
             const row = db.prepare<SpecSignoffRow>(
               `SELECT * FROM spec_signoffs WHERE projection_key = ? AND scope_type = ? AND (
                  (scope_value IS NULL AND ? IS NULL) OR scope_value = ?

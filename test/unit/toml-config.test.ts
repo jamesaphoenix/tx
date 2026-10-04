@@ -11,6 +11,7 @@ import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   listTomlSections,
+  defaultSpecTestPatterns,
   readTxConfig,
   writeDashboardDefaultTaskAssigmentType,
   writeDashboardAutoAddStatuses,
@@ -31,19 +32,7 @@ const BUILTIN_LINT_MESSAGES = NO_CONFIG_DEFAULTS.spec.lintMessages;
 const DEFAULTS = {
   docs: { path: "specs" },
   spec: {
-    testPatterns: [
-      "test/**/*.test.{ts,js,tsx,jsx}",
-      "tests/**/*.py",
-      "**/*_test.go",
-      "**/*_test.rs",
-      "**/test_*.py",
-      "**/*.spec.{ts,js,tsx,jsx}",
-      "**/Test*.java",
-      "**/*Test.java",
-      "**/*_spec.rb",
-      "**/*.test.{c,cpp,cc}",
-      "**/*_test.{c,cpp,cc}",
-    ],
+    testPatterns: [...defaultSpecTestPatterns()],
     designDocMissingTaskLinks: "always",
     // Section definitions are large and are asserted structurally below; reuse
     // the values readTxConfig produces for a project with no config file.
@@ -488,6 +477,6 @@ describe("spec type configuration", () => {
 
     const config = readTxConfig(cwd);
     expect(config.spec.designDocMissingTaskLinks).toBe("always");
-    expect(config.spec.testPatterns.length).toBe(11);
+    expect(config.spec.testPatterns).toEqual(defaultSpecTestPatterns());
   });
 });

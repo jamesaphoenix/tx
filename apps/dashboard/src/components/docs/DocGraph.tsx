@@ -1,4 +1,4 @@
-import { useRef, useMemo, useState } from "react"
+import { useId, useRef, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { fetchers, type DocGraphNode, type DocGraphEdge } from "../../api/client"
 import { Button } from "../ui"
@@ -140,9 +140,17 @@ function edgePath(x1: number, y1: number, x2: number, y2: number, nodeR: number)
   return `M ${sx} ${sy} Q ${cpx} ${midY}, ${ex} ${ey}`
 }
 
+function displayDirection(edge: DocGraphEdge): [string, string] {
+  return edge.source.startsWith("task:") && edge.target.startsWith("doc:")
+    ? [edge.target, edge.source] : [edge.source, edge.target]
+}
+
 export function DocGraph({ selectedNodeId, onSelectDoc, onSelectTask, fullPage }: DocGraphProps) {
   const canvasRef = useRef<SVGSVGElement>(null)
   const [hoveredId, setHoveredId] = useState<string | null>(null)
+  const [focusedId, setFocusedId] = useState<string | null>(null)
+  const svgId = useId().replace(/:/g, "")
+  const definitions = {arrow:`${svgId}-arrow`,highlight:`${svgId}-arrow-highlight`,glow:`${svgId}-node-glow`,grid:`${svgId}-dot-grid`}
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["doc-graph"],
@@ -164,7 +172,7 @@ export function DocGraph({ selectedNodeId, onSelectDoc, onSelectTask, fullPage }
 
   // Track which nodes are connected to hovered/selected for highlighting
   const connectedToFocus = useMemo(() => {
-    const focusId = hoveredId ?? selectedNodeId
+    const focusId = focusedId ?? hoveredId ?? selectedNodeId
     if (!focusId) return null
     const focusNode = positioned.find((n) => n.id === focusId)
     if (!focusNode) return null
@@ -174,8 +182,7 @@ export function DocGraph({ selectedNodeId, onSelectDoc, onSelectTask, fullPage }
     for (const e of edges) {
       // Task attachments describe what a task implements. Display their path
       // in the document -> task direction used by the layout.
-      const [source,target] = e.source.startsWith("task:") && e.target.startsWith("doc:")
-        ? [e.target,e.source] : [e.source,e.target]
+      const [source,target] = displayDirection(e)
       descendants.set(source,[...(descendants.get(source) ?? []),target])
       ancestors.set(target,[...(ancestors.get(target) ?? []),source])
     }
@@ -192,7 +199,7 @@ export function DocGraph({ selectedNodeId, onSelectDoc, onSelectTask, fullPage }
       }
     }
     return ids
-  }, [hoveredId, selectedNodeId, positioned, edges])
+  }, [focusedId, hoveredId, selectedNodeId, positioned, edges])
 
   if (isLoading) {
     return <div role="status" aria-label="Loading document graph" className="animate-pulse bg-gray-800 rounded-lg h-full" />
@@ -228,7 +235,7 @@ export function DocGraph({ selectedNodeId, onSelectDoc, onSelectTask, fullPage }
         <defs>
           {/* Arrow marker */}
           <marker
-            id="arrow"
+            id={definitions.arrow}
             viewBox="0 0 10 10"
             refX="8"
             refY="5"
@@ -239,7 +246,7 @@ export function DocGraph({ selectedNodeId, onSelectDoc, onSelectTask, fullPage }
             <path d="M 0 1 L 8 5 L 0 9 z" fill="#475569" className="graph-arrow" />
           </marker>
           <marker
-            id="arrow-highlight"
+            id={definitions.highlight}
             viewBox="0 0 10 10"
             refX="8"
             refY="5"
@@ -250,7 +257,7 @@ export function DocGraph({ selectedNodeId, onSelectDoc, onSelectTask, fullPage }
             <path d="M 0 1 L 8 5 L 0 9 z" fill="#94a3b8" className="graph-arrow" />
           </marker>
           {/* Glow filter for selected node */}
-          <filter id="node-glow" x="-50%" y="-50%" width="200%" height="200%">
+          <filter id={definitions.glow} x="-50%" y="-50%" width="200%" height="200%">
             <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
             <feMerge>
               <feMergeNode in="blur" />
@@ -258,19 +265,20 @@ export function DocGraph({ selectedNodeId, onSelectDoc, onSelectTask, fullPage }
             </feMerge>
           </filter>
           {/* Subtle dot pattern for background */}
-          <pattern id="dot-grid" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
+          <pattern id={definitions.grid} x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
             <circle cx="10" cy="10" r="0.5" fill="#334155" opacity="0.5" className="graph-dot" />
           </pattern>
         </defs>
 
         {/* Background */}
-        <rect x={0} y={0} width={canvasW} height={canvasH} fill="url(#dot-grid)" rx={8} />
+        <rect x={0} y={0} width={canvasW} height={canvasH} fill={`url(#${definitions.grid})`} rx={8} />
 
         {/* Edges */}
         <g pointerEvents="none">
           {edges.map((edge, i) => {
-            const from = nodePos.get(edge.source)
-            const to = nodePos.get(edge.target)
+            const [source, target] = displayDirection(edge)
+            const from = nodePos.get(source)
+            const to = nodePos.get(target)
             if (!from || !to) return null
             const isHighlighted = connectedToFocus?.has(edge.source) && connectedToFocus?.has(edge.target)
             return (
@@ -282,7 +290,7 @@ export function DocGraph({ selectedNodeId, onSelectDoc, onSelectTask, fullPage }
                 className={connectedToFocus && !isHighlighted ? "graph-edge-dim" : "graph-edge"}
                 strokeWidth={isHighlighted ? 1.5 : 1}
                 opacity={connectedToFocus && !isHighlighted ? 0.2 : 1}
-                markerEnd={isHighlighted ? "url(#arrow-highlight)" : "url(#arrow)"}
+                markerEnd={`url(#${isHighlighted ? definitions.highlight : definitions.arrow})`}
                 style={{ transition: "stroke 200ms, opacity 200ms" }}
               />
             )
@@ -293,7 +301,7 @@ export function DocGraph({ selectedNodeId, onSelectDoc, onSelectTask, fullPage }
         <g>
           {positioned.map((node) => {
             const isSelected = selectedNodeId === node.id
-            const isHovered = hoveredId === node.id
+            const isHovered = hoveredId === node.id || focusedId === node.id
             const color = KIND_COLORS.get(node.kind) ?? "#9CA3AF"
             const dimmed = connectedToFocus && !connectedToFocus.has(node.id)
             const truncated = node.label.length > labelMaxLen
@@ -318,8 +326,8 @@ export function DocGraph({ selectedNodeId, onSelectDoc, onSelectTask, fullPage }
                 onKeyDown={event => {
                   if (interactive && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); selectNode() }
                 }}
-                onFocus={() => setHoveredId(node.id)}
-                onBlur={() => setHoveredId(null)}
+                onFocus={() => setFocusedId(node.id)}
+                onBlur={() => setFocusedId(null)}
                 onMouseEnter={() => setHoveredId(node.id)}
                 onMouseLeave={() => setHoveredId(null)}
                 className={interactive ? "cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400" : ""}
@@ -338,7 +346,7 @@ export function DocGraph({ selectedNodeId, onSelectDoc, onSelectTask, fullPage }
                     stroke={color}
                     strokeWidth={1}
                     opacity={0.3}
-                    filter="url(#node-glow)"
+                    filter={`url(#${definitions.glow})`}
                   />
                 )}
                 {/* Node dot */}

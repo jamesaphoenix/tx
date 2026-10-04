@@ -32,7 +32,12 @@ results without success-shaped fallbacks. Dashboard cycles remain simple plannin
 Skills contain creation, copying and verification guidance; they launch no agents.
 Executed evidence matches the mapped file and assertion within the content checkout.
 Repeated results in one batch retain any failure; shared titles cannot credit a
-different test file. Native reports keep their paths until the service resolves
+different test file. Literal parameterised test templates match expanded report
+cases only in their mapped file; a failed or skipped case prevents a passing
+aggregate. Discovery and new config scaffolds use the same default patterns,
+including component tests in apps and packages. Stable document IDs scope
+sign-offs consistently across unambiguous name and kind/name references.
+Native reports keep their paths until the service resolves
 them against the checkout. Production annotations appear as source references,
 separate from executable tests. They cannot be recorded as passing runs and do
 not create missing-result blockers. Source-only invariants remain testing gaps.
@@ -44,6 +49,11 @@ accepts local browser origins and binds to loopback. Task controls are hidden wh
 navigation changes identity; description saves are serialised and failed drafts
 remain available for an explicit retry. Packaged builds remove stale output before
 compilation so deleted runtime modules cannot remain in npm tarballs.
+Task composition saves the task, labels and cycle membership atomically. A failed
+attachment rolls back the entire creation, leaving the draft available for retry.
+Dialogs focus their first input, wrap keyboard navigation and return to their
+opener. Rename controls and cycle removal remain accessible without mouse hover.
+Graph arrows follow the design, plan and task hierarchy used by keyboard focus.
 Weekly cycles are opt-in. Auto-add settings persist, including an empty selection;
 cycle creation includes all matching tasks in one transaction and never relies on
 the first page of the task list. Editing a task cannot create a future cycle.

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { render, screen, waitFor, fireEvent, act } from "@testing-library/react"
+import { render, screen, waitFor, fireEvent, act, cleanup } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { http, HttpResponse } from "msw"
 import App from "../App"
@@ -133,7 +133,7 @@ async function runCommand(label: string) {
     fireEvent.change(paletteInput, { target: { value: parentChild.parent } })
     await waitFor(() => {
       const allButtons = Array.from(document.querySelectorAll("[data-item-index]"))
-      expect(allButtons.length).toBeGreaterThan(0)
+      expect(allButtons.length, `No palette results for ${label}`).toBeGreaterThan(0)
     })
     const parentButton = findPaletteButton(parentChild.parent)
     if (parentButton) {
@@ -141,7 +141,7 @@ async function runCommand(label: string) {
       // Wait for children to appear after drilling in
       await waitFor(() => {
         const allButtons = Array.from(document.querySelectorAll("[data-item-index]"))
-        expect(allButtons.length).toBeGreaterThan(0)
+        expect(allButtons.length, `No palette results for ${label}`).toBeGreaterThan(0)
       })
       const childButton = findPaletteButton(parentChild.child)
       if (childButton) {
@@ -156,7 +156,7 @@ async function runCommand(label: string) {
 
   await waitFor(() => {
     const allButtons = Array.from(document.querySelectorAll("[data-item-index]"))
-    expect(allButtons.length).toBeGreaterThan(0)
+    expect(allButtons.length, `No palette results for ${label}`).toBeGreaterThan(0)
   })
 
   const allPaletteButtons = Array.from(document.querySelectorAll("[data-item-index]")) as HTMLButtonElement[]
@@ -185,6 +185,8 @@ describe("Task CMD+K operations", () => {
   })
 
   afterEach(() => {
+    cleanup()
+    queryClient.clear()
     server.resetHandlers()
   })
 
@@ -212,12 +214,10 @@ describe("Task CMD+K operations", () => {
     const allTasks = [backlogTask, doneTask]
 
     server.use(
-      http.get("*/api/stats", () => HttpResponse.json({ tasks: 2, done: 1, ready: 1, learnings: 0, runsRunning: 0, runsTotal: 0 })),
-      http.get("*/api/ralph", () => HttpResponse.json({ running: false, pid: null, currentIteration: 0, currentTask: null, recentActivity: [] })),
+      http.get("*/api/stats", () => HttpResponse.json({ tasks: 2, done: 1, ready: 1 })),
       http.get("*/api/settings", () => HttpResponse.json({
         dashboard: { defaultTaskAssigmentType: "human", defaultTaskView: "list" },
       })),
-      http.get("*/api/runs", () => HttpResponse.json({ runs: [], nextCursor: null, hasMore: false })),
       http.get("*/api/docs", () => HttpResponse.json({ docs: [] })),
       http.get("*/api/docs/graph", () => HttpResponse.json({ nodes: [], edges: [] })),
       http.get("*/api/cycles", () => HttpResponse.json({ cycles: [] })),
@@ -294,9 +294,7 @@ describe("Task CMD+K operations", () => {
     })
   })
 
-  // Skip: commands are now hierarchical (Set status > Backlog) instead of flat (Set status: Backlog).
-  // The palette command registration timing after executing leaf commands needs investigation.
-  it.skip("executes all single-item CMD+K operations in task detail", { timeout: 15000 }, async () => {
+  it("executes all single-item CMD+K operations in task detail", { timeout: 15000 }, async () => {
     const parentTask = createTask({
       id: "tx-parent-cmdk",
       title: "Parent CMDK",
@@ -306,6 +304,7 @@ describe("Task CMD+K operations", () => {
     })
     const childA = createTask({ id: "tx-child-a", title: "Child CMDK A", parentId: "tx-parent-cmdk" })
     const childB = createTask({ id: "tx-child-b", title: "Child CMDK B", parentId: "tx-parent-cmdk" })
+    const childNew = createTask({id:"tx-child-new",title:"Subtask via command",parentId:parentTask.id})
 
     const patchPayloads: Array<{ id: string; status?: string }> = []
     const deletedTaskIds: string[] = []
@@ -322,12 +321,10 @@ describe("Task CMD+K operations", () => {
     vi.spyOn(window, "prompt").mockReturnValue("CmdkLabel")
 
     server.use(
-      http.get("*/api/stats", () => HttpResponse.json({ tasks: 3, done: 0, ready: 1, learnings: 0, runsRunning: 0, runsTotal: 0 })),
-      http.get("*/api/ralph", () => HttpResponse.json({ running: false, pid: null, currentIteration: 0, currentTask: null, recentActivity: [] })),
+      http.get("*/api/stats", () => HttpResponse.json({ tasks: 3, done: 0, ready: 1 })),
       http.get("*/api/settings", () => HttpResponse.json({
         dashboard: { defaultTaskAssigmentType: "human", defaultTaskView: "list" },
       })),
-      http.get("*/api/runs", () => HttpResponse.json({ runs: [], nextCursor: null, hasMore: false })),
       http.get("*/api/docs", () => HttpResponse.json({ docs: [] })),
       http.get("*/api/docs/graph", () => HttpResponse.json({ nodes: [], edges: [] })),
       http.get("*/api/cycles", () => HttpResponse.json({ cycles: [] })),
@@ -347,9 +344,9 @@ describe("Task CMD+K operations", () => {
       ),
       http.get("*/api/tasks/:id", ({ params }) => {
         const id = String(params.id)
-        if (id === "tx-child-a") {
+        if (id === "tx-child-a" || id === childNew.id) {
           return HttpResponse.json({
-            task: childA,
+            task: id === childNew.id ? childNew : childA,
             blockedByTasks: [],
             blocksTasks: [],
             childTasks: [],
@@ -366,7 +363,7 @@ describe("Task CMD+K operations", () => {
       http.post("*/api/tasks", async ({ request }) => {
         const payload = await request.json() as { parentId?: string | null; title?: string }
         createdTaskPayloads.push(payload)
-        return HttpResponse.json(createTask({ id: "tx-child-new", title: payload.title ?? "Child via command", parentId: payload.parentId ?? null }), { status: 201 })
+        return HttpResponse.json({...childNew,title:payload.title,parentId:payload.parentId}, { status: 201 })
       }),
       http.patch("*/api/tasks/:id", async ({ params, request }) => {
         const payload = await request.json() as { status?: string }
@@ -416,12 +413,12 @@ describe("Task CMD+K operations", () => {
       expect(assignPayloads.some((payload) => payload.name === "CmdkLabel")).toBe(true)
     })
 
-    await runCommand("Add label: Bug")
+    await runCommand("Set label: Add: Bug")
     await waitFor(() => {
       expect(assignPayloads.some((payload) => payload.labelId === 1)).toBe(true)
     })
 
-    await runCommand("Remove label: Feature")
+    await runCommand("Set label: Remove: Feature")
     await waitFor(() => {
       expect(unassignPayloads.some((payload) => payload.labelId === 2)).toBe(true)
     })
@@ -455,11 +452,17 @@ describe("Task CMD+K operations", () => {
 
     await waitFor(() => {
       expect(createdTaskPayloads.some((payload) => payload.parentId === "tx-parent-cmdk")).toBe(true)
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+      expect(screen.getByRole("heading",{name:"Parent CMDK"})).toBeInTheDocument()
     })
 
     await runCommand("Back to task list")
     await waitFor(() => {
-      expect(screen.getByText("Properties")).toBeInTheDocument()
+      expect(screen.queryByText("Properties")).not.toBeInTheDocument()
+    })
+    await runCommand("Parent CMDK")
+    await waitFor(() => {
+      expect(screen.getByRole("heading",{name:"Parent CMDK"})).toBeInTheDocument()
     })
 
     await runCommand("Select all child tasks")
@@ -476,7 +479,7 @@ describe("Task CMD+K operations", () => {
 
     await runCommand("Open child: Child CMDK A")
     await waitFor(() => {
-      expect(screen.getByText("Child CMDK A")).toBeInTheDocument()
+      expect(screen.getByRole("heading",{name:"Child CMDK A"})).toBeInTheDocument()
     })
 
     await runCommand("Back to task list")
@@ -513,9 +516,7 @@ describe("Task CMD+K operations", () => {
     const createTaskPayloads: Array<{ parentId?: string | null; title?: string }> = []
 
     server.use(
-      http.get("*/api/stats", () => HttpResponse.json({ tasks: 1, done: 0, ready: 1, learnings: 0, runsRunning: 0, runsTotal: 0 })),
-      http.get("*/api/ralph", () => HttpResponse.json({ running: false, pid: null, currentIteration: 0, currentTask: null, recentActivity: [] })),
-      http.get("*/api/runs", () => HttpResponse.json({ runs: [], nextCursor: null, hasMore: false })),
+      http.get("*/api/stats", () => HttpResponse.json({ tasks: 1, done: 0, ready: 1 })),
       http.get("*/api/docs", () => HttpResponse.json({ docs: [] })),
       http.get("*/api/docs/graph", () => HttpResponse.json({ nodes: [], edges: [] })),
       http.get("*/api/cycles", () => HttpResponse.json({ cycles: [] })),
@@ -615,16 +616,14 @@ describe("Task CMD+K operations", () => {
     const parentTask = createTask({ id: "tx-parent-modal", title: "Modal parent" })
     const createdTask = createTask({ id: "tx-created-modal", title: "Created from modal", status: "done" })
 
-    const createTaskPayloads: Array<{ status?: string; title?: string }> = []
+    const createTaskPayloads: Array<{ status?: string; title?: string; labels?: Array<{labelId?:number;name?:string;color?:string}> }> = []
     const assignPayloads: Array<{ labelId?: number; name?: string; color?: string }> = []
     const createLabelAttempts: string[] = []
 
     vi.spyOn(window, "prompt").mockReturnValue("NewFromCommand")
 
     server.use(
-      http.get("*/api/stats", () => HttpResponse.json({ tasks: 1, done: 0, ready: 0, learnings: 0, runsRunning: 0, runsTotal: 0 })),
-      http.get("*/api/ralph", () => HttpResponse.json({ running: false, pid: null, currentIteration: 0, currentTask: null, recentActivity: [] })),
-      http.get("*/api/runs", () => HttpResponse.json({ runs: [], nextCursor: null, hasMore: false })),
+      http.get("*/api/stats", () => HttpResponse.json({ tasks: 1, done: 0, ready: 0 })),
       http.get("*/api/docs", () => HttpResponse.json({ docs: [] })),
       http.get("*/api/docs/graph", () => HttpResponse.json({ nodes: [], edges: [] })),
       http.get("*/api/cycles", () => HttpResponse.json({ cycles: [] })),
@@ -661,7 +660,7 @@ describe("Task CMD+K operations", () => {
         return HttpResponse.json({ error: "Not found" }, { status: 404 })
       }),
       http.post("*/api/tasks", async ({ request }) => {
-        const payload = await request.json() as { title?: string; status?: string }
+        const payload = await request.json() as { title?: string; status?: string; labels?: Array<{labelId?:number;name?:string;color?:string}> }
         createTaskPayloads.push(payload)
         return HttpResponse.json(createdTask, { status: 201 })
       }),
@@ -718,7 +717,8 @@ describe("Task CMD+K operations", () => {
     await runCommand("Remove label: Feature")
     await runCommand("Create new label")
     await waitFor(() => {
-      expect(createLabelAttempts).toContain("NewFromCommand")
+      expect(assignPayloads).toEqual([])
+    expect(createLabelAttempts).toContain("NewFromCommand")
       expect(screen.getByText("NewFromCommand")).toBeInTheDocument()
     })
 
@@ -735,10 +735,11 @@ describe("Task CMD+K operations", () => {
       expect(createTaskPayloads[0]?.title).toBe("Created from modal")
     })
 
+    expect(assignPayloads).toEqual([])
     expect(createLabelAttempts).toContain("NewFromCommand")
-    expect(assignPayloads.some((payload) => payload.labelId === 1)).toBe(true)
-    expect(assignPayloads.some((payload) => payload.name === "NewFromCommand")).toBe(true)
-    expect(assignPayloads.some((payload) => payload.labelId === 2)).toBe(false)
+    expect(createTaskPayloads[0]?.labels?.some((payload) => payload.labelId === 1)).toBe(true)
+    expect(createTaskPayloads[0]?.labels?.some((payload) => payload.name === "NewFromCommand")).toBe(true)
+    expect(createTaskPayloads[0]?.labels?.some((payload) => payload.labelId === 2)).toBe(false)
 
   })
 
@@ -748,9 +749,7 @@ describe("Task CMD+K operations", () => {
     const createTaskPayloads: Array<{ status?: string; title?: string }> = []
 
     server.use(
-      http.get("*/api/stats", () => HttpResponse.json({ tasks: 1, done: 0, ready: 0, learnings: 0, runsRunning: 0, runsTotal: 0 })),
-      http.get("*/api/ralph", () => HttpResponse.json({ running: false, pid: null, currentIteration: 0, currentTask: null, recentActivity: [] })),
-      http.get("*/api/runs", () => HttpResponse.json({ runs: [], nextCursor: null, hasMore: false })),
+      http.get("*/api/stats", () => HttpResponse.json({ tasks: 1, done: 0, ready: 0 })),
       http.get("*/api/docs", () => HttpResponse.json({ docs: [] })),
       http.get("*/api/docs/graph", () => HttpResponse.json({ nodes: [], edges: [] })),
       http.get("*/api/cycles", () => HttpResponse.json({ cycles: [] })),
@@ -804,8 +803,7 @@ describe("Task CMD+K operations", () => {
     })
   })
 
-  // Skip: selection commands are now hierarchical (Set status > Done) instead of flat (Set selected tasks to Done).
-  it.skip("executes list-view selection CMD+K operations", async () => {
+  it("executes list-view selection CMD+K operations", async () => {
     const taskA = createTask({ id: "tx-del-a", title: "Delete A" })
     const taskB = createTask({ id: "tx-del-b", title: "Delete B" })
     const deleted: string[] = []
@@ -819,9 +817,7 @@ describe("Task CMD+K operations", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true)
 
     server.use(
-      http.get("*/api/stats", () => HttpResponse.json({ tasks: 2, done: 0, ready: 0, learnings: 0, runsRunning: 0, runsTotal: 0 })),
-      http.get("*/api/ralph", () => HttpResponse.json({ running: false, pid: null, currentIteration: 0, currentTask: null, recentActivity: [] })),
-      http.get("*/api/runs", () => HttpResponse.json({ runs: [], nextCursor: null, hasMore: false })),
+      http.get("*/api/stats", () => HttpResponse.json({ tasks: 2, done: 0, ready: 0 })),
       http.get("*/api/docs", () => HttpResponse.json({ docs: [] })),
       http.get("*/api/docs/graph", () => HttpResponse.json({ nodes: [], edges: [] })),
       http.get("*/api/cycles", () => HttpResponse.json({ cycles: [] })),
@@ -861,9 +857,9 @@ describe("Task CMD+K operations", () => {
     await runCommand("Copy selected task IDs")
     expect(writeText).toHaveBeenCalled()
 
-    await runCommand("Set selected tasks to Backlog")
-    await runCommand("Set selected tasks to Active")
-    await runCommand("Set selected tasks to Done")
+    await runCommand("Set status: Backlog")
+    await runCommand("Set status: Active")
+    await runCommand("Set status: Done")
 
     await waitFor(() => {
       const statuses = patchPayloads.map((payload) => payload.status)
@@ -889,8 +885,7 @@ describe("Task CMD+K operations", () => {
     })
   })
 
-  // Skip: commands are now hierarchical and palette command re-registration timing needs investigation.
-  it.skip("reflects single-item CMD+K mutations in task state", async () => {
+  it("reflects single-item CMD+K mutations in task state", async () => {
     const bugLabel = { id: 1, name: "Bug", color: "#ef4444", createdAt: "", updatedAt: "" }
     const featureLabel = { id: 2, name: "Feature", color: "#10b981", createdAt: "", updatedAt: "" }
     const labels = [bugLabel, featureLabel]
@@ -907,9 +902,7 @@ describe("Task CMD+K operations", () => {
     const removedLabelIds: number[] = []
 
     server.use(
-      http.get("*/api/stats", () => HttpResponse.json({ tasks: 1, done: 0, ready: 0, learnings: 0, runsRunning: 0, runsTotal: 0 })),
-      http.get("*/api/ralph", () => HttpResponse.json({ running: false, pid: null, currentIteration: 0, currentTask: null, recentActivity: [] })),
-      http.get("*/api/runs", () => HttpResponse.json({ runs: [], nextCursor: null, hasMore: false })),
+      http.get("*/api/stats", () => HttpResponse.json({ tasks: 1, done: 0, ready: 0 })),
       http.get("*/api/docs", () => HttpResponse.json({ docs: [] })),
       http.get("*/api/docs/graph", () => HttpResponse.json({ nodes: [], edges: [] })),
       http.get("*/api/cycles", () => HttpResponse.json({ cycles: [] })),
@@ -998,12 +991,12 @@ describe("Task CMD+K operations", () => {
       expect(screen.getByText("Internal status: backlog")).toBeInTheDocument()
     })
 
-    await runCommand("Add label: Bug")
+    await runCommand("Set label: Add: Bug")
     await waitFor(() => {
       expect(screen.getByText("2 selected")).toBeInTheDocument()
     })
 
-    await runCommand("Remove label: Feature")
+    await runCommand("Set label: Remove: Feature")
     await waitFor(() => {
       expect(screen.getByText("1 selected")).toBeInTheDocument()
     })
@@ -1014,8 +1007,7 @@ describe("Task CMD+K operations", () => {
     expect(patchPayloads.some((payload) => payload.status === "backlog")).toBe(true)
   })
 
-  // Skip: commands are now hierarchical and status filter button names include counts.
-  it.skip("covers list CMD+K navigation, filtering, and state updates", async () => {
+  it("covers list CMD+K navigation, filtering, and state updates", async () => {
     const backlogA = createTask({ id: "tx-list-a", title: "List A", status: "backlog" })
     const backlogB = createTask({ id: "tx-list-b", title: "List B", status: "backlog" })
     const inProgress = createTask({ id: "tx-list-active", title: "List In Progress", status: "active" })
@@ -1032,9 +1024,7 @@ describe("Task CMD+K operations", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true)
 
     server.use(
-      http.get("*/api/stats", () => HttpResponse.json({ tasks: taskState.size, done: 1, ready: 0, learnings: 0, runsRunning: 0, runsTotal: 0 })),
-      http.get("*/api/ralph", () => HttpResponse.json({ running: false, pid: null, currentIteration: 0, currentTask: null, recentActivity: [] })),
-      http.get("*/api/runs", () => HttpResponse.json({ runs: [], nextCursor: null, hasMore: false })),
+      http.get("*/api/stats", () => HttpResponse.json({ tasks: taskState.size, done: 1, ready: 0 })),
       http.get("*/api/docs", () => HttpResponse.json({ docs: [] })),
       http.get("*/api/docs/graph", () => HttpResponse.json({ nodes: [], edges: [] })),
       http.get("*/api/cycles", () => HttpResponse.json({ cycles: [] })),
@@ -1099,19 +1089,22 @@ describe("Task CMD+K operations", () => {
       expect(screen.getByText("List B")).toBeInTheDocument()
     })
 
-    await runCommand("View Done")
+    await runCommand("View All Statuses")
+    await runCommand("Filter by status: Done")
     await waitFor(() => {
       expect(screen.getByText("List Done")).toBeInTheDocument()
       expect(screen.queryByText("List A")).not.toBeInTheDocument()
     })
 
-    await runCommand("View In Progress")
+    await runCommand("View All Statuses")
+    await runCommand("Filter by status: Active")
     await waitFor(() => {
       expect(screen.getByText("List In Progress")).toBeInTheDocument()
       expect(screen.queryByText("List Done")).not.toBeInTheDocument()
     })
 
-    await runCommand("View Backlog")
+    await runCommand("View All Statuses")
+    await runCommand("Filter by status: Backlog")
     await waitFor(() => {
       expect(screen.getByText("List A")).toBeInTheDocument()
       expect(screen.getByText("List B")).toBeInTheDocument()
@@ -1134,14 +1127,15 @@ describe("Task CMD+K operations", () => {
       expect(selectionStore.state.taskIds.size).toBe(2)
     })
 
-    await runCommand("Set selected tasks to Done")
+    await runCommand("Set status: Done")
     await waitFor(() => {
       expect(patchPayloads.some((payload) => payload.id === "tx-list-a" && payload.status === "done")).toBe(true)
       expect(patchPayloads.some((payload) => payload.id === "tx-list-b" && payload.status === "done")).toBe(true)
       expect(screen.getByText("No tasks found")).toBeInTheDocument()
     })
 
-    await runCommand("View Done")
+    await runCommand("View All Statuses")
+    await runCommand("Filter by status: Done")
     await waitFor(() => {
       expect(screen.getByText("List A")).toBeInTheDocument()
       expect(screen.getByText("List B")).toBeInTheDocument()

@@ -103,7 +103,7 @@ export function CycleListView({
             </div>
             <div className="space-y-2">
               {statusTasks.map((task) => (
-                <div key={task.id} className="group relative">
+                <div key={task.id} className="space-y-1">
                   <TaskCard
                     task={task}
                     compact
@@ -117,7 +117,7 @@ export function CycleListView({
                       event.stopPropagation()
                       onRemoveTask(task.id)
                     }}
-                    className="absolute right-2 top-2 hidden rounded bg-red-500/20 px-2 py-1 text-[11px] font-medium text-red-300 hover:bg-red-500/30 group-hover:block"
+                    className="ml-auto block rounded px-2 py-1 text-xs text-gray-400 hover:bg-red-500/10 hover:text-red-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400"
                     aria-label={`Remove ${task.title} from cycle`}
                   >
                     Remove

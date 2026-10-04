@@ -4,6 +4,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { spawnSync } from "node:child_process"
 import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
+import { parse as parseYaml } from "yaml"
 import { join, resolve } from "node:path"
 
 const CLI_SRC = resolve(__dirname, "../../apps/cli/src/cli.ts")
@@ -266,6 +267,25 @@ describe("tx doc lifecycle coverage", () => {
     if (existsSync(tmpProjectDir)) {
       rmSync(tmpProjectDir, { recursive: true, force: true })
     }
+  })
+
+  it.each(['"version"',"'version'",'"ver\\u0073ion"'])("versions valid quoted YAML keys without changing plan bodies: %s", key => {
+    expect(runTx(["doc","add","plan","quoted-version"],tmpProjectDir).status).toBe(0)
+    const path = join(tmpProjectDir,"specs","plan","quoted-version.md")
+    const source = readFileSync(path,"utf8").replace(/^version: 1$/m,`${key}: 1 # managed version`).replace(/\n/g,"\r\n")
+    writeFileSync(path,source)
+    expect(runTx(["doc","sync","quoted-version"],tmpProjectDir).status).toBe(0)
+    expect(runTx(["doc","lock","quoted-version"],tmpProjectDir).status).toBe(0)
+    const version = runTx(["doc","version","quoted-version"],tmpProjectDir)
+    expect(version.status,version.stderr).toBe(0)
+    const updated = readFileSync(path,"utf8")
+    expect(updated.split("\r\n---\r\n")[1]).toBe(source.split("\r\n---\r\n")[1])
+    expect((parseYaml(updated.split("\r\n---\r\n")[0]!.slice(5)) as {version:number}).version).toBe(2)
+    expect(updated).toContain("# managed version")
+    const sync = runTx(["doc","sync","quoted-version"],tmpProjectDir)
+    expect(sync.status,sync.stderr).toBe(0)
+    const current = runTx(["doc","show","quoted-version","--json"],tmpProjectDir)
+    expect(JSON.parse(current.stdout).version).toBe(2)
   })
 
   it("preserves locked version source and syncs only the current working documents [INV-LEAN-006]", () => {

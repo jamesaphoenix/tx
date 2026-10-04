@@ -31,6 +31,18 @@ Vitest 5 writes JSON to a file. Import failed runs as well as passing ones; in a
 automated check, preserve the test runner's exit code. Results must match the
 mapped file and assertion. A matching title in another file is not evidence.
 
+Literal `it.each` and `it.for` titles are discovered as parameterised mappings.
+Their expanded cases, such as `retry success` and `retry failure` from `retry %s`,
+match within the mapped file. Any failing case keeps the mapping non-passing.
+Skipped Vitest assertions are recorded as non-passing evidence with the skip
+reason, so a partially skipped group cannot establish completion. For dynamically
+generated titles or unsupported syntax, link the exact reported assertions explicitly.
+
+Scope `--doc` with a stable document ID, `kind/name` or an unambiguous name.
+New document sign-offs store the stable lineage ID, so CLI, dashboard and SDK
+references share the same review. Legacy name sign-offs remain valid while the
+name is unambiguous.
+
 Use `tx spec --help` for explicit links, scoped results and supported report formats.
 
 ## Workflow

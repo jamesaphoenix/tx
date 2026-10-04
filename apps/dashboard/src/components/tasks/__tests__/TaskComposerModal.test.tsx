@@ -18,6 +18,26 @@ describe("TaskComposerModal", () => {
     document.documentElement.dataset.theme = "light"
   })
 
+  it("labels the dialog and keeps pending submissions open", async () => {
+    let finish!: () => void
+    const onClose = vi.fn()
+    renderComposer({open:true,heading:"New task",submitLabel:"Create task",availableLabels:[],onClose,
+      onSubmit:() => new Promise<void>(resolve => {finish = resolve})})
+    expect(screen.getByRole("dialog",{name:"New task"})).toHaveAttribute("aria-modal","true")
+    const title = screen.getByRole("textbox",{name:"Task title"})
+    expect(title).toHaveFocus()
+    expect(screen.getByRole("combobox",{name:"Task status"})).toBeInTheDocument()
+    expect(screen.getByRole("combobox",{name:"Assignment type"})).toBeInTheDocument()
+    expect(screen.getByRole("combobox",{name:"Task labels"})).toBeInTheDocument()
+    fireEvent.change(title,{target:{value:"Pending task"}})
+    fireEvent.click(screen.getByRole("button",{name:"Create task"}))
+    fireEvent.keyDown(title,{key:"Escape"})
+    fireEvent.click(screen.getByRole("button",{name:"Close"}))
+    expect(onClose).not.toHaveBeenCalled()
+    finish()
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
+  })
+
   it("closes on Escape", () => {
     const onClose = vi.fn()
 

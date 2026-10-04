@@ -240,7 +240,7 @@ export function CycleKanbanView({
                         draggable
                         onDragStart={(event) => handleDragStart(event, task.id)}
                         onDragEnd={handleDragEnd}
-                        className="group relative cursor-grab active:cursor-grabbing"
+                        className="space-y-1 cursor-grab active:cursor-grabbing"
                       >
                         <TaskCard
                           task={task}
@@ -254,7 +254,7 @@ export function CycleKanbanView({
                             event.stopPropagation()
                             onRemoveTask(task.id)
                           }}
-                          className="absolute right-1 top-1 hidden rounded bg-red-500/20 px-1.5 py-0.5 text-[10px] font-medium text-red-300 hover:bg-red-500/30 group-hover:block"
+                          className="ml-auto block rounded px-2 py-1 text-xs text-gray-400 hover:bg-red-500/10 hover:text-red-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400"
                           aria-label={`Remove ${task.title} from cycle`}
                         >
                           Remove

@@ -45,6 +45,9 @@ runner format. For Vitest 5, write `--reporter=json --outputFile=.tx/spec-result
 then import with `tx spec batch --from vitest < .tx/spec-results.json`. Import
 failures too, and preserve the test runner's exit code in automated checks.
 Evidence must match the mapped file and assertion, not just a shared test title.
+Literal `it.each`/`it.for` titles match their expanded cases within that file;
+any failing or skipped Vitest case keeps the mapping non-passing. Link exact
+reported assertions explicitly for dynamically generated test titles.
 With pipelines use `set -o pipefail`; retain failure output.
 Record manual structural evidence only after performing that review and label it
 as manual evidence in the report.

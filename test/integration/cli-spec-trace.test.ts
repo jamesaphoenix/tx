@@ -311,7 +311,8 @@ describe("CLI spec traceability", () => {
     expect(complete.status).toBe(0)
     const completeJson = JSON.parse(complete.stdout) as { scopeType: string; scopeValue: string; signedOffBy: string }
     expect(completeJson.scopeType).toBe("doc")
-    expect(completeJson.scopeValue).toBe("spec-cli-b")
+    const signedDoc = JSON.parse(runTx(cwd,dbPath,["doc","show","spec-cli-b","--json"]).stdout) as {docId:string}
+    expect(completeJson.scopeValue).toBe(signedDoc.docId)
     expect(completeJson.signedOffBy).toBe("cli-reviewer")
 
     const status = runTx(cwd, dbPath, ["spec", "status", "--doc", "spec-cli-b", "--json"])

@@ -264,7 +264,7 @@ describe("API + SDK spec traceability integration", () => {
       notes: "task ready to ship",
     })
     expect(signoff.scopeType).toBe("doc")
-    expect(signoff.scopeValue).toBe(docName)
+    expect(signoff.scopeValue).toBe((await tx.docs.get(docName)).docId)
     expect(signoff.signedOffBy).toBe("http-reviewer")
   })
   it("returns identical Spec Health through CLI, REST, SDK and the MCP handler [INV-LEAN-004] [INV-REQ-LEAN-004]", async () => {

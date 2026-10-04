@@ -35,6 +35,10 @@ Coverage counts mapped invariants, even if their tests have not run. Use the
 passing, failing and missing-evidence counts to judge execution. A mapped test is
 not proof that an invariant holds.
 
+The dashboard names the next check directly: missing mappings, missing evidence,
+failing evidence, changed document content or awaiting human sign-off. The API's
+`synced`, `drifting` and `broken` summary values remain stable for integrations.
+
 Failed evidence reads return an error. An empty workspace says that no specs exist.
 The dashboard's Document Checks panel checks document structure; Spec Health also
 includes execution evidence and sign-off.

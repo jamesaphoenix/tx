@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
+import { useModalFocus } from "../../hooks/useModalFocus"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { fetchers } from "../../api/client"
 import { Button } from "../ui"
 import { SearchInput } from "../ui/SearchInput"
 import { useCycleDetail, useCycles } from "../../hooks/useCycles"
-import { useCommands } from "../command-palette/CommandContext"
+import { useCommands, useShortcutScope } from "../command-palette/CommandContext"
 import { buildTaskCommands, buildSelectionCommands } from "../command-palette/buildTaskCommands"
 import { TaskComposerModal, type TaskComposerModalSubmit } from "../tasks/TaskComposerModal"
 import { TaskDetail } from "../tasks/TaskDetail"
@@ -138,10 +139,19 @@ export function CycleDetail({
 
   const [isEditingName, setIsEditingName] = useState(false)
   const [nameDraft, setNameDraft] = useState("")
+  const renameButtonRef = useRef<HTMLButtonElement>(null)
+  const wasEditingName = useRef(false)
+  useEffect(() => {
+    if (wasEditingName.current && !isEditingName) renameButtonRef.current?.focus()
+    wasEditingName.current = isEditingName
+  }, [isEditingName])
   const [isTaskPickerOpen, setIsTaskPickerOpen] = useState(false)
+  useShortcutScope("modal", isTaskPickerOpen)
   const [taskSearch, setTaskSearch] = useState("")
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([])
   const [feedback, setFeedback] = useState<string | null>(null)
+  const pickerHeadingId = useId()
+  const pickerSearchRef = useRef<HTMLInputElement>(null)
 
   // Filter and view state
   const [viewMode, setViewMode] = useState<"list" | "kanban">("list")
@@ -223,6 +233,13 @@ export function CycleDetail({
       await invalidateCycleData()
     },
   })
+  const closePicker = () => {
+    if (addTasksMutation.isPending) return
+    setIsTaskPickerOpen(false)
+    setSelectedTaskIds([])
+    setTaskSearch("")
+  }
+  const pickerFocus = useModalFocus(isTaskPickerOpen,closePicker,pickerSearchRef)
 
   const removeTaskMutation = useMutation({
     mutationFn: (taskId: string) => fetchers.removeTaskFromCycle(cycleId, taskId),
@@ -331,7 +348,12 @@ export function CycleDetail({
 
   // Create task and add to cycle
   const createTaskInCycle = useCallback(async (payload: TaskComposerModalSubmit) => {
-    const created = await fetchers.createTask({
+    const labels = payload.labelIds.flatMap<{labelId:number} | {name:string;color:string}>(labelId => {
+      if (labelId > 0) return [{labelId}]
+      const label = composerFallbackLabels[labelId]
+      return label ? [{name:label.name,color:label.color}] : []
+    })
+    await fetchers.createTask({
       title: payload.title,
       description: payload.description,
       parentId: payload.parentId,
@@ -339,33 +361,9 @@ export function CycleDetail({
       assigneeType: payload.assigneeType,
       assigneeId: payload.assigneeId,
       assignedBy: "dashboard:cycle-composer",
+      labels,
+      cycleId,
     })
-
-    const persistedLabelIds = payload.labelIds.filter((labelId) => labelId > 0)
-    const fallbackLabels = payload.labelIds
-      .filter((labelId) => labelId < 0)
-      .map((labelId) => composerFallbackLabels[labelId])
-      .filter((label): label is { name: string; color: string } => Boolean(label))
-
-    if (persistedLabelIds.length > 0 || fallbackLabels.length > 0) {
-      await Promise.all([
-        ...persistedLabelIds.map((labelId) => fetchers.assignTaskLabel(created.id, { labelId })),
-        ...fallbackLabels.map((label) => fetchers.assignTaskLabel(created.id, {
-          name: label.name,
-          color: label.color,
-        })),
-      ])
-    }
-
-    // Add the new task to the cycle
-    try {
-      await fetchers.addTasksToCycle(cycleId, [created.id])
-    } catch {
-      setFeedback("Task created but failed to add to cycle. Use \"Add existing\" to recover.")
-      setComposerFallbackLabels({})
-      await invalidateCycleData()
-      return
-    }
 
     setFeedback("Task created and added to cycle")
     setComposerFallbackLabels({})
@@ -665,9 +663,12 @@ export function CycleDetail({
           {isEditingName ? (
             <>
               <input
+                aria-label="Cycle name"
+                disabled={updateNameMutation.isPending}
                 value={nameDraft}
                 onChange={(event) => setNameDraft(event.target.value)}
                 onKeyDown={(event) => {
+                  if (updateNameMutation.isPending) return
                   if (event.key === "Escape") {
                     setIsEditingName(false)
                     setNameDraft(cycle.name)
@@ -703,6 +704,7 @@ export function CycleDetail({
               <Button
                 size="xs"
                 variant="secondary"
+                disabled={updateNameMutation.isPending}
                 onClick={() => {
                   setIsEditingName(false)
                   setNameDraft(cycle.name)
@@ -712,18 +714,18 @@ export function CycleDetail({
               </Button>
             </>
           ) : (
-            <h2
-              className="text-lg font-semibold cursor-pointer rounded px-1 -mx-1 transition text-gray-100 hover:bg-gray-800/60"
-              onClick={() => setIsEditingName(true)}
-              title="Click to rename"
-            >
-              {cycle.name}
-            </h2>
+            <h2 className="text-lg font-semibold"><button type="button" ref={renameButtonRef}
+              className="rounded px-1 -mx-1 transition text-gray-100 hover:bg-gray-800/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400"
+              onClick={() => {updateNameMutation.reset();setIsEditingName(true)}}
+              aria-label={`Rename cycle ${cycle.name}`} title="Rename cycle"
+            >{cycle.name}</button></h2>
           )}
           <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${isDarkTheme ? CYCLE_STATUS_CLASS_DARK[cycle.status] : CYCLE_STATUS_CLASS_LIGHT[cycle.status]}`}>
             {cycle.status}
           </span>
         </div>
+
+        {updateNameMutation.error && <p role="alert" className="mt-2 text-sm text-red-300">Could not rename cycle: {updateNameMutation.error.message}</p>}
 
         <p className="mt-0.5 text-xs text-gray-500">
           {formatDateRange(cycle.startDate, cycle.endDate)}
@@ -886,24 +888,21 @@ export function CycleDetail({
           <button
             type="button"
             className="absolute inset-0 bg-black/60"
-            onClick={() => {
-              setIsTaskPickerOpen(false)
-              setSelectedTaskIds([])
-              setTaskSearch("")
-            }}
+            onClick={closePicker}
+            tabIndex={-1}
             aria-label="Close add tasks dialog"
           />
-          <div className="relative z-10 w-full max-w-2xl rounded-xl border border-gray-700 bg-gray-900 shadow-2xl">
+          <div ref={pickerFocus.dialogRef} role="dialog" aria-modal="true" aria-labelledby={pickerHeadingId}
+            onKeyDown={pickerFocus.onKeyDown}
+            className="relative z-10 max-h-[calc(100dvh-2rem)] overflow-y-auto w-full max-w-2xl rounded-xl border border-gray-700 bg-gray-900 shadow-2xl">
             <div className="flex items-center justify-between border-b border-gray-800 px-4 py-3">
-              <h4 className="text-sm font-semibold text-gray-100">Add tasks to {cycle.name}</h4>
+              <h4 id={pickerHeadingId} className="text-sm font-semibold text-gray-100">Add tasks to {cycle.name}</h4>
               <Button
                 size="xs"
                 variant="secondary"
-                onClick={() => {
-                  setIsTaskPickerOpen(false)
-                  setSelectedTaskIds([])
-                  setTaskSearch("")
-                }}
+                onClick={closePicker}
+                disabled={addTasksMutation.isPending}
+                aria-label="Close add tasks"
               >
                 Esc
               </Button>
@@ -911,6 +910,8 @@ export function CycleDetail({
 
             <div className="space-y-3 p-4">
               <input
+                ref={pickerSearchRef}
+                aria-label="Search existing tasks"
                 type="text"
                 value={taskSearch}
                 onChange={(event) => setTaskSearch(event.target.value)}

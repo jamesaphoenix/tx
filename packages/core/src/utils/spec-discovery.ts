@@ -2,6 +2,7 @@ import { existsSync } from "node:fs"
 import { readFile, readdir } from "node:fs/promises"
 import { resolve } from "node:path"
 import { parse as parseYaml } from "yaml"
+import { DEFAULT_SPEC_TEST_PATTERNS } from "./spec-patterns.js"
 import { globToRegExp } from "./glob.js"
 import { normalizePathSeparators, toNormalizedRelativePath } from "./file-path.js"
 import type { SpecDiscoveryMethod } from "../types/index.js"
@@ -157,7 +158,48 @@ const extractInlineTestName = (line: string): string | null => {
   return null
 }
 
-const findNearestTestName = (lines: readonly string[], lineIndex: number): string | null => {
+// Locate the title after each/for's data argument, including multiline data.
+// Balance parentheses rather than guessing from the last ')' on a line.
+const parameterizedTitles = (content: string): Map<number, string> => {
+  const titles = new Map<number, string>()
+  const declaration = /\b(?:it|test)(?:\.(?:only|skip|concurrent|sequential|fails))*\.(?:each|for)\s*\(/g
+  for (const match of content.matchAll(declaration)) {
+    let depth = 1, quote: string | null = null, escaped = false
+    let cursor = match.index! + match[0].length
+    const limit = Math.min(content.length, cursor + 16_384)
+    for (; cursor < limit && depth > 0; cursor++) {
+      const char = content[cursor]!
+      if (quote) {
+        if (escaped) escaped = false
+        else if (char === "\\") escaped = true
+        else if (char === quote) quote = null
+        continue
+      }
+      if (char === '"' || char === "'" || char === "`") { quote = char; continue }
+      if (char === "/" && content[cursor + 1] === "/") {
+        while (cursor < limit && content[cursor] !== "\n") cursor++
+        continue
+      }
+      if (char === "/" && content[cursor + 1] === "*") {
+        const end = content.indexOf("*/", cursor + 2)
+        if (end < 0) break
+        cursor = end + 1
+        continue
+      }
+      if (char === "(") depth++
+      if (char === ")") depth--
+    }
+    if (depth !== 0) continue
+    const title = content.slice(cursor).match(/^\s*\(\s*(["'`])((?:\\.|(?!\1)[^\\])+?)\1/)
+    if (!title?.[2] || title[2].includes("${")) continue
+    const startLine = content.slice(0, match.index).split("\n").length - 1
+    const titleLine = content.slice(0, cursor + title[0].indexOf(title[1]!)).split("\n").length - 1
+    for (let line = startLine; line <= titleLine; line++) titles.set(line, title[2].trim())
+  }
+  return titles
+}
+
+const findNearestTestName = (lines: readonly string[], lineIndex: number, parameterized: ReadonlyMap<number,string>): string | null => {
   const candidates: number[] = []
   for (let i = lineIndex; i <= Math.min(lines.length - 1, lineIndex + 6); i++) {
     candidates.push(i)
@@ -167,7 +209,7 @@ const findNearestTestName = (lines: readonly string[], lineIndex: number): strin
   }
 
   for (const idx of candidates) {
-    const name = extractInlineTestName(lines[idx] ?? "")
+    const name = parameterized.get(idx) ?? extractInlineTestName(lines[idx] ?? "")
     if (name) return name
   }
 
@@ -186,6 +228,10 @@ const parseFileAnnotations = (testFile: string, content: string, sourceOnly = fa
   commentMatches: DiscoveredTest[]
 } => {
   const lines = content.split(/\r?\n/)
+  const parameterized = parameterizedTitles(content)
+  const parameterizedNames = new Set(parameterized.values())
+  const frameworkFor = (name: string | null) => name && parameterizedNames.has(name)
+    ? `${inferFramework(testFile) ?? "vitest"}-each` : inferFramework(testFile)
   const tagMatches: DiscoveredTest[] = []
   const commentMatches: DiscoveredTest[] = []
 
@@ -196,30 +242,30 @@ const parseFileAnnotations = (testFile: string, content: string, sourceOnly = fa
     let tagMatch: RegExpExecArray | null
     while ((tagMatch = TAG_PATTERN.exec(line)) !== null) {
       const invariantId = tagMatch[1]
-      const testName = findNearestTestName(lines, i)
+      const testName = findNearestTestName(lines, i, parameterized)
       tagMatches.push({
         invariantId,
         testFile,
         testName,
         testId: buildTestId(testFile, testName, i + 1),
-        framework: inferFramework(testFile),
+        framework: frameworkFor(testName),
         discovery: "tag",
       })
     }
 
-    const declaredName = extractInlineTestName(line)
+    const declaredName = parameterized.get(i) ?? extractInlineTestName(line)
     if (declaredName) {
       UNDERSCORE_TAG_PATTERN.lastIndex = 0
       let underscoreMatch: RegExpExecArray | null
       while ((underscoreMatch = UNDERSCORE_TAG_PATTERN.exec(declaredName)) !== null) {
         const invariantId = normalizeInvariantFromUnderscore(underscoreMatch[1] ?? "")
-        const testName = findNearestTestName(lines, i)
+        const testName = findNearestTestName(lines, i, parameterized)
         tagMatches.push({
           invariantId,
           testFile,
           testName,
           testId: buildTestId(testFile, testName, i + 1),
-          framework: inferFramework(testFile),
+          framework: frameworkFor(testName),
           discovery: "tag",
         })
       }
@@ -233,7 +279,7 @@ const parseFileAnnotations = (testFile: string, content: string, sourceOnly = fa
         .split(/\s*,\s*|\s+/)
         .map((s) => s.trim())
         .filter((s) => s.length > 0)
-      const testName = sourceOnly ? null : findNearestTestName(lines, i)
+      const testName = sourceOnly ? null : findNearestTestName(lines, i, parameterized)
 
       for (const invariantId of invariants) {
         commentMatches.push({
@@ -241,7 +287,7 @@ const parseFileAnnotations = (testFile: string, content: string, sourceOnly = fa
           testFile,
           testName,
           testId: buildTestId(testFile, testName, i + 1),
-          framework: sourceOnly ? "source" : inferFramework(testFile),
+          framework: sourceOnly ? "source" : frameworkFor(testName),
           discovery: "comment",
         })
       }
@@ -422,22 +468,7 @@ export const readSpecManifest = async (rootDir: string): Promise<readonly Discov
 /**
  * Convenience helper used by CLI and services for defaults.
  */
-export const defaultSpecTestPatterns = (): readonly string[] => [
-  "**/*.test.{ts,js,tsx,jsx}",
-  "**/*.integration.test.{ts,js,tsx,jsx}",
-  "**/*.spec.{ts,js,tsx,jsx}",
-  "test/**/*.test.{ts,js,tsx,jsx}",
-  "tests/**/*.py",
-  "**/test_*.py",
-  "**/*_test.go",
-  "**/*_test.rs",
-  "**/Test*.java",
-  "**/*Test.java",
-  "**/*_spec.rb",
-  "**/*.test.{c,cpp,cc}",
-  "**/*_test.{c,cpp,cc}",
-  "**/*.pgtap.sql",
-]
+export const defaultSpecTestPatterns = (): readonly string[] => DEFAULT_SPEC_TEST_PATTERNS
 
 /**
  * Source file patterns scanned for @spec comments (structural annotations).

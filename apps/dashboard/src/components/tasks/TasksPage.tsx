@@ -607,7 +607,12 @@ export function TasksPage({
   }, [queryClient])
 
   const createTaskFromComposer = useCallback(async (payload: TaskComposerModalSubmit) => {
-    const created = await fetchers.createTask({
+    const labels = payload.labelIds.flatMap<{labelId:number} | {name:string;color:string}>(labelId => {
+      if (labelId > 0) return [{labelId}]
+      const label = composerFallbackLabels[labelId]
+      return label ? [{name:label.name,color:label.color}] : []
+    })
+    await fetchers.createTask({
       title: payload.title,
       description: payload.description,
       parentId: payload.parentId,
@@ -615,23 +620,8 @@ export function TasksPage({
       assigneeType: payload.assigneeType,
       assigneeId: payload.assigneeId,
       assignedBy: "dashboard:composer",
+      labels,
     })
-
-    const persistedLabelIds = payload.labelIds.filter((labelId) => labelId > 0)
-    const fallbackLabels = payload.labelIds
-      .filter((labelId) => labelId < 0)
-      .map((labelId) => composerFallbackLabels[labelId])
-      .filter((label): label is { name: string; color: string } => Boolean(label))
-
-    if (persistedLabelIds.length > 0 || fallbackLabels.length > 0) {
-      await Promise.all([
-        ...persistedLabelIds.map((labelId) => fetchers.assignTaskLabel(created.id, { labelId })),
-        ...fallbackLabels.map((label) => fetchers.assignTaskLabel(created.id, {
-          name: label.name,
-          color: label.color,
-        })),
-      ])
-    }
 
     setComposerFallbackLabels({})
     await invalidateTaskQueries()

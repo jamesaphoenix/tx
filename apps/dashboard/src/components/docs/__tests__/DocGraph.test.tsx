@@ -114,8 +114,8 @@ describe("DocGraph", () => {
       {id:"doc:1",label:"Design spec",kind:"design"},
       {id:"doc:2",label:"Saved plan",kind:"plan"},
       {id:"task:1",label:"Task step",kind:"task"},
-    ],edges:[{source:"doc:1",target:"doc:2",type:"spec_to_plan"},{source:"doc:2",target:"task:1",type:"implements"}]})))
-    renderWithProviders(<DocGraph fullPage />)
+    ],edges:[{source:"doc:1",target:"doc:2",type:"spec_to_plan"},{source:"task:1",target:"doc:2",type:"implements"}]})))
+    const {container} = renderWithProviders(<DocGraph fullPage />)
     const plan = await screen.findByText("Saved plan")
     const y = (label: string) => Number(screen.getByText(label).getAttribute("y"))
     expect(y("Design spec")).toBeLessThan(Number(plan.getAttribute("y")))
@@ -123,6 +123,47 @@ describe("DocGraph", () => {
     expect(screen.getByText("Plan")).toBeInTheDocument()
     expect(screen.queryByText("Decision")).not.toBeInTheDocument()
     expect(screen.queryByText("Runbook")).not.toBeInTheDocument()
+    const attachment = container.querySelectorAll("path[marker-end]")[1]!
+    const points = attachment.getAttribute("d")!.match(/-?\d+(?:\.\d+)?/g)!.map(Number)
+    expect(points[1]).toBeLessThan(points[5]!)
+  })
+
+  it("keeps SVG definitions local when two graph views are mounted", async () => {
+    server.use(http.get("/api/docs/graph",() => HttpResponse.json({nodes:[
+      {id:"doc:1",label:"Design",kind:"design"},
+      {id:"doc:2",label:"Plan",kind:"plan"},
+    ],edges:[{source:"doc:1",target:"doc:2",type:"spec_to_plan"}]})))
+    const {container} = renderWithProviders(<><DocGraph selectedNodeId="doc:1" /><DocGraph /></>)
+    await screen.findAllByText("Design")
+    const graphs = Array.from(container.querySelectorAll("svg"))
+    const ids = Array.from(container.querySelectorAll("svg defs [id]")).map(element => element.id)
+    expect(new Set(ids).size).toBe(ids.length)
+    for (const graph of graphs) {
+      const ownIds = new Set(Array.from(graph.querySelectorAll("defs [id]")).map(element => element.id))
+      for (const element of graph.querySelectorAll("[fill],[filter],[marker-end]")) {
+        for (const attribute of ["fill","filter","marker-end"]) {
+          const reference = element.getAttribute(attribute)?.match(/^url\(#(.+)\)$/)?.[1]
+          if (reference) expect(ownIds.has(reference)).toBe(true)
+        }
+      }
+    }
+  })
+
+  it("preserves keyboard focus highlighting after the pointer leaves a node", async () => {
+    server.use(http.get("/api/docs/graph",() => HttpResponse.json({nodes:[
+      {id:"doc:1",label:"Focused design",kind:"design"},
+      {id:"doc:2",label:"Linked plan",kind:"plan"},
+      {id:"doc:3",label:"Unrelated plan",kind:"plan"},
+    ],edges:[{source:"doc:1",target:"doc:2",type:"spec_to_plan"}]})))
+    renderWithProviders(<DocGraph onSelectDoc={vi.fn()} />)
+    const design = await screen.findByRole("button",{name:"design: Focused design"})
+    fireEvent.focus(design)
+    fireEvent.mouseEnter(design)
+    fireEvent.mouseLeave(design)
+    expect(screen.getByRole("button",{name:"plan: Unrelated plan"})).toHaveStyle({opacity:"0.25"})
+    expect(screen.getByRole("button",{name:"plan: Linked plan"})).toHaveStyle({opacity:"1"})
+    fireEvent.blur(design)
+    expect(screen.getByRole("button",{name:"plan: Unrelated plan"})).toHaveStyle({opacity:"1"})
   })
 
   it("keeps the full design and task path visible without highlighting a sibling plan",async () => {

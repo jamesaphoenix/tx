@@ -76,6 +76,12 @@ export interface TaskMutationPayload {
 }
 
 
+export interface TaskCreatePayload extends TaskMutationPayload {
+  title: string
+  labels?: readonly ({labelId:number} | {name:string;color?:string})[]
+  cycleId?: string
+}
+
 export interface TaskWithDeps extends TaskRow {
   blockedBy: string[]
   blocks: string[]
@@ -206,7 +212,7 @@ export const api = {
   getTasks: () => fetchJson<TasksResponse>("/api/tasks"),
   getReady: () => fetchJson<ReadyResponse>("/api/tasks/ready"),
   getTaskDetail: (id: string, options?: { signal?: AbortSignal }) => fetchJson<TaskDetailResponse>(`/api/tasks/${id}`, options),
-  createTask: (payload: TaskMutationPayload & { title: string }) =>
+  createTask: (payload: TaskCreatePayload) =>
     Effect.tryPromise({
       try: async () => {
         const res = await fetch("/api/tasks", {
@@ -450,7 +456,7 @@ export const fetchers = {
   },
   ready: () => runApi(api.getReady()),
   taskDetail: (id: string, options?: { signal?: AbortSignal }) => runApi(api.getTaskDetail(id, options)),
-  createTask: (payload: TaskMutationPayload & { title: string }) =>
+  createTask: (payload: TaskCreatePayload) =>
     runApi(api.createTask(payload)),
   updateTask: (id: string, payload: TaskMutationPayload) =>
     runApi(api.updateTask(id, payload)),

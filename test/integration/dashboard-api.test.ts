@@ -332,6 +332,45 @@ describe("Dashboard API - GET /api/tasks", () => {
     }
   })
 
+  it("creates the task, labels and explicit cycle together with complete dependency fields", async () => {
+    db.db.exec("INSERT INTO cycles(id,name,start_date,end_date) VALUES('cycle-compose','Composition','2026-10-04','2026-10-11')")
+    const label = db.db.prepare("INSERT INTO task_labels(name,color) VALUES('Existing composition label','#123456')").run().lastInsertRowid
+    const res = await request(app,"/api/tasks",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+      title:"Composed task",status:"done",parentId:FIXTURES.TASK_AUTH,
+      labels:[{labelId:Number(label)},{name:"New composition label",color:"#abcdef"},{labelId:Number(label)}],cycleId:"cycle-compose",
+    })})
+    expect(res.status,await res.clone().text()).toBe(201)
+    const task = await res.json()
+    expect(task).toMatchObject({title:"Composed task",status:"done",parentId:FIXTURES.TASK_AUTH,blockedBy:[],blocks:[],children:[],isReady:false})
+    expect(task.completedAt).toEqual(expect.any(String))
+    expect(task.labels.map((label: {name:string}) => label.name).sort()).toEqual(["Existing composition label","New composition label"])
+    expect(db.db.prepare("SELECT cycle_id FROM cycle_tasks WHERE task_id=?").all(task.id)).toEqual([{cycle_id:"cycle-compose"}])
+  })
+
+  it("rolls back composition, including new labels, if a cycle attachment fails",async () => {
+    db.db.exec("INSERT INTO cycles(id,name,start_date,end_date) VALUES('cycle-compose','Composition','2026-10-04','2026-10-11')")
+    db.db.exec("CREATE TRIGGER reject_composition BEFORE INSERT ON cycle_tasks BEGIN SELECT RAISE(ABORT,'attachment failed'); END")
+    try {
+      const res = await request(app,"/api/tasks",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+        title:"Rolled back composition",labels:[{name:"Rolled back label"}],cycleId:"cycle-compose",
+      })})
+      expect(res.status).toBe(500)
+      expect(db.db.prepare("SELECT id FROM tasks WHERE title='Rolled back composition'").all()).toEqual([])
+      expect(db.db.prepare("SELECT id FROM task_labels WHERE name='Rolled back label'").all()).toEqual([])
+      expect(db.db.prepare("SELECT count(*) AS n FROM tasks").get()).toEqual({n:6})
+    } finally {db.db.exec("DROP TRIGGER reject_composition")}
+  })
+
+  it.each([{labels:[{labelId:999999}]},{cycleId:"missing-cycle"},{labels:null},{labels:[{name:42}]},
+    {labels:[{name:"  "}]},{labels:[{name:"Bad color",color:"red"}]},{labels:[{labelId:1,name:"Ambiguous"}]},{cycleId:42},
+  ])("rejects invalid composition without leaving tasks or labels: %j",async fields => {
+    const before = db.db.prepare("SELECT count(*) AS n FROM task_labels").get()
+    const res = await request(app,"/api/tasks",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({title:"Invalid composition",...fields})})
+    expect(res.status,await res.text()).toBe(400)
+    expect(db.db.prepare("SELECT count(*) AS n FROM tasks").get()).toEqual({n:6})
+    expect(db.db.prepare("SELECT count(*) AS n FROM task_labels").get()).toEqual(before)
+  })
+
   it("rejects requests from unrelated browser origins before mutating tasks", async () => {
     const res = await request(app, `/api/tasks/${FIXTURES.TASK_JWT}`, {
       method:"PATCH", headers:{Origin:"https://unrelated.example", "Content-Type":"application/json"},

@@ -434,7 +434,7 @@ export const registerSpecTraceTools = (server: McpServer): void => {
     "tx_spec_discover",
     "Discover invariant-to-test mappings from source annotations and .tx/spec-tests.yml",
     {
-      doc: z.string().optional().describe("Optional doc name to sync before discovery"),
+      doc: z.string().optional().describe("Optional document stable ID, kind/name or unique name to sync before discovery"),
       patterns: z.array(z.string()).optional().describe("Optional file globs overriding configured [spec].test_patterns"),
       dryRun: z.boolean().optional().describe("Preview discovery and prospective pruning without writing mappings"),
       prune: z.boolean().optional().describe("Explicitly remove stale auto-discovered mappings"),

@@ -28,3 +28,13 @@ Re-run `tx spec discover` to classify production `@spec` annotations as source
 references. They remain visible in the matrix and no longer block executed test
 completion. Review a document-scoped `--dry-run` before pruning stale mappings;
 manual mappings are preserved.
+
+New configuration scaffolds discover tests in `apps/`, `packages/` and other folders,
+including `.test.tsx` component tests and pgTAP SQL files. Existing explicit
+`[spec].test_patterns` are preserved. Review your patterns if these files are
+missing from the matrix; review the `[spec]` section in `.tx/config.toml`.
+
+Document-scoped sign-offs now return the stable document ID in `scopeValue`.
+Pass that ID, `kind/name` or an unambiguous name to `--doc`. Legacy approvals
+remain valid while the name identifies one document; a second document of a
+different kind does not inherit that approval.

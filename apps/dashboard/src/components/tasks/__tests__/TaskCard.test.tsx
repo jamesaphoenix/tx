@@ -207,6 +207,22 @@ describe('TaskCard', () => {
     })
   })
 
+  it("makes standalone cards reachable without a roving focus controller", () => {
+    render(<TaskCard task={createTask()} onClick={vi.fn()} />)
+    expect(screen.getByRole("button",{name:"View task: Test task title"})).toHaveAttribute("tabindex","0")
+  })
+
+  it("selects a task without treating the selection control's key as an open command", () => {
+    const open = vi.fn(), toggle = vi.fn()
+    render(<TaskCard task={createTask()} onClick={open} onToggleSelect={toggle} />)
+    const selection = screen.getByRole("button",{name:"Select task Test task title"})
+    fireEvent.keyDown(selection,{key:" "})
+    expect(open).not.toHaveBeenCalled()
+    fireEvent.click(selection)
+    expect(toggle).toHaveBeenCalledWith("tx-test123")
+    expect(open).not.toHaveBeenCalled()
+  })
+
   describe('tabIndex', () => {
     it('has tabIndex=0 when focused', () => {
       const task = createTask()

@@ -3,6 +3,7 @@
  * Returns defaults if file doesn't exist.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { DEFAULT_SPEC_TEST_PATTERNS } from "./spec-patterns.js"
 import { dirname, resolve } from "node:path"
 
 export type DashboardDefaultTaskAssigmentType = "human" | "agent"
@@ -147,19 +148,7 @@ const DEFAULT_CONFIG: TxConfig = {
   spec: {
     types: buildDefaultSpecTypes(),
     lintMessages: { ...DEFAULT_LINT_MESSAGES },
-    testPatterns: [
-      "test/**/*.test.{ts,js,tsx,jsx}",
-      "tests/**/*.py",
-      "**/*_test.go",
-      "**/*_test.rs",
-      "**/test_*.py",
-      "**/*.spec.{ts,js,tsx,jsx}",
-      "**/Test*.java",
-      "**/*Test.java",
-      "**/*_spec.rb",
-      "**/*.test.{c,cpp,cc}",
-      "**/*_test.{c,cpp,cc}",
-    ],
+    testPatterns: [...DEFAULT_SPEC_TEST_PATTERNS],
     designDocMissingTaskLinks: "always",
   },
   dashboard: {
@@ -872,17 +861,7 @@ path = "specs"
 # Invariant mappings: tx spec discover. Evidence: tx spec batch.
 [spec]
 test_patterns = [
-  "test/**/*.test.{ts,js,tsx,jsx}",
-  "tests/**/*.py",
-  "**/*_test.go",
-  "**/*_test.rs",
-  "**/test_*.py",
-  "**/*.spec.{ts,js,tsx,jsx}",
-  "**/Test*.java",
-  "**/*Test.java",
-  "**/*_spec.rb",
-  "**/*.test.{c,cpp,cc}",
-  "**/*_test.{c,cpp,cc}",
+${DEFAULT_SPEC_TEST_PATTERNS.map(pattern => `  ${JSON.stringify(pattern)},`).join("\n")}
 ]
 # Warn for designs without linked tasks: always | locked_only | never.
 design_doc_missing_task_links = "always"

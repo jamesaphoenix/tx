@@ -473,6 +473,8 @@ interface TaskCreatePayload {
   assignedAt?: string | null
   assignedBy?: string | null
   metadata?: Record<string, unknown>
+  labels?: readonly AssignLabelPayload[]
+  cycleId?: string
 }
 
 interface TaskUpdatePayload {
@@ -2205,6 +2207,27 @@ app.post("/api/tasks", async (c) => {
     const payload = await c.req.json<TaskCreatePayload>()
     const fieldError = validateTaskFields(payload)
     if (fieldError) return c.json({error:fieldError},400)
+    if (payload.cycleId !== undefined && (typeof payload.cycleId !== "string" || !payload.cycleId.trim())) {
+      return c.json({error:"cycleId must be a non-empty string"},400)
+    }
+    if (payload.cycleId && !db.prepare("SELECT 1 FROM cycles WHERE id=?").get(payload.cycleId)) {
+      return c.json({error:`Cycle not found: ${payload.cycleId}`},400)
+    }
+    if (payload.labels !== undefined) {
+      if (!Array.isArray(payload.labels) || payload.labels.length > 200) return c.json({error:"labels must be an array of at most 200 labels"},400)
+      for (const label of payload.labels) {
+        if (!label || typeof label !== "object" || Array.isArray(label)) return c.json({error:"Each label must be an object"},400)
+        if (label.labelId !== undefined) {
+          if (!Number.isSafeInteger(label.labelId) || label.labelId <= 0 || label.name !== undefined || label.color !== undefined) {
+            return c.json({error:"A label needs a positive labelId or a name and optional colour"},400)
+          }
+          if (!db.prepare("SELECT 1 FROM task_labels WHERE id=?").get(label.labelId)) return c.json({error:`Label not found: ${label.labelId}`},400)
+        } else if (typeof label.name !== "string" || !label.name.trim() ||
+          (label.color !== undefined && (typeof label.color !== "string" || !/^#[0-9a-f]{6}$/i.test(label.color)))) {
+          return c.json({error:"A new label needs a name and an optional six-digit hex colour"},400)
+        }
+      }
+    }
     const title = payload.title?.replace(/\0/g, "").replace(/^[\s\p{Cf}]+|[\s\p{Cf}]+$/gu, "")
 
     if (!title) {
@@ -2250,37 +2273,44 @@ app.post("/api/tasks", async (c) => {
     const assignedAt = assigneeType === null ? null : (payload.assignedAt ?? now)
     const assignedBy = assigneeType === null ? null : (payload.assignedBy ?? "dashboard:create")
 
-    db.prepare(`
-      INSERT INTO tasks (
-        id, title, description, status, parent_id, score, created_at, updated_at, completed_at,
-        assignee_type, assignee_id, assigned_at, assigned_by, metadata
+    const task = db.transaction(() => {
+      db.prepare(`
+        INSERT INTO tasks (
+          id, title, description, status, parent_id, score, created_at, updated_at, completed_at,
+          assignee_type, assignee_id, assigned_at, assigned_by, metadata
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        id,
+        title,
+        description,
+        status,
+        payload.parentId ?? null,
+        score,
+        now,
+        now,
+        status === "done" ? now : null,
+        assigneeType,
+        assigneeId,
+        assignedAt,
+        assignedBy,
+        JSON.stringify(metadata),
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      id,
-      title,
-      description,
-      status,
-      payload.parentId ?? null,
-      score,
-      now,
-      now,
-      null,
-      assigneeType,
-      assigneeId,
-      assignedAt,
-      assignedBy,
-      JSON.stringify(metadata),
-    )
 
-    if (assignedBy !== "dashboard:cycle-composer") {
-      maybeAddTaskToCurrentCycle(db, id, status)
-    }
+      for (const label of payload.labels ?? []) {
+        const labelId = label.labelId ?? upsertLabel(db,{name:label.name!,color:label.color}).id
+        db.prepare("INSERT OR IGNORE INTO task_label_assignments(task_id,label_id,created_at) VALUES(?,?,?)").run(id,labelId,now)
+      }
+      if (payload.cycleId) {
+        db.prepare("INSERT INTO cycle_tasks(cycle_id,task_id,added_at) VALUES(?,?,?)").run(payload.cycleId,id,now)
+      } else if (assignedBy !== "dashboard:cycle-composer") {
+        maybeAddTaskToCurrentCycle(db, id, status)
+      }
 
-    const task = getTaskWithDeps(db, id)
-    if (!task) {
-      return c.json({ error: "Failed to load created task" }, 500)
-    }
+      const created = getTaskWithDeps(db, id)
+      if (!created) throw new Error("Failed to load created task")
+      return created
+    })()
     return c.json(serializeTask(task), 201)
   } catch (e) {
     return routeError(c, e)

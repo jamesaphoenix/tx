@@ -15,7 +15,7 @@ import {
 } from "node:fs"
 import { resolve, dirname, join } from "node:path"
 import { Cause, Context, Effect, Either, Layer, Option } from "effect"
-import { parse as parseYaml, stringify as stringifyYaml } from "yaml"
+import { parse as parseYaml, parseDocument, stringify as stringifyYaml } from "yaml"
 import { DocRepository } from "../repo/doc-repo.js"
 import {
   ValidationError,
@@ -1412,7 +1412,9 @@ export const makeDocServiceLive = (
           const workingPath = resolveRegisteredDocPath(docsPath, { ...doc, filePath: relPath })
           const split = splitMarkdownFrontmatter(content)
           if (!split) return yield* Effect.fail(new ValidationError({reason: "Missing Markdown frontmatter."}))
-          const frontmatter = split.frontmatter.replace(/^version\s*:[^\r\n]*(\r?)$/m, `version: ${newVersion}$1`)
+          const metadata = parseDocument(split.frontmatter)
+          metadata.set("version",newVersion)
+          const frontmatter = metadata.toString().trimEnd().replace(/\n/g,split.newline)
           const newContent = `---${split.newline}${frontmatter}${split.newline}---${split.newline}${split.body}`
           if (existsSync(archivePath) && readFileSync(archivePath, "utf8") !== content) {
             return yield* Effect.fail(new ValidationError({reason: `Historical source already exists with different content at ${archiveRelPath}.`}))

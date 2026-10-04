@@ -48,7 +48,7 @@ export interface TaskCardProps {
 export const TaskCard = forwardRef<HTMLDivElement, TaskCardProps>(
   function TaskCard({
     task,
-    isFocused = false,
+    isFocused,
     showFocusRing = true,
     isSelected = false,
     onToggleSelect,
@@ -85,12 +85,13 @@ export const TaskCard = forwardRef<HTMLDivElement, TaskCardProps>(
         aria-label={`View task: ${task.title}`}
         onClick={onClick}
         onKeyDown={(e) => {
+          if (e.target !== e.currentTarget) return
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault()
             onClick?.()
           }
         }}
-        tabIndex={isFocused ? 0 : -1}
+        tabIndex={isFocused === false ? -1 : 0}
         style={{
           animationDelay: `${animationDelayMs}ms`,
           marginLeft: `${indentPx}px`,
@@ -101,6 +102,9 @@ export const TaskCard = forwardRef<HTMLDivElement, TaskCardProps>(
           <div className="flex min-w-0 items-center gap-2">
             {onToggleSelect && (
               <button
+                type="button"
+                aria-label={`Select task ${task.title}`}
+                aria-pressed={isSelected}
                 onClick={(e) => { e.stopPropagation(); onToggleSelect(task.id) }}
                 className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition ${
                   isSelected

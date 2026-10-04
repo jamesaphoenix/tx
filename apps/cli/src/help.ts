@@ -972,7 +972,7 @@ Examples:
   tx spec invariant record INV-CHECKOUT-001 --passed --details "Reviewed ownership check"`,
   "spec discover": `tx spec discover - Refresh doc-derived invariants and upsert test mappings
 
-Usage: tx spec discover [--doc <name>] [--patterns <glob1,glob2,...>] [--dry-run] [--prune] [--json]
+Usage: tx spec discover [--doc <doc-ref>] [--patterns <glob1,glob2,...>] [--dry-run] [--prune] [--json]
 
 Refreshes derived invariants from docs first, then scans configured test
 patterns for [INV-*], _INV_*, and @spec annotations. Scans production
@@ -987,7 +987,7 @@ deleted when \`--prune\` is supplied. \`--dry-run\` performs no invariant or
 mapping writes.
 
 Options:
-  --doc <name>                 Sync/discover with doc focus
+  --doc <doc-ref>                 Sync/discover by stable ID, kind/name or unique name
   --patterns, -p <csv>         Override pattern list for this run
   --dry-run                    Preview mappings and prospective pruning only
   --prune                      Delete stale auto-discovered mappings explicitly
@@ -1023,7 +1023,7 @@ Examples:
   tx spec tests INV-EARS-FL-001 --json`,
   "spec gaps": `tx spec gaps - List uncovered invariants (no linked tests)
 
-Usage: tx spec gaps [--doc <name>] [--sub <name>] [--json]
+Usage: tx spec gaps [--doc <doc-ref>] [--sub <name>] [--json]
 
 Examples:
   tx spec gaps
@@ -1031,7 +1031,7 @@ Examples:
   tx spec gaps --sub core`,
   "spec fci": `tx spec fci - Compute Feature Completion Index
 
-Usage: tx spec fci [--doc <name>] [--sub <name>] [--json]
+Usage: tx spec fci [--doc <doc-ref>] [--sub <name>] [--json]
 
 Returns:
   total, covered, uncovered, passing, failing, untested, fci, phase
@@ -1042,12 +1042,16 @@ Phase logic:
   COMPLETE fci = 100 and signed off
 
 Options:
-  --doc <name>                 Scope by doc
+  --doc <doc-ref>                 Scope by stable ID, kind/name or unique name
   --sub, --subsystem <name>    Scope by subsystem
   --json                       Output as JSON`,
   "spec batch": `tx spec batch - Import test run results from stdin
 
 Usage: tx spec batch [--from <format>] [--json]
+
+Results match the mapped file and assertion. Literal it.each/it.for titles
+match expanded cases within that file. Any failed or skipped Vitest case
+keeps the mapping non-passing. Source references are not executable evidence.
 
 Input must be piped via stdin. Generic format:
   [{"testId":"file::name", "passed":true, "durationMs":12, "details":"..."}]
@@ -1061,7 +1065,7 @@ Examples:
   go test -json ./... | tx spec batch --from go`,
   "spec matrix": `tx spec matrix - Test and source enforcement traceability
 
-Usage: tx spec matrix [--doc <name>] [--sub <name>] [--json]
+Usage: tx spec matrix [--doc <doc-ref>] [--sub <name>] [--json]
 
 Lists executable tests and production source references separately.
 Source annotations do not count as executed test coverage.
@@ -1080,20 +1084,20 @@ Examples:
   tx spec run tests/test_ready.py::test_ready_inv --failed --details "assertion failed"`,
   "spec complete": `tx spec complete - Record human completion sign-off
 
-Usage: tx spec complete [--doc <name> | --sub <name>] --by <human> [--notes <text>] [--json]
+Usage: tx spec complete [--doc <doc-ref> | --sub <name>] --by <human> [--notes <text>] [--json]
 
 Records sign-off only when phase is HARDEN (FCI must be 100).
 Rejects requests while phase is BUILD.
 
 Options:
-  --doc <name>                 Scope by doc
+  --doc <doc-ref>                 Scope by stable ID, kind/name or unique name
   --sub, --subsystem <name>    Scope by subsystem
   --by <human>                 Required human identifier
   --notes <text>               Optional sign-off notes
   --json                       Output as JSON`,
   "spec status": `tx spec status - Explain scope closure state
 
-Usage: tx spec status [--doc <name>] [--sub <name>] [--json]
+Usage: tx spec status [--doc <doc-ref>] [--sub <name>] [--json]
 
 Returns:
   phase, fci, total, covered, uncovered, passing, failing, untested,

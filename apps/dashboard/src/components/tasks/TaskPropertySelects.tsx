@@ -218,6 +218,7 @@ export function TaskStatusSelect({
 
   return (
     <Select<StageOption, false>
+      aria-label="Task status"
       instanceId={instanceId}
       isDisabled={disabled}
       options={TASK_STATUS_OPTIONS_INTERNAL as StageOption[]}
@@ -266,6 +267,7 @@ export function TaskAssigneeTypeSelect({
 
   return (
     <Select<AssigneeOption, false>
+      aria-label="Assignment type"
       instanceId={instanceId}
       isDisabled={disabled}
       options={ASSIGNEE_OPTIONS_INTERNAL as AssigneeOption[]}
@@ -366,6 +368,7 @@ export function TaskLabelsSelect({
   return (
     <div>
       <CreatableSelect<LabelOption, true>
+        aria-label="Task labels"
         instanceId={instanceId}
         isMulti
         closeMenuOnSelect={false}
@@ -400,7 +403,7 @@ export function TaskLabelsSelect({
         </p>
       )}
       {createLabelError && (
-        <p className={`mt-2 text-[11px] ${theme === "dark" ? "text-red-300" : "text-red-600"}`}>
+        <p role="alert" className={`mt-2 text-[11px] ${theme === "dark" ? "text-red-300" : "text-red-600"}`}>
           {createLabelError}
         </p>
       )}

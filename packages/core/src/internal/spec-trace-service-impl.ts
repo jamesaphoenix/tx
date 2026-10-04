@@ -56,6 +56,18 @@ const toCanonicalTestId = (testFile: string, testName: string | null): string =>
   return `${testFile}::${name}`
 }
 
+const parameterizedTitlePattern = (title: string): RegExp => {
+  const tokens = /%%|%[sdifjoOp#$]|\$[\w$.]+/g
+  const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  let pattern = "", cursor = 0
+  for (const match of title.matchAll(tokens)) {
+    pattern += escape(title.slice(cursor,match.index))
+    pattern += match[0] === "%%" ? "%" : "[\\s\\S]*?"
+    cursor = match.index! + match[0].length
+  }
+  return new RegExp(`^${pattern}${escape(title.slice(cursor))}$`)
+}
+
 const resolveSignoffScope = (filter?: SpecTraceFilter): {
   scopeType: SpecScopeType
   scopeValue: string | null
@@ -379,6 +391,8 @@ export const makeSpecTraceServiceLive = (
 
           const uniqueTestIds = [...new Set(results.map((row) => normalizeEvidenceId(row.testId)))]
           const byTestId = yield* repo.findSpecTestsByTestIds(uniqueTestIds)
+          const parameterized = yield* repo.findParameterizedSpecTestsByFiles(uniqueTestIds.map(id => id.slice(0,id.indexOf("::"))))
+          const patterns = parameterized.map(link => ({link,pattern:parameterizedTitlePattern(link.testName ?? "")}))
 
           const unmatched = new Set<string>()
           const inserts = new Map<number, {
@@ -390,7 +404,12 @@ export const makeSpecTraceServiceLive = (
           }>()
 
           for (const row of results) {
-            const links = (byTestId.get(normalizeEvidenceId(row.testId)) ?? []).filter(link => link.framework !== "source")
+            const normalized = normalizeEvidenceId(row.testId)
+            const separator = normalized.indexOf("::")
+            const file = normalized.slice(0,separator), title = normalized.slice(separator + 2)
+            const exact = (byTestId.get(normalized) ?? []).filter(link => link.framework !== "source")
+            const links = [...exact,...patterns.filter(({link,pattern}) => link.testFile === file &&
+              link.testName !== title && pattern.test(title)).map(({link}) => link)]
 
             if (links.length === 0) {
               unmatched.add(row.testId)
@@ -595,10 +614,11 @@ const parseVitestBatch = (value: unknown): BatchRunInput[] => {
           failureMessages?: unknown
         }
         const status = typeof a.status === "string" ? a.status : "failed"
-        if (status !== "passed" && status !== "pass" && status !== "failed" && status !== "fail") {
+        const skipped = status === "skipped" || status === "pending" || status === "todo"
+        if (!skipped && status !== "passed" && status !== "pass" && status !== "failed" && status !== "fail") {
           continue
         }
-        const details = Array.isArray(a.failureMessages)
+        const details = skipped ? `Test did not execute (${status})` : Array.isArray(a.failureMessages)
           ? a.failureMessages.filter((x): x is string => typeof x === "string").join("\n")
           : undefined
         const passed = status === "passed" || status === "pass"

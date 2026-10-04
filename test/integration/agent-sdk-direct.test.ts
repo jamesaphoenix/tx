@@ -148,7 +148,7 @@ describe("TxClient direct mode integration", () => {
 
     const signoff = await tx.spec.complete({ doc: docName, signedOffBy: "direct-reviewer", notes: "approved" })
     expect(signoff.scopeType).toBe("doc")
-    expect(signoff.scopeValue).toBe(docName)
+    expect(signoff.scopeValue).toBe((await tx.docs.get(docName)).docId)
     expect(signoff.signedOffBy).toBe("direct-reviewer")
   })
   it("counts task stats in direct mode without retired services", async () => {

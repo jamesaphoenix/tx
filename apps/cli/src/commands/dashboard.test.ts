@@ -4,6 +4,7 @@ import { createServer, type Server } from "node:http"
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
+import { stripVTControlCharacters } from "node:util"
 import { stopDashboardChildren, createViteUrlReader } from "./dashboard.js"
 
 const CLI_SRC = resolve(import.meta.dirname, "../cli.ts")
@@ -56,7 +57,7 @@ describe("tx diag dashboard", () => {
     const apiPort = await freePort()
     const vitePort = preferredVitePort ?? await freePort()
     proc = spawn("bun", [CLI_SRC, "diag", "dashboard", "--no-open", "--port", String(apiPort), "--vite-port", String(vitePort),
-      ...(contentRoot ? ["--content-root", contentRoot] : [])], { cwd: project, stdio: "pipe" })
+      ...(contentRoot ? ["--content-root", contentRoot] : [])], { cwd: project, stdio: "pipe", env:{...process.env,FORCE_COLOR:"1"} })
     proc.stdout?.on("data", d => { output += d.toString() })
     proc.stderr?.on("data", d => { output += d.toString() })
     return { apiPort, vitePort }
@@ -118,7 +119,7 @@ describe("tx diag dashboard", () => {
     const ui = await ready(apiPort)
     expect(new URL(ui).hostname).toBe("127.0.0.1")
     expect(new URL(ui).port, output).not.toBe(String(port))
-    expect(output).toMatch(/Local:/)
+    expect(stripVTControlCharacters(output)).toMatch(/Local:/)
     expect(await fetch(`${ui}/api/stats`).then(r => r.json())).toEqual(expect.objectContaining({ tasks: expect.any(Number) }))
     expect(output.indexOf("Dashboard API running")).toBeLessThan(output.indexOf("Starting Vite dev server"))
     expect(await fetch(`http://localhost:${port}`).then(r => r.text())).toBe("existing UI")
@@ -229,5 +230,6 @@ describe("Vite startup output", () => {
     const read = createViteUrlReader()
     expect(read("Installing dependencies\n")).toEqual([])
     expect(read("  \u001b[32mLocal:\u001b[39m   \u001b[36mhttp://127.0.0.1:5175/\u001b[39m\r\n")).toEqual(["http://127.0.0.1:5175/"])
+    expect(read("  \u001b[1mLocal\u001b[22m: http://127.0.0.1:\u001b[1m5176\u001b[22m/\n")).toEqual(["http://127.0.0.1:5176/"])
   })
 })
