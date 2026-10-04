@@ -385,7 +385,7 @@ export const registerTaskTools = (server: McpServer): void => {
   // tx_show - Show a single task with full dependency info
   registerEffectTool(server,
     "tx_show",
-    "Show detailed information about a task including dependencies and orchestration status",
+    "Show detailed information about a task including its blockers, dependants and children",
     { id: z.string().describe("Task ID to show") },
     handleShow
   )
@@ -393,7 +393,7 @@ export const registerTaskTools = (server: McpServer): void => {
   // tx_list - List tasks with optional filters
   registerEffectTool(server,
     "tx_list",
-    "List tasks with optional filters for status, parent, labels, and limit. Response includes orchestration status.",
+    "List tasks with optional filters for status, parent, labels, and limit. Each task includes complete dependency information.",
     {
       status: z.enum(TASK_STATUSES).optional().describe(`Filter by status: ${TASK_STATUSES.join(", ")}`),
       parentId: z.string().optional().describe("Filter by parent task ID"),

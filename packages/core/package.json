@@ -1,6 +1,6 @@
 {
   "name": "@jamesaphoenix/tx",
-  "version": "0.20.0",
+  "version": "0.20.1",
   "description": "Tasks, specifications, plans and verification evidence for coding agents and humans",
   "type": "module",
   "main": "./dist/index.js",
