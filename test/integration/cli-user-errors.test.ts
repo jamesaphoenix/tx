@@ -97,7 +97,7 @@ describe("CLI user-facing error contract", () => {
     expect(parsed.ok).toBe(false)
     expect(parsed.error.code).toBe("cli/unknown-subcommand")
     expect(parsed.error.usage).toBe("tx task dep <block|unblock|children|tree>")
-    expect(parsed.error.hint).toContain("tx help dep")
+    expect(parsed.error.hint).toContain("tx help task dep")
   })
 
   it("returns structured JSON for unknown commands with suggestions", () => {

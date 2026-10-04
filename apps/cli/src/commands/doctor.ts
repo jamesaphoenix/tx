@@ -250,7 +250,7 @@ export const doctor = (_pos: string[], flags: Flags) =>
         ? `Schema: v${migrationStatus.currentVersion} (current)`
         : `Schema: v${migrationStatus.currentVersion} (latest: v${migrationStatus.latestVersion})`,
       details: !schemaOk && migrationStatus.pendingCount > 0
-        ? `${migrationStatus.pendingCount} pending migration(s). Run tx migrate to apply.`
+        ? `${migrationStatus.pendingCount} pending migration(s). Back up the database, then run tx init to apply.`
         : undefined,
     })
 

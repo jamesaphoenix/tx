@@ -6,6 +6,7 @@ import { Effect } from "effect"
 import { DocService } from "@jamesaphoenix/tx"
 import { toJson } from "../output.js"
 import { type Flags, flag, opt } from "../utils/parse.js"
+import { unknownSubcommandError } from "../cli-errors.js"
 import { CliExitError } from "../cli-exit.js"
 
 /** Dispatch invariant subcommands. */
@@ -18,11 +19,8 @@ export const invariant = (pos: string[], flags: Flags) => {
     case "record": return invariantRecord(rest, flags)
     case "sync": return invariantSync(rest, flags)
     default:
-      return Effect.sync(() => {
-        console.error(`Unknown invariant subcommand: ${sub ?? "(none)"}`)
-        console.error("Run 'tx spec invariant --help' for usage information")
-        throw new CliExitError(1)
-      })
+      return Effect.fail(unknownSubcommandError({command:"spec invariant",subcommand:sub ?? "(none)",
+        usage:"tx spec invariant <list|show|sync|record> [options]"}))
   }
 }
 

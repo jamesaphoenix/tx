@@ -66,7 +66,7 @@ const commands: Record<string, (positional: string[], flags: Record<string, stri
 
       p.intro("tx init")
       p.log.success(`Database ready (${tables.length} tables, SQLite WAL mode)`)
-      p.log.info(`${projectDir}/.tx/tasks.db`)
+      p.log.info(String(initFlags.db))
 
       // Non-interactive mode: explicit init flags skip prompts
       const forceClaude = flag(initFlags, "claude")
@@ -200,7 +200,7 @@ const { command, positional, flags: parsedFlags } = (() => {
     process.exit(userError.exitCode)
   }
 })()
-const jsonMode = flag(parsedFlags, "json")
+const jsonMode = flag(parsedFlags, "json") || command === "schema"
 
 function exitCliUserError(error: unknown): never {
   if (error instanceof CliUserError) {
@@ -223,7 +223,7 @@ if (flag(parsedFlags, "version") || (flag(parsedFlags, "v") && !(command === "di
 
 const oldTaskCommands: Record<string, string> = { "md-export": "export", add: "add", list: "list", ready: "ready", show: "show", update: "update", done: "done", reset: "reset", delete: "delete", dep: "dep", bulk: "bulk", label: "label", block: "dep block", unblock: "dep unblock", children: "dep children", tree: "dep tree" }
 // @spec INV-LEAN-001 Reject retired mutations before storage initialisation.
-if (command in oldTaskCommands) {
+if (Object.hasOwn(oldTaskCommands, command)) {
   emitCliError(movedCommandError({ command, message: 'Task commands now use the task namespace.', hint: 'Use tx task ' + oldTaskCommands[command] + '.' }), jsonMode)
   process.exit(1)
 }
@@ -236,7 +236,7 @@ for (const retiredFlag of ["watchdog", "watchdog-runtime", "verify", "claim", "l
 
 // Handle --help for specific command (tx add --help) or help command (tx help / tx help add)
 if (flag(parsedFlags, "help") || flag(parsedFlags, "h")) {
-  if (command in deprecatedCommandMap) {
+  if (Object.hasOwn(deprecatedCommandMap, command)) {
     console.warn(`[deprecated] Use "tx ${deprecatedCommandMap[command]}" instead.`)
   }
   try {
@@ -269,7 +269,7 @@ if (command === "schema") {
 
 const commandParts = [command, ...positional]
 const namespaceKey = commandParts.join(" ")
-const usageOnlyNamespaces = new Set(["task","task dep","task bulk","diag","sync","skills","spec"])
+const usageOnlyNamespaces = new Set(["task","task dep","task bulk","diag","sync","sync migrate","skills","spec","spec invariant"])
 const explicitNamespaceHelp = positional.at(-1) === "help"
   && (compoundHelpParents as readonly string[]).includes(commandParts.slice(0,-1).join(" "))
 if (usageOnlyNamespaces.has(namespaceKey) || explicitNamespaceHelp) {
@@ -289,7 +289,7 @@ if (command === "mcp-server") {
   process.exit(1)
 }
 
-const handler = commands[command]
+const handler = Object.hasOwn(commands, command) ? commands[command] : undefined
 if (!handler) {
   emitCliError(unknownCommandError({
     command,

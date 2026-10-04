@@ -22,7 +22,7 @@ export const dep = (pos: string[], flags: Flags) =>
 
     // Check for --help on subcommand
     if (flag(flags, "help", "h")) {
-      const helpKey = `dep ${sub}`
+      const helpKey = `task dep ${sub}`
       console.log(commandHelp[helpKey] ?? commandHelp["task dep"])
       return
     }
@@ -33,7 +33,7 @@ export const dep = (pos: string[], flags: Flags) =>
     if (sub === "tree") return yield* tree(pos.slice(1), flags)
 
     return yield* Effect.fail(unknownSubcommandError({
-      command: "dep",
+      command: "task dep",
       subcommand: sub,
       usage: "tx task dep <block|unblock|children|tree>",
       examples: [

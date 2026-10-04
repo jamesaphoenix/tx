@@ -19,13 +19,13 @@ export const migrate = (pos: string[], flags: Flags) =>
     const subcommand = pos[0]
 
     if (!subcommand || subcommand === "help") {
-      console.log(commandHelp["migrate"])
+      console.log(commandHelp["sync migrate"])
       return
     }
 
     // Check for --help on subcommand
     if (flag(flags, "help", "h")) {
-      const helpKey = `migrate ${subcommand}`
+      const helpKey = `sync migrate ${subcommand}`
       if (commandHelp[helpKey]) {
         console.log(commandHelp[helpKey])
         return
@@ -59,12 +59,12 @@ export const migrate = (pos: string[], flags: Flags) =>
       }
     } else {
       return yield* Effect.fail(unknownSubcommandError({
-        command: "migrate",
+        command: "sync migrate",
         subcommand,
-        usage: "tx migrate <status>",
+        usage: "tx sync migrate <status>",
         examples: [
-          "tx migrate status",
-          "tx migrate status --json",
+          "tx sync migrate status",
+          "tx sync migrate status --json",
         ],
       }))
     }

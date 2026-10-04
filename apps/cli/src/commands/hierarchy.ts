@@ -1,4 +1,4 @@
-import { CliExitError } from "../cli-exit.js"
+import { usageError } from "../cli-errors.js"
 /**
  * Hierarchy commands: children, tree
  */
@@ -17,8 +17,7 @@ export const children = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const raw = pos[0]
     if (!raw) {
-      console.error("Usage: tx dep children <id> [--json]")
-      throw new CliExitError(1)
+      return yield* Effect.fail(usageError({command:"task dep children",message:"Missing task ID.",usage:"tx task dep children <id> [--json]"}))
     }
     const id = parseTaskId(raw)
 
@@ -44,8 +43,7 @@ export const tree = (pos: string[], flags: Flags) =>
   Effect.gen(function* () {
     const raw = pos[0]
     if (!raw) {
-      console.error("Usage: tx dep tree <id> [--json]")
-      throw new CliExitError(1)
+      return yield* Effect.fail(usageError({command:"task dep tree",message:"Missing task ID.",usage:"tx task dep tree <id> [--json]"}))
     }
     const id = parseTaskId(raw)
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { render, screen, waitFor } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { http, HttpResponse } from "msw"
 import { server } from "../../../../test/setup"
@@ -30,6 +30,23 @@ describe("DocumentLinks", () => {
     expect(screen.queryByRole("link", { name: /Saved agent plan/ })).not.toBeInTheDocument()
   })
 
+  it("describes the design, plan and task link directions in plain language",async () => {
+    server.use(
+      http.get("/api/docs",() => HttpResponse.json({docs:[design,plan]})),
+      http.get("/api/docs/graph",() => HttpResponse.json({nodes:[{id:"task:tx-first",kind:"task",label:"Implement payments"}],edges:[
+        {source:"doc:1",target:"doc:2",type:"spec_to_plan"},
+        {source:"task:tx-first",target:"doc:2",type:"implements"},
+      ]})),
+    )
+    const view = renderLinks("doc:2")
+    expect(await screen.findByRole("link",{name:/Payment design/})).toHaveTextContent("Based on")
+    expect(screen.getByRole("link",{name:/Implement payments/})).toHaveTextContent("Implemented by")
+    view.rerender(<DocumentLinks nodeId="doc:1" />)
+    expect(await screen.findByRole("link",{name:/Saved agent plan/})).toHaveTextContent("Implementation plan")
+    view.rerender(<DocumentLinks nodeId="task:tx-first" />)
+    expect(await screen.findByRole("link",{name:/Saved agent plan/})).toHaveTextContent("Based on")
+  })
+
   it("does not invent a relationship for an unlinked task", async () => {
     let reads = 0
     server.use(
@@ -42,11 +59,18 @@ describe("DocumentLinks", () => {
   })
 
   it("reports unavailable relationship data instead of silently presenting no links", async () => {
+    let unavailable = true
     server.use(
       http.get("/api/docs", () => HttpResponse.json({ docs: [plan] })),
-      http.get("/api/docs/graph", () => HttpResponse.json({ error: "Graph unavailable" }, { status: 500 })),
+      http.get("/api/docs/graph", () => unavailable
+        ? HttpResponse.json({ error: "Graph unavailable" }, { status: 500 })
+        : HttpResponse.json({nodes:[],edges:[{source:"task:tx-first",target:"doc:2",type:"implements"}]})),
     )
     renderLinks("task:tx-first")
     expect(await screen.findByRole("status")).toHaveTextContent("Could not load document links: Graph unavailable")
+    unavailable = false
+    fireEvent.click(screen.getByRole("button",{name:"Retry links"}))
+    expect(await screen.findByRole("link",{name:/Saved agent plan/})).toBeInTheDocument()
+    expect(screen.queryByRole("status")).not.toBeInTheDocument()
   })
 })

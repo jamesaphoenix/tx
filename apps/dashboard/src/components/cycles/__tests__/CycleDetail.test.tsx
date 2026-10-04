@@ -60,6 +60,39 @@ describe("CycleDetail",() => {
     expect(secondaryWrites).toBe(0)
   })
 
+  it("shows a failed removal and allows retry without hiding the task",async () => {
+    let calls = 0
+    const task = {id:"tx-cycle-remove",title:"Still needed",status:"active",metadata:{},blockedBy:[],blocks:[],children:[],isReady:true}
+    server.use(
+      http.get(`/api/cycles/${cycle.id}`,() => HttpResponse.json({...cycle,taskCount:calls > 1 ? 0 : 1,tasks:calls > 1 ? [] : [task]})),
+      http.delete(`/api/cycles/${cycle.id}/tasks/${task.id}`,() => ++calls === 1
+        ? HttpResponse.json({error:"Disk full"},{status:503}) : HttpResponse.json({success:true})),
+    )
+    setup()
+    fireEvent.click(await screen.findByRole("button",{name:"Remove Still needed from cycle"}))
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not remove task: Disk full")
+    expect(screen.getByRole("button",{name:"View task: Still needed"})).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button",{name:"Remove Still needed from cycle"}))
+    await waitFor(() => expect(screen.queryByRole("button",{name:"View task: Still needed"})).not.toBeInTheDocument())
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+    expect(calls).toBe(2)
+  })
+
+  it("shows a failed cycle completion and allows an explicit retry",async () => {
+    let calls = 0
+    vi.spyOn(window,"confirm").mockReturnValue(true)
+    server.use(http.post(`/api/cycles/${cycle.id}/complete`,() => ++calls === 1
+      ? HttpResponse.json({error:"Database unavailable"},{status:503})
+      : HttpResponse.json({carriedTaskIds:[]})))
+    setup()
+    fireEvent.click(await screen.findByRole("button",{name:"Complete Cycle"}))
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not complete cycle: Database unavailable")
+    fireEvent.click(screen.getByRole("button",{name:"Complete Cycle"}))
+    await waitFor(() => expect(screen.getByText("Cycle completed. Carried over 0 tasks.")).toBeInTheDocument())
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+    expect(calls).toBe(2)
+  })
+
   it("renames with an accessible control and preserves a failed edit for retry",async () => {
     let calls = 0
     const writes: unknown[] = []

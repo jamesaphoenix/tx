@@ -493,7 +493,7 @@ describe("CLI migrate status command", () => {
     it("shows error for unknown migrate subcommand", () => {
       const result = runTxArgs(["sync", "migrate", "unknown"], dbPath)
       expect(result.status).toBe(1)
-      expect(result.stderr).toContain("Unknown migrate subcommand")
+      expect(result.stderr).toContain("Unknown sync migrate subcommand")
     })
   })
 })

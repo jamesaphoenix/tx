@@ -6,6 +6,7 @@ import { CliExitError } from "../cli-exit.js"
 import { Effect } from "effect"
 import { TaskService, ReadyService } from "@jamesaphoenix/tx"
 import { type Flags, flag, parseTaskId } from "../utils/parse.js"
+import { unknownSubcommandError } from "../cli-errors.js"
 import { toJson } from "../output.js"
 
 interface BulkResult {
@@ -56,9 +57,8 @@ export const bulk = (pos: string[], flags: Flags) =>
       case "delete":
         return yield* bulkDelete(pos.slice(1), flags)
       default:
-        console.error(`Unknown bulk subcommand: ${subcommand}`)
-        console.error("Valid subcommands: done, score, reset, delete")
-        throw new CliExitError(1)
+        return yield* Effect.fail(unknownSubcommandError({command:"task bulk",subcommand,
+          usage:"tx task bulk <done|score|reset|delete> <id...> [options]"}))
     }
   })
 

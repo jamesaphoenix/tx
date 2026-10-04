@@ -54,6 +54,7 @@ export interface CycleListViewProps {
   onSelectTask: (id: string) => void
   onToggleSelect?: (id: string) => void
   onRemoveTask: (id: string) => void
+  isRemoving?: boolean
 }
 
 export function CycleListView({
@@ -62,6 +63,7 @@ export function CycleListView({
   onSelectTask,
   onToggleSelect,
   onRemoveTask,
+  isRemoving = false,
 }: CycleListViewProps) {
   const tasksByStatus: Record<TaskStatus, TaskWithDeps[]> = {
     backlog: [],
@@ -113,11 +115,12 @@ export function CycleListView({
                   />
                   <button
                     type="button"
+                    disabled={isRemoving}
                     onClick={(event) => {
                       event.stopPropagation()
                       onRemoveTask(task.id)
                     }}
-                    className="ml-auto block rounded px-2 py-1 text-xs text-gray-400 hover:bg-red-500/10 hover:text-red-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400"
+                    className="ml-auto block rounded px-2 py-1 text-xs disabled:opacity-50 disabled:cursor-wait text-gray-400 hover:bg-red-500/10 hover:text-red-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400"
                     aria-label={`Remove ${task.title} from cycle`}
                   >
                     Remove

@@ -732,6 +732,8 @@ export function CycleDetail({
         </p>
       </div>
 
+      {removeTaskMutation.error && <p role="alert" className="mx-6 mt-3 text-sm text-red-300">Could not remove task: {removeTaskMutation.error.message}</p>}
+      {completeCycleMutation.error && <p role="alert" className="mx-6 mt-3 text-sm text-red-300">Could not complete cycle: {completeCycleMutation.error.message}</p>}
       {feedback ? (
         <div className="mx-6 mt-3 rounded-md border border-blue-500/30 bg-blue-500/5 px-3 py-1.5 text-xs text-blue-300">
           {feedback}
@@ -869,6 +871,7 @@ export function CycleDetail({
               onSelectTask={handleSelectTask}
               onToggleSelect={handleToggleCycleTask}
               onRemoveTask={handleRemoveTask}
+              isRemoving={removeTaskMutation.isPending}
             />
           ) : (
             <CycleListView
@@ -877,6 +880,7 @@ export function CycleDetail({
               onSelectTask={handleSelectTask}
               onToggleSelect={handleToggleCycleTask}
               onRemoveTask={handleRemoveTask}
+              isRemoving={removeTaskMutation.isPending}
             />
           )}
         </section>

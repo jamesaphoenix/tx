@@ -331,6 +331,16 @@ Labels enable phase-based scoping of the ready queue:
 Run 'tx task label <subcommand> --help' for subcommand-specific help.`,
   "sync migrate": `tx sync migrate - Show database migration status
 
+Usage: tx sync migrate <command>
+
+Subcommands:
+  status  Show current, latest and pending schema migrations
+
+Examples:
+  tx sync migrate status
+  tx sync migrate status --json`,
+  "sync migrate status": `tx sync migrate status - Show database migration status
+
 Usage: tx sync migrate status [--json]
 
 Shows current schema version, latest available version, and pending migrations.
@@ -987,7 +997,7 @@ deleted when \`--prune\` is supplied. \`--dry-run\` performs no invariant or
 mapping writes.
 
 Options:
-  --doc <doc-ref>                 Sync/discover by stable ID, kind/name or unique name
+  --doc <doc-ref>              Sync/discover by stable ID, kind/name or unique name
   --patterns, -p <csv>         Override pattern list for this run
   --dry-run                    Preview mappings and prospective pruning only
   --prune                      Delete stale auto-discovered mappings explicitly
@@ -1042,7 +1052,7 @@ Phase logic:
   COMPLETE fci = 100 and signed off
 
 Options:
-  --doc <doc-ref>                 Scope by stable ID, kind/name or unique name
+  --doc <doc-ref>              Scope by stable ID, kind/name or unique name
   --sub, --subsystem <name>    Scope by subsystem
   --json                       Output as JSON`,
   "spec batch": `tx spec batch - Import test run results from stdin
@@ -1090,7 +1100,7 @@ Records sign-off only when phase is HARDEN (FCI must be 100).
 Rejects requests while phase is BUILD.
 
 Options:
-  --doc <doc-ref>                 Scope by stable ID, kind/name or unique name
+  --doc <doc-ref>              Scope by stable ID, kind/name or unique name
   --sub, --subsystem <name>    Scope by subsystem
   --by <human>                 Required human identifier
   --notes <text>               Optional sign-off notes

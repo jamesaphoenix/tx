@@ -8,6 +8,7 @@ import { Effect } from "effect"
 import { LabelRepository } from "@jamesaphoenix/tx"
 import { toJson } from "../output.js"
 import { type Flags, flag, parseTaskId } from "../utils/parse.js"
+import { unknownSubcommandError } from "../cli-errors.js"
 import { CliExitError } from "../cli-exit.js"
 
 export const label = (pos: string[], flags: Flags) =>
@@ -21,9 +22,8 @@ export const label = (pos: string[], flags: Flags) =>
     if (sub === "assign") return yield* labelAssign(pos.slice(1), flags)
     if (sub === "unassign") return yield* labelUnassign(pos.slice(1), flags)
 
-    console.error(`Unknown label subcommand: ${sub}`)
-    console.error("Usage: tx task label [add|delete|assign|unassign|list]")
-    throw new CliExitError(1)
+    return yield* Effect.fail(unknownSubcommandError({command:"task label",subcommand:sub,
+      usage:"tx task label [add|delete|assign|unassign|list]"}))
   })
 
 const labelAdd = (pos: string[], flags: Flags) =>

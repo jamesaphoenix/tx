@@ -1,7 +1,7 @@
 import { HELP_TEXT, commandHelp } from "./help.js"
 import { CliUserError, usageError } from "./cli-errors.js"
 
-export const compoundHelpParents = ["task", "task dep", "task bulk", "task label", "diag", "sync", "doc", "spec", "spec invariant", "skills"] as const
+export const compoundHelpParents = ["task", "task dep", "task bulk", "task label", "diag", "sync", "sync migrate", "doc", "spec", "spec invariant", "skills"] as const
 
 export const deprecatedCommandMap: Record<string, string> = { invariant: "spec invariant", triangle: "spec health" }
 
@@ -253,13 +253,16 @@ export function resolveCommandKey(parts: string[]): string | null {
   if (parts.length === 0) return null
   for (let length = parts.length; length > 0; length--) {
     const key = parts.slice(0, length).join(" ")
-    if (commandHelp[key]) return key
+    if (Object.hasOwn(commandHelp,key)) {
+      if (length < parts.length && (compoundHelpParents as readonly string[]).includes(key)) return null
+      return key
+    }
   }
   return null
 }
 
 export function buildCommandSchema(key: string): CommandSchema {
-  const rawHelp = commandHelp[key]
+  const rawHelp = Object.hasOwn(commandHelp,key) ? commandHelp[key] : undefined
   if (!rawHelp) {
     throw new CliUserError({
       code: "cli/unknown-command",
@@ -363,7 +366,7 @@ export function buildSchemaPayload(parts: string[]): Record<string, unknown> {
       hint: "Run `tx help --json` to inspect the available command catalog first.",
       usage: "tx schema [command] [subcommand]",
       examples: [
-        "tx schema dep block",
+        "tx schema task dep block",
         "tx schema sync",
       ],
     })
