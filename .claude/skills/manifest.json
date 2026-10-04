@@ -26,7 +26,7 @@
       "id": "tx-docs",
       "title": "Create tx documents",
       "installPath": ".claude/skills/tx-docs",
-      "checksum": "b9efa755b57cf4da3cd31d42bb709a05504468de3d70485f25ee005f1ac12876",
+      "checksum": "eb87917bc0ac9d6e61e7f4702f90fec479f0ecf1bfc4bda2aa94428a0d9f52d6",
       "commandKeys": [],
       "source": "bundled"
     },
@@ -34,7 +34,7 @@
       "id": "verify-invariants",
       "title": "Map and verify invariants",
       "installPath": ".claude/skills/verify-invariants",
-      "checksum": "1dd57d49f5a73e16462170c5fd13af5a443de6357ea37b4f8d16f5a21751240f",
+      "checksum": "b774884c052a92e03c5bf4f6b1961e049cb1d7df5a45d66345fc0db9f76dfa11",
       "commandKeys": [],
       "source": "bundled"
     }
