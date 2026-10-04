@@ -3,7 +3,7 @@
  * TX MCP Server
  *
  * Model Context Protocol server for AI agent integration.
- * Provides task management, learnings, and file learnings tools.
+ * Provides tasks, documents, invariant evidence, labels and sync tools.
  *
  * Usage:
  *   tx-mcp                    # Start with default database path
@@ -13,6 +13,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { resolveTxDbPath } from "@jamesaphoenix/tx"
+import { CLI_VERSION } from "../version.js"
 import { initRuntime, disposeRuntime } from "./runtime.js"
 import { registerTaskTools } from "./tools/task.js"
 import { registerSyncTools } from "./tools/sync.js"
@@ -67,7 +68,7 @@ const removeSignalHandlers = (): void => {
 export const createMcpServer = (): McpServer => {
   const server = new McpServer({
     name: "tx",
-    version: "0.1.0"
+    version: CLI_VERSION
   })
 
   // Register all tools
@@ -174,7 +175,9 @@ Environment:
 }
 
 // Run if executed directly
-main().catch((error) => {
-  console.error(`Fatal error:\n${formatErrorWithStack(error)}`)
-  process.exit(1)
-})
+if (import.meta.main) {
+  main().catch((error) => {
+    console.error(`Fatal error:\n${formatErrorWithStack(error)}`)
+    process.exit(1)
+  })
+}

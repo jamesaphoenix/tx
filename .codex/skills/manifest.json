@@ -1,6 +1,6 @@
 {
   "generator": "tx skills generate",
-  "version": "0.20.0",
+  "version": "0.20.1",
   "target": "codex",
   "installRoot": ".codex/skills",
   "skillCount": 4,
