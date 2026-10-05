@@ -62,10 +62,10 @@
   "dependencies": {
     "@effect/platform": "^0.97.1",
     "@effect/platform-node": "^0.108.1",
-    "@modelcontextprotocol/sdk": "^1.26.0",
+    "@modelcontextprotocol/sdk": "^1.31.0",
     "effect": "^3.22.2",
-    "esbuild": "^0.28.0",
-    "zod": "^4.3.6"
+    "esbuild": "^0.28.2",
+    "zod": "^4.6.5"
   },
   "optionalDependencies": {},
   "devDependencies": {
