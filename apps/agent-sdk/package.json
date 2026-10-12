@@ -40,8 +40,8 @@
     "effect": "^3.22.2"
   },
   "devDependencies": {
-    "@types/bun": "^1.2.0",
-    "@types/node": "^26.1.2",
+    "@types/bun": "^1.4.2",
+    "@types/node": "^26.6.4",
     "effect": "^3.22.2",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "vitest": "^5.0.1",
