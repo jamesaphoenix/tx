@@ -7,4 +7,5 @@ import staticAssetsIncrementalCache from "@opennextjs/cloudflare/overrides/incre
 // time (lib/mcp-tool-count.ts).
 export default defineCloudflareConfig({
   incrementalCache: staticAssetsIncrementalCache,
+  enableCacheInterception: true,
 });
