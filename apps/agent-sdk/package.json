@@ -37,12 +37,12 @@
     "@jamesaphoenix/tx": "*"
   },
   "optionalDependencies": {
-    "effect": "^3.22.2"
+    "effect": "^3.22.3"
   },
   "devDependencies": {
     "@types/bun": "^1.2.0",
     "@types/node": "^26.1.2",
-    "effect": "^3.22.2",
+    "effect": "^3.22.3",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "vitest": "^5.0.1",
     "@typescript/native": "npm:typescript@^7.0.2"

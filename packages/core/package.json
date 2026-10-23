@@ -62,8 +62,8 @@
   },
   "dependencies": {
     "chokidar": "^5.0.0",
-    "effect": "^3.22.2",
-    "fast-xml-parser": "^5.2.0"
+    "effect": "^3.22.3",
+    "fast-xml-parser": "^5.11.2"
   },
   "peerDependencies": {
     "vitest": "^5.0.1"
